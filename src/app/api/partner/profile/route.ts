@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       }
 
       partner = new Partner({
-        userId: session.user.id,
+        userId: userId,
         businessName: data.businessName,
         razorpayAccountId: data.razorpayAccountId,
         location: data.location,
