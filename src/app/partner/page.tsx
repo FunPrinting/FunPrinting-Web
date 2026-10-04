@@ -13,7 +13,7 @@ export default function PartnerPage() {
       const userAgent = window.navigator.userAgent.toLowerCase();
       if (userAgent.indexOf('android') !== -1) {
         setDownloadText('Download Android App');
-        setDownloadLink('https://github.com/funprinting/partner-apps/releases/latest/download/FunPrintingPartner.apk');
+        setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk');
       } else if (userAgent.indexOf('iphone') !== -1 || userAgent.indexOf('ipad') !== -1) {
         setDownloadText('Mobile App Coming Soon');
         setDownloadLink('#');
@@ -119,7 +119,7 @@ export default function PartnerPage() {
           
           <div className="flex flex-col sm:flex-row justify-center gap-6">
             {downloadText === 'Download Android App' ? (
-              <a href="https://github.com/funprinting/partner-apps/releases/latest/download/FunPrintingPartner.apk" className="flex items-center justify-center gap-3 px-8 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg hover:shadow-xl">
+              <a href="https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk" className="flex items-center justify-center gap-3 px-8 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg hover:shadow-xl">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                 Download Android App
               </a>
