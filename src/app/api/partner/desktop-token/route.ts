@@ -19,7 +19,8 @@ export async function GET(request: Request) {
     await connectDB();
 
     // Resiliency: If partnerId is a legacy Google Provider ID instead of a valid MongoDB ObjectId
-    if (!partnerId || partnerId.length !== 24) {
+    const isValidHex = /^[0-9a-fA-F]{24}$/.test(partnerId);
+    if (!partnerId || !isValidHex) {
       const dbUser = await User.findOne({ email: session.user.email });
       if (dbUser) {
         partnerId = dbUser._id.toString();

@@ -159,8 +159,9 @@ export const authOptions: NextAuthOptions = {
         try {
           await connectDB();
           let dbUser;
-          // Check if token.id is a valid ObjectId
-          if (token.id && (token.id as string).length === 24) {
+          // Check if token.id is a valid ObjectId (24 hex characters)
+          const isValidHex = /^[0-9a-fA-F]{24}$/.test(token.id as string);
+          if (token.id && isValidHex) {
             dbUser = await User.findById(token.id);
           } else if (token.email) {
             dbUser = await User.findOne({ email: token.email });
@@ -192,7 +193,8 @@ export const authOptions: NextAuthOptions = {
           try {
             await connectDB();
             let user;
-            if (token.id && (token.id as string).length === 24) {
+            const isValidHex = /^[0-9a-fA-F]{24}$/.test(token.id as string);
+            if (token.id && isValidHex) {
               user = await User.findById(token.id);
             } else if (session.user.email) {
               user = await User.findOne({ email: session.user.email });
