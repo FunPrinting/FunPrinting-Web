@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
+import Partner from '@/models/Partner';
 
 export async function GET(request: Request) {
   try {
@@ -35,6 +36,28 @@ export async function GET(request: Request) {
       await User.findByIdAndUpdate(partnerId, { role: 'partner' });
       role = 'partner';
       console.log(`User ${partnerId} auto-upgraded to partner.`);
+    }
+
+    // Ensure they have a formal Partner document so they appear on the Admin Dashboard
+    const existingPartner = await Partner.findOne({ userId: partnerId });
+    if (!existingPartner && role === 'partner') {
+      const userDoc = await User.findById(partnerId);
+      await Partner.create({
+        userId: partnerId,
+        businessName: userDoc?.name ? `${userDoc.name}'s Print Shop` : 'New Franchise Partner',
+        location: { type: 'Point', coordinates: [77.2090, 28.6139] }, // Default: Delhi
+        address: {
+          street: 'Update in Settings',
+          city: 'Update in Settings',
+          state: 'Update in Settings',
+          zipCode: '000000'
+        },
+        isActive: true,
+        isOnline: false,
+        servicesOffered: { printing: true, binding: false, cashOnDelivery: true },
+        earnings: { totalRevenue: 0, pendingPayout: 0 }
+      });
+      console.log(`Created new Partner profile for ${partnerId}`);
     }
 
     const secret = process.env.NEXTAUTH_SECRET || 'fallback-secret-for-development';
