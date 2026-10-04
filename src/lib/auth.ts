@@ -133,9 +133,25 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.image = user.image;
-        token.role = (user as any).role;
+        // If user object is present, this is the first time the token is created
+        try {
+          await connectDB();
+          const dbUser = await User.findOne({ email: user.email });
+          if (dbUser) {
+            token.id = dbUser._id.toString();
+            token.image = dbUser.profilePicture || user.image;
+            token.role = dbUser.role;
+          } else {
+            token.id = user.id;
+            token.image = user.image;
+            token.role = (user as any).role || 'customer';
+          }
+        } catch (e) {
+          console.error('Error fetching user for JWT:', e);
+          token.id = user.id;
+          token.image = user.image;
+          token.role = (user as any).role || 'customer';
+        }
       }
       
       // Refresh profile picture from database on each JWT update
