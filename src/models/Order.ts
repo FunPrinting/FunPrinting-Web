@@ -75,6 +75,8 @@ export interface IOrder {
     recipientName?: string;
     recipientPhone?: string;
     pickupLocationId?: string;
+    partnerId?: string;
+    partnerDeliveryPoint?: string;
     pickupLocation?: {
       _id: string;
       name: string;
@@ -224,6 +226,8 @@ const orderSchema = new mongoose.Schema<IOrder>({
       default: 'pickup'
     },
     pickupLocationId: String,
+    partnerId: String,
+    partnerDeliveryPoint: String,
     pickupLocation: {
       _id: String,
       name: String,

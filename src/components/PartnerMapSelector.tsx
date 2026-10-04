@@ -28,10 +28,18 @@ interface Partner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  deliveryPoints?: Array<{
+    name: string;
+    location: {
+      type: 'Point';
+      coordinates: [number, number];
+    };
+    isActive: boolean;
+  }>;
 }
 
 interface PartnerMapSelectorProps {
-  onPartnerSelected: (partnerId: string) => void;
+  onPartnerSelected: (partnerId: string, deliveryPointName?: string) => void;
   selectedPartnerId?: string;
 }
 
@@ -40,6 +48,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedDeliveryPoint, setSelectedDeliveryPoint] = useState<string | undefined>();
 
   // 1. Get User Location
   useEffect(() => {
@@ -87,8 +96,9 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
     fetchPartners();
   }, [userLocation]);
 
-  const handlePartnerSelect = (partner: Partner) => {
-    onPartnerSelected(partner._id);
+  const handlePartnerSelect = (partner: Partner, deliveryPointName?: string) => {
+    setSelectedDeliveryPoint(deliveryPointName);
+    onPartnerSelected(partner._id, deliveryPointName);
   };
 
   return (
@@ -112,6 +122,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
           partners={partners}
           onSelectPartner={handlePartnerSelect}
           selectedPartnerId={selectedPartnerId}
+          selectedDeliveryPoint={selectedDeliveryPoint}
         />
       )}
 
@@ -129,7 +140,9 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
             </div>
             <div>
               <p className="font-bold text-green-800">Partner Selected</p>
-              <p className="text-sm text-green-600">Your order will be routed to the selected shop.</p>
+              <p className="text-sm text-green-600">
+                Your order will be routed to {selectedDeliveryPoint ? `the ${selectedDeliveryPoint} delivery point.` : 'the selected shop.'}
+              </p>
             </div>
           </div>
         </div>

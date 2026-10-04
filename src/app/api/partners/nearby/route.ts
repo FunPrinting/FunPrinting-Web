@@ -21,21 +21,25 @@ export async function GET(request: Request) {
     // Convert to numbers
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
-    const radiusInMeters = parseFloat(radius) * 1000;
+    const radiusInRadians = parseFloat(radius) * 1000 / 6378100; // Earth radius in meters
 
     // Use MongoDB geospatial query to find nearby online partners
+    // $geoWithin with $centerSphere supports $or operator, unlike $near
     const nearbyPartners = await Partner.find({
       isActive: true,
       isOnline: true,
-      location: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude] // GeoJSON expects [lng, lat]
-          },
-          $maxDistance: radiusInMeters
+      $or: [
+        {
+          location: {
+            $geoWithin: { $centerSphere: [[longitude, latitude], radiusInRadians] }
+          }
+        },
+        {
+          'deliveryPoints.location': {
+            $geoWithin: { $centerSphere: [[longitude, latitude], radiusInRadians] }
+          }
         }
-      }
+      ]
     }).select('-earnings -__v'); // Exclude sensitive info
 
     return NextResponse.json({

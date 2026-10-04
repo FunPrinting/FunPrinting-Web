@@ -87,6 +87,9 @@ export async function POST(request: NextRequest) {
       if (data.servicesOffered) {
         partner.servicesOffered = { ...partner.servicesOffered, ...data.servicesOffered };
       }
+      if (data.deliveryPoints) {
+        partner.deliveryPoints = data.deliveryPoints;
+      }
       
       // Update status if provided
       if (typeof data.isOnline !== 'undefined') partner.isOnline = data.isOnline;
@@ -108,7 +111,8 @@ export async function POST(request: NextRequest) {
         isActive: true,
         isOnline: false,
         earnings: { totalRevenue: 0, pendingPayout: 0 },
-        servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false }
+        servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },
+        deliveryPoints: data.deliveryPoints || []
       });
 
       await partner.save();

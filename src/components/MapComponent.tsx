@@ -40,16 +40,25 @@ interface Partner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  deliveryPoints?: Array<{
+    name: string;
+    location: {
+      type: 'Point';
+      coordinates: [number, number];
+    };
+    isActive: boolean;
+  }>;
 }
 
 interface MapComponentProps {
   userLocation: [number, number];
   partners: Partner[];
-  onSelectPartner: (partner: Partner) => void;
+  onSelectPartner: (partner: Partner, deliveryPointName?: string) => void;
   selectedPartnerId?: string;
+  selectedDeliveryPoint?: string;
 }
 
-export default function MapComponent({ userLocation, partners, onSelectPartner, selectedPartnerId }: MapComponentProps) {
+export default function MapComponent({ userLocation, partners, onSelectPartner, selectedPartnerId, selectedDeliveryPoint }: MapComponentProps) {
   return (
     <MapContainer 
       center={userLocation} 
@@ -68,42 +77,83 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
       </Marker>
 
       {/* Partner Markers */}
-      {partners.map((partner) => {
-        const [lng, lat] = partner.location.coordinates;
-        const isSelected = partner._id === selectedPartnerId;
-        
-        return (
-          <Marker 
-            key={partner._id} 
-            position={[lat, lng]} 
-            icon={customIcon}
-            eventHandlers={{
-              click: () => onSelectPartner(partner),
-            }}
-          >
-            <Popup>
-              <div className="font-sans">
-                <h3 className="font-bold text-lg mb-1">{partner.businessName}</h3>
-                <p className="text-sm text-gray-600 mb-2">{partner.address.street}, {partner.address.city}</p>
-                
-                {partner.servicesOffered && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {partner.servicesOffered.printing && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">Printing</span>}
-                    {partner.servicesOffered.binding && <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">Binding</span>}
-                    {partner.servicesOffered.cashOnDelivery && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">Cash on Delivery</span>}
-                  </div>
-                )}
+      {partners.flatMap((partner) => {
+        const markers = [];
+        const isPartnerSelected = partner._id === selectedPartnerId;
 
-                <button 
-                  onClick={() => onSelectPartner(partner)}
-                  className={`w-full py-2 px-4 rounded font-bold text-white transition-colors ${isSelected ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+        // Main Shop Marker
+        if (partner.location && partner.location.coordinates) {
+          const [lng, lat] = partner.location.coordinates;
+          const isMainSelected = isPartnerSelected && !selectedDeliveryPoint;
+          markers.push(
+            <Marker 
+              key={`${partner._id}-main`} 
+              position={[lat, lng]} 
+              icon={customIcon}
+              eventHandlers={{
+                click: () => onSelectPartner(partner),
+              }}
+            >
+              <Popup>
+                <div className="font-sans">
+                  <h3 className="font-bold text-lg mb-1">{partner.businessName} (Main Shop)</h3>
+                  <p className="text-sm text-gray-600 mb-2">{partner.address.street}, {partner.address.city}</p>
+                  
+                  {partner.servicesOffered && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {partner.servicesOffered.printing && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">Printing</span>}
+                      {partner.servicesOffered.binding && <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">Binding</span>}
+                      {partner.servicesOffered.cashOnDelivery && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">Cash on Delivery</span>}
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={() => onSelectPartner(partner)}
+                    className={`w-full py-2 px-4 rounded font-bold text-white transition-colors ${isMainSelected ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  >
+                    {isMainSelected ? 'Selected' : 'Select Shop'}
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        }
+
+        // Delivery Point Markers
+        if (partner.deliveryPoints) {
+          partner.deliveryPoints.forEach((dp, index) => {
+            if (dp.isActive && dp.location && dp.location.coordinates) {
+              const [dpLng, dpLat] = dp.location.coordinates;
+              const isDpSelected = isPartnerSelected && selectedDeliveryPoint === dp.name;
+              markers.push(
+                <Marker 
+                  key={`${partner._id}-dp-${index}`} 
+                  position={[dpLat, dpLng]} 
+                  icon={customIcon}
+                  eventHandlers={{
+                    click: () => onSelectPartner(partner, dp.name),
+                  }}
                 >
-                  {isSelected ? 'Selected' : 'Select Partner'}
-                </button>
-              </div>
-            </Popup>
-          </Marker>
-        );
+                  <Popup>
+                    <div className="font-sans">
+                      <h3 className="font-bold text-lg mb-1">{partner.businessName}</h3>
+                      <p className="text-sm font-medium text-indigo-600 mb-2">📍 Delivery Point: {dp.name}</p>
+                      
+                      <button 
+                        onClick={() => onSelectPartner(partner, dp.name)}
+                        className={`w-full py-2 px-4 rounded font-bold text-white transition-colors ${isDpSelected ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                      >
+                        {isDpSelected ? 'Selected' : 'Select This Location'}
+                      </button>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            }
+          });
+        }
+
+        return markers;
       })}
     </MapContainer>
   );

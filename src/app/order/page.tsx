@@ -69,6 +69,7 @@ interface DeliveryOption {
   pinCode?: string;
   pickupLocationId?: string;
   partnerId?: string;
+  partnerDeliveryPoint?: string;
 }
 
 interface PickupLocation {
@@ -3823,7 +3824,7 @@ function OrderPageContent() {
                       {deliveryOption.type === 'pickup' && (
                         <div className="ml-6 mt-4">
                           <PartnerMapSelector 
-                            onPartnerSelected={(id) => setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined }))}
+                            onPartnerSelected={(id, dpName) => setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName }))}
                             selectedPartnerId={deliveryOption.partnerId}
                           />
                         </div>

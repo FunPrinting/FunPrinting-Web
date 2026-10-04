@@ -30,6 +30,14 @@ export interface IPartner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  deliveryPoints: Array<{
+    name: string;
+    location: {
+      type: 'Point';
+      coordinates: [number, number]; // [longitude, latitude]
+    };
+    isActive: boolean;
+  }>;
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
   createdAt: Date;
   updatedAt: Date;
@@ -64,6 +72,14 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     binding: { type: Boolean, default: false },
     cashOnDelivery: { type: Boolean, default: false },
   },
+  deliveryPoints: [{
+    name: { type: String, required: true },
+    location: {
+      type: { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: { type: [Number], required: true }, // [lng, lat]
+    },
+    isActive: { type: Boolean, default: true }
+  }],
   razorpayAccountId: { type: String, required: false },
 }, {
   timestamps: true,
@@ -71,5 +87,6 @@ const partnerSchema = new mongoose.Schema<IPartner>({
 
 // Geospatial index for $near queries
 partnerSchema.index({ location: '2dsphere' });
+partnerSchema.index({ 'deliveryPoints.location': '2dsphere' });
 
 export default mongoose.models.Partner || mongoose.model<IPartner>('Partner', partnerSchema);
