@@ -1,9 +1,27 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PrinterIcon, DollarIcon, RocketIcon } from '@/components/SocialIcons';
 
 export default function PartnerPage() {
+  const [downloadLink, setDownloadLink] = useState('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');
+  const [downloadText, setDownloadText] = useState('Download Desktop App');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      if (userAgent.indexOf('mac') !== -1) {
+        setDownloadText('Download for Mac');
+        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg'); // .dmg or .zip depending on your release format
+      } else if (userAgent.indexOf('win') !== -1) {
+        setDownloadText('Download for Windows');
+        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');
+      } else {
+        setDownloadText('Download Desktop App');
+      }
+    }
+  }, []);
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white text-gray-900 pb-20">
       {/* Hero Section */}
@@ -25,10 +43,11 @@ export default function PartnerPage() {
                 Become a Partner
               </Link>
               <a 
-                href="#download"
-                className="px-8 py-4 bg-transparent border-2 border-white text-white rounded-full font-bold text-lg hover:bg-white/10 transition-all"
+                href={downloadLink}
+                className="px-8 py-4 bg-transparent border-2 border-white text-white rounded-full font-bold text-lg hover:bg-white/10 transition-all flex items-center justify-center gap-2"
               >
-                Download Desktop App
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                {downloadText}
               </a>
             </div>
           </div>

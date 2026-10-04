@@ -7,15 +7,31 @@ import Partner from '@/models/Partner';
 // GET Partner Profile
 export async function GET(request: NextRequest) {
   try {
+    let userId;
     const session = await getServerSession(authOptions);
     
-    if (!session || !session.user) {
+    if (session && session.user) {
+      userId = (session.user as any).id;
+    } else {
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.split(' ')[1];
+          const payload = Buffer.from(token.split('.')[1], 'base64').toString('utf8');
+          userId = JSON.parse(payload).partnerId || JSON.parse(payload).sub;
+        } catch (e) {
+          console.error("Token decode error:", e);
+        }
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     await connectDB();
 
-    const partner = await Partner.findOne({ userId: session.user.id });
+    const partner = await Partner.findOne({ userId: userId });
 
     if (!partner) {
       return NextResponse.json({ success: true, partner: null });
@@ -31,9 +47,25 @@ export async function GET(request: NextRequest) {
 // CREATE / UPDATE Partner Profile
 export async function POST(request: NextRequest) {
   try {
+    let userId;
     const session = await getServerSession(authOptions);
     
-    if (!session || !session.user) {
+    if (session && session.user) {
+      userId = (session.user as any).id;
+    } else {
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.split(' ')[1];
+          const payload = Buffer.from(token.split('.')[1], 'base64').toString('utf8');
+          userId = JSON.parse(payload).partnerId || JSON.parse(payload).sub;
+        } catch (e) {
+          console.error("Token decode error:", e);
+        }
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -41,7 +73,7 @@ export async function POST(request: NextRequest) {
     
     await connectDB();
 
-    let partner = await Partner.findOne({ userId: session.user.id });
+    let partner = await Partner.findOne({ userId: userId });
 
     if (partner) {
       // Update existing
