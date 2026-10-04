@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
+import connectDB from '@/lib/mongodb';
+import User from '@/models/User';
 
 export async function GET(request: Request) {
   try {
@@ -11,12 +13,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const role = (session.user as any).role;
+    let role = (session.user as any).role;
+    const partnerId = (session.user as any).id;
+    
     if (role !== 'partner' && role !== 'admin') {
-      return NextResponse.json({ error: 'Only partners can access the desktop app' }, { status: 403 });
+      // Auto-upgrade user to partner when they log in via the app
+      await connectDB();
+      await User.findByIdAndUpdate(partnerId, { role: 'partner' });
+      role = 'partner';
+      console.log(`User ${partnerId} auto-upgraded to partner.`);
     }
 
-    const partnerId = (session.user as any).id;
     const secret = process.env.NEXTAUTH_SECRET || 'fallback-secret-for-development';
 
     // Sign a raw JWT token that the WebSocket server (wss/index.js) can read

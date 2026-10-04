@@ -21,14 +21,7 @@ function DesktopAuthContent() {
       // Not logged in, redirect to signin and return here afterwards
       signIn('google', { callbackUrl: `/partner/desktop-auth?callback=${encodeURIComponent(callback)}` });
     } else if (status === 'authenticated') {
-      // User is logged in, check role
-      const role = (session?.user as any)?.role;
-      if (role !== 'partner' && role !== 'admin') {
-        setError('Your account is not a Partner account. Please upgrade to a partner account first.');
-        return;
-      }
-
-      // Fetch the raw JWT token for the desktop app
+      // Fetch the raw JWT token for the desktop app (will auto-upgrade to partner)
       fetch('/api/partner/desktop-token')
         .then(res => res.json())
         .then(data => {
