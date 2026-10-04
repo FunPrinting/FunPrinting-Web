@@ -12,6 +12,26 @@ export default function PartnerDashboard() {
   const [partnerOrders, setPartnerOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Download logic states
+  const [downloadLink, setDownloadLink] = useState('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');
+  const [downloadText, setDownloadText] = useState('For Windows PC');
+  const [downloadBtnText, setDownloadBtnText] = useState('Download .exe');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      if (userAgent.indexOf('mac') !== -1) {
+        setDownloadText('For macOS');
+        setDownloadBtnText('Download .dmg');
+        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg');
+      } else if (userAgent.indexOf('win') !== -1) {
+        setDownloadText('For Windows PC');
+        setDownloadBtnText('Download .exe');
+        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/auth/signin?callbackUrl=/partner/dashboard');
