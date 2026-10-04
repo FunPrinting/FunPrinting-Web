@@ -39,6 +39,7 @@ export default function Navbar() {
     { href: '/my-orders', label: 'My Orders' },
     { href: '/my-templates', label: 'My Templates', requireAuth: true },
     { href: '/contact', label: 'Contact' },
+    { href: '/partner', label: 'Partner Program' },
   ].filter(link => !link.requireAuth || isAuthenticated);
 
   return (
