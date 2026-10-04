@@ -44,8 +44,6 @@ export async function GET(request: NextRequest) {
       partner = await Partner.create({
         userId: userId,
         businessName: userDoc?.name ? `${userDoc.name}'s Print Shop` : 'New Franchise Partner',
-        location: { type: 'Point', coordinates: [77.2090, 28.6139] },
-        address: { street: 'Update in Settings', city: 'Update in Settings', state: 'Update in Settings', zipCode: '000000' },
         isActive: true,
         isOnline: false,
         servicesOffered: { printing: true, binding: false, cashOnDelivery: true },

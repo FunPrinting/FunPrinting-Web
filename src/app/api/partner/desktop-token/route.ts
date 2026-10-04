@@ -45,13 +45,6 @@ export async function GET(request: Request) {
       await Partner.create({
         userId: partnerId,
         businessName: userDoc?.name ? `${userDoc.name}'s Print Shop` : 'New Franchise Partner',
-        location: { type: 'Point', coordinates: [77.2090, 28.6139] }, // Default: Delhi
-        address: {
-          street: 'Update in Settings',
-          city: 'Update in Settings',
-          state: 'Update in Settings',
-          zipCode: '000000'
-        },
         isActive: true,
         isOnline: false,
         servicesOffered: { printing: true, binding: false, cashOnDelivery: true },

@@ -39,14 +39,14 @@ const partnerSchema = new mongoose.Schema<IPartner>({
   userId: { type: String, required: true, unique: true },
   businessName: { type: String, required: true, trim: true },
   location: {
-    type: { type: String, enum: ['Point'], required: true, default: 'Point' },
-    coordinates: { type: [Number], required: true }, // [lng, lat]
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: { type: [Number] }, // [lng, lat]
   },
   address: {
-    street: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    zipCode: { type: String, required: true },
+    street: { type: String },
+    city: { type: String },
+    state: { type: String },
+    zipCode: { type: String },
   },
   isActive: { type: Boolean, required: true, default: true },
   isOnline: { type: Boolean, required: true, default: false },
