@@ -40,6 +40,11 @@ interface Partner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  pricing?: {
+    perPageBW: number;
+    perPageColor: number;
+    binding: number;
+  };
   deliveryPoints?: Array<{
     name: string;
     location: {
@@ -48,6 +53,7 @@ interface Partner {
     };
     isActive: boolean;
   }>;
+  calculatedPrice?: number;
 }
 
 interface MapComponentProps {
@@ -58,12 +64,39 @@ interface MapComponentProps {
   selectedDeliveryPoint?: string;
 }
 
+function getMarkerIcon(color: string, isSelected: boolean) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" stroke="${isSelected ? '#000000' : '#ffffff'}" stroke-width="${isSelected ? '2' : '1'}"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div style="width: 36px; height: 36px; margin-top: -36px; margin-left: -18px; filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.4)); ${isSelected ? 'transform: scale(1.3); z-index: 1000;' : ''}">${svg}</div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 36],
+    popupAnchor: [0, -36]
+  });
+}
+
 export default function MapComponent({ userLocation, partners, onSelectPartner, selectedPartnerId, selectedDeliveryPoint }: MapComponentProps) {
+  
+  // Calculate price bounds for gradient
+  const prices = partners.map(p => p.calculatedPrice || 0).filter(p => p > 0);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
+  const getMarkerColor = (price: number) => {
+    if (!price || maxPrice === minPrice) return '#10b981'; // Default green
+    const ratio = (price - minPrice) / (maxPrice - minPrice);
+    // Green (16, 185, 129) to Red (239, 68, 68)
+    const r = Math.round(16 + ratio * (239 - 16));
+    const g = Math.round(185 + ratio * (68 - 185));
+    const b = Math.round(129 + ratio * (68 - 129));
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
   return (
     <MapContainer 
       center={userLocation} 
       zoom={13} 
-      style={{ height: '400px', width: '100%', borderRadius: '0.75rem', zIndex: 0 }}
+      style={{ height: '500px', width: '100%', borderRadius: '0.75rem', zIndex: 0 }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -76,80 +109,67 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
         <Popup>Your Location</Popup>
       </Marker>
 
-      {/* Partner Markers */}
+      {/* Partner Delivery Point Markers */}
       {partners.flatMap((partner) => {
-        const markers = [];
-        const isPartnerSelected = partner._id === selectedPartnerId;
+        const markers: any[] = [];
+        const priceColor = getMarkerColor(partner.calculatedPrice || 0);
 
-        // Main Shop Marker
-        if (partner.location && partner.location.coordinates) {
-          const [lng, lat] = partner.location.coordinates;
-          const isMainSelected = isPartnerSelected && !selectedDeliveryPoint;
-          markers.push(
-            <Marker 
-              key={`${partner._id}-main`} 
-              position={[lat, lng]} 
-              icon={customIcon}
-              eventHandlers={{
-                click: () => onSelectPartner(partner),
-              }}
-            >
-              <Popup>
-                <div className="font-sans">
-                  <h3 className="font-bold text-lg mb-1">{partner.businessName} (Main Shop)</h3>
-                  <p className="text-sm text-gray-600 mb-2">{partner.address.street}, {partner.address.city}</p>
-                  
-                  {partner.servicesOffered && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {partner.servicesOffered.printing && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">Printing</span>}
-                      {partner.servicesOffered.binding && <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">Binding</span>}
-                      {partner.servicesOffered.cashOnDelivery && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">Cash on Delivery</span>}
+        // ONLY render Delivery Points as requested
+        if (partner.deliveryPoints && partner.deliveryPoints.length > 0) {
+          partner.deliveryPoints.forEach(dp => {
+            if (!dp.isActive) return;
+            const [dpLng, dpLat] = dp.location.coordinates;
+            const isDpSelected = partner._id === selectedPartnerId && selectedDeliveryPoint === dp.name;
+            
+            markers.push(
+              <Marker 
+                key={`${partner._id}-dp-${dp.name}`} 
+                position={[dpLat, dpLng]} 
+                icon={getMarkerIcon(priceColor, isDpSelected)}
+                eventHandlers={{
+                  click: () => onSelectPartner(partner, dp.name),
+                }}
+                zIndexOffset={isDpSelected ? 1000 : 0}
+              >
+                <Popup>
+                  <div className="font-sans min-w-[220px]">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-lg leading-tight text-gray-900">{dp.name}</h3>
+                      <span className="bg-indigo-100 text-indigo-800 text-sm px-2 py-1 rounded font-bold whitespace-nowrap ml-2">
+                        ₹{partner.calculatedPrice}
+                      </span>
                     </div>
-                  )}
-
-                  <button 
-                    onClick={() => onSelectPartner(partner)}
-                    className={`w-full py-2 px-4 rounded font-bold text-white transition-colors ${isMainSelected ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                  >
-                    {isMainSelected ? 'Selected' : 'Select Shop'}
-                  </button>
-                </div>
-              </Popup>
-            </Marker>
-          );
-        }
-
-        // Delivery Point Markers
-        if (partner.deliveryPoints) {
-          partner.deliveryPoints.forEach((dp, index) => {
-            if (dp.isActive && dp.location && dp.location.coordinates) {
-              const [dpLng, dpLat] = dp.location.coordinates;
-              const isDpSelected = isPartnerSelected && selectedDeliveryPoint === dp.name;
-              markers.push(
-                <Marker 
-                  key={`${partner._id}-dp-${index}`} 
-                  position={[dpLat, dpLng]} 
-                  icon={customIcon}
-                  eventHandlers={{
-                    click: () => onSelectPartner(partner, dp.name),
-                  }}
-                >
-                  <Popup>
-                    <div className="font-sans">
-                      <h3 className="font-bold text-lg mb-1">{partner.businessName}</h3>
-                      <p className="text-sm font-medium text-indigo-600 mb-2">📍 Delivery Point: {dp.name}</p>
-                      
-                      <button 
-                        onClick={() => onSelectPartner(partner, dp.name)}
-                        className={`w-full py-2 px-4 rounded font-bold text-white transition-colors ${isDpSelected ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                      >
-                        {isDpSelected ? 'Selected' : 'Select This Location'}
-                      </button>
+                    <p className="text-sm text-gray-600 mb-3 border-b pb-2">Serviced by {partner.businessName}</p>
+                    
+                    <div className="mb-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Pricing Rates</p>
+                      <ul className="text-sm space-y-1 text-gray-700">
+                        <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{partner.pricing?.perPageBW || 2}</strong></li>
+                        <li className="flex justify-between"><span>Color Page:</span> <strong>₹{partner.pricing?.perPageColor || 10}</strong></li>
+                        <li className="flex justify-between"><span>Binding:</span> <strong>₹{partner.pricing?.binding || 30}</strong></li>
+                      </ul>
                     </div>
-                  </Popup>
-                </Marker>
-              );
-            }
+
+                    <div className="mb-4 flex flex-wrap gap-1">
+                      {partner.servicesOffered?.printing && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">Printing</span>}
+                      {partner.servicesOffered?.binding && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">Binding</span>}
+                      {partner.servicesOffered?.cashOnDelivery && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">COD</span>}
+                    </div>
+                    
+                    <button 
+                      className={`w-full py-2.5 rounded-lg font-bold transition-all shadow-sm ${
+                        isDpSelected 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                      onClick={() => onSelectPartner(partner, dp.name)}
+                    >
+                      {isDpSelected ? '✓ Selected' : 'Select This Location'}
+                    </button>
+                  </div>
+                </Popup>
+              </Marker>
+            );
           });
         }
 
