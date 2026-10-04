@@ -150,3 +150,41 @@ sequenceDiagram
    - Wrap the Node.js logic in an Electron shell.
    - Build a React frontend for the Electron app to show the Dashboard and Print Queue.
    - Upgrade `src/services/printer.ts` to implement the Page-by-Page splitting and Spooler polling logic for the TCP-like error recovery.
+
+## 6. Execution Roadmap (Business App Implementation)
+*Because we are building a robust business application (not a prototype), each phase must include full error handling, security, and both frontend/backend integration before moving to the next.*
+
+### Phase 1: Foundation & Partner Registration
+**Goal:** Allow printing shops to sign up and establish their profiles on the platform.
+*   **Backend:** Update MongoDB schemas (`Partner`, `User`). Build secure API routes for partner registration, profile management (GPS coordinates, operating hours), and pricing configurations.
+*   **Frontend:** Build the `/partner` onboarding landing page. Build the web-based Partner Dashboard where shop owners can log in, set their pricing, and view their profile.
+
+### Phase 2: Location-Based Checkout Engine
+**Goal:** Enable customers to find nearby shops and route their orders.
+*   **Backend:** Implement MongoDB `$near` geospatial queries to fetch active partners within a user's radius.
+*   **Frontend:** Integrate OpenStreetMap (Leaflet) into the checkout flow. Allow users to click a partner marker, view their specific pricing, and assign the order to that `partnerId`.
+
+### Phase 3: Financial Routing & Platform Fees
+**Goal:** Handle money securely and split payouts between the platform and the partner.
+*   **Backend:** Upgrade the Razorpay integration using **Razorpay Route**. When a customer pays, automatically calculate the platform commission (e.g., 10%) and split the payout to the specific partner's linked bank account.
+*   **Frontend:** Refine the post-payment Success UI. Implement the "Navigate to Partner" Google Maps handoff button on the Order Tracking page.
+
+### Phase 4: The Zero-Config WebSocket Tunnel
+**Goal:** Establish the secure, real-time pipeline between the Cloud and the Partner's computer.
+*   **Backend:** Deploy a Socket.io server. Implement JWT-based authentication for socket connections. Create a Redis/Memory registry tracking which `partnerId` is connected to which Socket ID.
+*   **Frontend (Cloud):** Update the Order processing webhook to push the document URL down the specific partner's WebSocket tunnel immediately after payment.
+
+### Phase 5: Partner Desktop App (MVP)
+**Goal:** Replace `Printer-API` with a distributable, secure desktop application.
+*   **App Frontend:** Scaffold an Electron + React app. Build the Login screen (NextAuth). Build the UI showing connected printers and the live job queue.
+*   **App Backend (Node daemon):** Port the existing OS hardware commands (`lpstat`, `Get-Printer`) from `Printer-API`. Connect the app to the Phase 4 WebSocket server as a client.
+
+### Phase 6: TCP-Like Hardware Error Control (The Hard Part)
+**Goal:** Implement the automated, fault-tolerant printing algorithm.
+*   **App Backend:** Implement the AIMD (Additive Increase, Multiplicative Decrease) dynamic batching algorithm. Implement the OS spooler polling loop. Halt the queue locally on a NACK (Paper Jam) and allow manual resume.
+*   **Cloud & Frontend:** The App streams live status ("Printing Page 5", "Paper Jam") back up the WebSocket. The Customer tracking page updates in real-time so they know exactly what's happening at the shop.
+
+### Phase 7: Franchise Admin Control Center
+**Goal:** Give you (the platform owner) ultimate operational oversight.
+*   **Backend:** Build aggregation APIs to calculate platform revenue, total pages printed, and partner health scores.
+*   **Frontend:** Revamp the Admin page. Build the high-level grid of Partner Cards. Clicking a card drills down into that specific shop's order history, uptime, and dispute resolutions.
