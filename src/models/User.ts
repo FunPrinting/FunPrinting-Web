@@ -11,6 +11,7 @@ export interface IUser {
   providerId?: string; // For OAuth providers
   emailVerified: boolean;
   isActive: boolean;
+  role?: 'customer' | 'partner' | 'admin';
   lastLogin?: Date;
   defaultLocationId?: string; // Reference to PickupLocation
   // Optional payout details for creator monetization
@@ -42,6 +43,7 @@ const userSchema = new mongoose.Schema<IUser>({
   providerId: { type: String, required: false }, // For OAuth providers
   emailVerified: { type: Boolean, required: true, default: false },
   isActive: { type: Boolean, required: true, default: true },
+  role: { type: String, enum: ['customer', 'partner', 'admin'], default: 'customer' },
   lastLogin: { type: Date, required: false },
   defaultLocationId: { type: String, required: false, trim: true },
   upiId: { type: String, required: false, trim: true },

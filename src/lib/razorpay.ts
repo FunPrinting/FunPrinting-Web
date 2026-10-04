@@ -15,6 +15,14 @@ export interface CreateOrderParams {
   currency?: string;
   receipt?: string;
   notes?: Record<string, string>;
+  transfers?: Array<{
+    account: string;
+    amount: number;
+    currency: string;
+    notes: Record<string, string>;
+    linked_account_notes: string[];
+    on_hold: boolean;
+  }>;
 }
 
 export const createRazorpayOrder = async (params: CreateOrderParams) => {
@@ -27,15 +35,22 @@ export const createRazorpayOrder = async (params: CreateOrderParams) => {
       amount: params.amount,
       amountInPaise: params.amount * 100,
       currency: params.currency || 'INR',
-      receipt: params.receipt
+      receipt: params.receipt,
+      transfers: params.transfers ? 'Configured for Split Payments' : 'None'
     });
 
-    const order = await razorpay.orders.create({
+    const orderOptions: any = {
       amount: params.amount * 100, // Razorpay expects amount in paise
       currency: params.currency || 'INR',
       receipt: params.receipt,
       notes: params.notes,
-    });
+    };
+
+    if (params.transfers) {
+      orderOptions.transfers = params.transfers;
+    }
+
+    const order = await razorpay.orders.create(orderOptions);
 
     console.log('✅ Razorpay order created successfully:', order.id);
     return order;

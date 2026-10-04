@@ -8,6 +8,7 @@ import { AdminCard } from '@/components/admin/AdminNavigation';
 import LoadingSpinner from '@/components/admin/LoadingSpinner';
 import AdminGoogleAuth from '@/components/admin/AdminGoogleAuth';
 import NotificationProvider from '@/components/admin/NotificationProvider';
+import AdminPartnersView from '@/components/admin/AdminPartnersView';
 import { showSuccess, showError, showInfo, showWarning } from '@/lib/adminNotifications';
 import { getOrderStatusColor, getOrderPaymentStatusColor, formatDate, getDefaultExpectedDate } from '@/lib/adminUtils';
 import { PrinterIcon, DocumentIcon, FolderIcon, LocationIcon, MoneyIcon, DollarIcon, InfoIcon, ClockIcon, RefreshIcon, BuildingIcon, TruckIcon, CalendarIcon, CheckIcon, PaperclipIcon } from '@/components/SocialIcons';
@@ -120,6 +121,15 @@ function AdminDashboardContent() {
   const [nameSearch, setNameSearch] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+
+  // Re-fetch orders when a partner is selected/deselected
+  useEffect(() => {
+    if (status === 'authenticated') {
+      setCurrentPage(1);
+      fetchOrders(1);
+    }
+  }, [selectedPartnerId]);
   const [printingOrders, setPrintingOrders] = useState<Set<string>>(new Set());
   // Pagination state — initialize from URL ?page= param so we restore position on back-navigation
   const initialPage = Number(searchParams.get('page')) || 1;
@@ -127,6 +137,7 @@ function AdminDashboardContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [statusCounts, setStatusCounts] = useState({ pending: 0, printing: 0, dispatched: 0, paymentPending: 0 });
+  const [financials, setFinancials] = useState({ totalGMV: 0, platformRevenue: 0, partnerPayouts: 0 });
   const ORDERS_PER_PAGE = 10;
 
   // Helper to update the URL ?page= param without a full navigation
@@ -218,9 +229,12 @@ function AdminDashboardContent() {
       const searchName = overrides?.name !== undefined ? overrides.name : nameSearch;
       const searchDateFrom = overrides?.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
       const searchDateTo = overrides?.dateTo !== undefined ? overrides.dateTo : dateTo;
+      
       if (searchName.trim()) params.set('name', searchName.trim());
       if (searchDateFrom) params.set('dateFrom', searchDateFrom);
       if (searchDateTo) params.set('dateTo', searchDateTo);
+      if (selectedPartnerId) params.set('partnerId', selectedPartnerId);
+
       const response = await fetch(`/api/admin/orders?${params.toString()}`);
       const data = await response.json();
 
@@ -235,6 +249,9 @@ function AdminDashboardContent() {
         setTotalCount(data.totalCount);
         if (data.statusCounts) {
           setStatusCounts(data.statusCounts);
+        }
+        if (data.financials) {
+          setFinancials(data.financials);
         }
       } else {
         showError('Failed to fetch orders');
@@ -391,6 +408,51 @@ function AdminDashboardContent() {
             }
           />
 
+          {/* Financial Overview (Phase 12) */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Financial Overview (Paid Orders)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-5 rounded-lg shadow-sm border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-700">Total GMV</p>
+                    <p className="text-3xl font-bold text-blue-900">₹{financials.totalGMV.toLocaleString()}</p>
+                    <p className="text-xs text-blue-600 mt-1">Gross Merchandise Volume</p>
+                  </div>
+                  <div className="bg-blue-200 p-3 rounded-full">
+                    <MoneyIcon size={24} className="text-blue-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-lg shadow-sm border border-green-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-700">Platform Revenue (10%)</p>
+                    <p className="text-3xl font-bold text-green-900">₹{financials.platformRevenue.toLocaleString()}</p>
+                    <p className="text-xs text-green-600 mt-1">Platform Commission</p>
+                  </div>
+                  <div className="bg-green-200 p-3 rounded-full">
+                    <BuildingIcon size={24} className="text-green-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-5 rounded-lg shadow-sm border border-purple-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-700">Partner Payouts (90%)</p>
+                    <p className="text-3xl font-bold text-purple-900">₹{financials.partnerPayouts.toLocaleString()}</p>
+                    <p className="text-xs text-purple-600 mt-1">Split to Shopkeepers</p>
+                  </div>
+                  <div className="bg-purple-200 p-3 rounded-full">
+                    <LocationIcon size={24} className="text-purple-700" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Order Status Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
@@ -510,11 +572,22 @@ function AdminDashboardContent() {
             />
           </div>
 
+          {/* Franchise Partners Grid (Drill-down filter) */}
+          <AdminPartnersView 
+            selectedPartnerId={selectedPartnerId}
+            onSelectPartner={(id) => {
+              setSelectedPartnerId(id);
+              // Fetch orders will trigger automatically via a new useEffect, or we can call it directly
+            }}
+          />
+
           {/* Orders Table */}
-          <div className="bg-white shadow-xl rounded-lg overflow-hidden border border-gray-200">
+          <div className="bg-white shadow-xl rounded-lg overflow-hidden border border-gray-200 mt-8" id="orders-table">
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">All Orders ({totalCount})</h2>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {selectedPartnerId ? 'Partner Orders' : 'All Orders'} ({totalCount})
+                </h2>
                 <p className="text-sm text-gray-600">💡 Click on any order row to view detailed information</p>
               </div>
 

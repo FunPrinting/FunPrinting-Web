@@ -319,6 +319,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Connect to database to fetch Partner Razorpay account for Split Payment
+    await connectDB();
+    
+    let transfers = undefined;
+    if (deliveryOption.partnerId) {
+      const Partner = (await import('@/models/Partner')).default;
+      const partner = await Partner.findById(deliveryOption.partnerId);
+      
+      if (partner && partner.razorpayAccountId) {
+        // Calculate Partner share (e.g., 90% of baseAmount, we keep 10% platform fee)
+        const partnerSharePercent = 90;
+        const partnerAmountInPaise = Math.round((baseAmount * 100) * (partnerSharePercent / 100));
+        
+        transfers = [{
+          account: partner.razorpayAccountId,
+          amount: partnerAmountInPaise,
+          currency: 'INR',
+          notes: {
+            orderType,
+            partnerId: partner._id.toString()
+          },
+          linked_account_notes: ['orderType'],
+          on_hold: false
+        }];
+        
+        console.log(`🔗 Razorpay Route configured for Partner ${partner._id}: ${partnerSharePercent}% split (₹${partnerAmountInPaise / 100})`);
+      } else {
+         console.warn(`⚠️ Partner ${deliveryOption.partnerId} does not have a linked Razorpay account. Payment will be fully routed to the platform.`);
+      }
+    }
+
     // Create Razorpay order with final amount (including hidden fee)
     const razorpayOrder = await createRazorpayOrder({
       amount: finalAmount,
@@ -330,14 +361,12 @@ export async function POST(request: NextRequest) {
         amount: baseAmount.toString(), // Store original amount in notes
         razorpayFee: razorpayFee.toString(), // Store fee for tracking
       },
+      transfers,
     });
 
     console.log(`✅ Razorpay order created: ${razorpayOrder.id}`);
 
-    // Connect to database and create pending order immediately
-    await connectDB();
-
-    // Fetch pickup location details if pickup is selected
+    // Fetch pickup location details if pickup is selected (Legacy fallback)
     let enhancedDeliveryOption = deliveryOption;
     if (deliveryOption.type === 'pickup' && deliveryOption.pickupLocationId) {
       try {
@@ -464,6 +493,7 @@ export async function POST(request: NextRequest) {
         fileOptions: printingOptions.fileOptions, // Store per-file printing options
       },
       deliveryOption: enhancedDeliveryOption,
+      partnerId: deliveryOption.partnerId, // Link order to specific partner
       expectedDate: expectedDate ? new Date(expectedDate) : undefined,
       amount: calculatedAmount,
       razorpayOrderId: razorpayOrder.id,

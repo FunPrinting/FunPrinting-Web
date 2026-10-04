@@ -12,6 +12,7 @@ import { DocumentIcon, WarningIcon, InfoIcon, FolderIcon, CheckIcon, TruckIcon, 
 import toast from 'react-hot-toast';
 import { getCart, addToCart, removeFromCart, clearCart, getCartItemCount, getCartWeight, estimateItemPrice, estimateCartTotal, fileToDataUrl, dataUrlToFile, generateCartId, getCartItem, updateCartItem, CartItem } from '@/lib/cartUtils';
 import { PricingData } from '@/lib/pricing';
+import PartnerMapSelector from '@/components/PartnerMapSelector';
 
 interface FilePrintingOptions {
   pageSize: 'A4' | 'A3';
@@ -67,6 +68,7 @@ interface DeliveryOption {
   state?: string;
   pinCode?: string;
   pickupLocationId?: string;
+  partnerId?: string;
 }
 
 interface PickupLocation {
@@ -371,29 +373,27 @@ const getPageColorPreview = (totalPages: number, pageColors?: { colorPages: numb
 const countPagesInFile = async (file: File): Promise<number> => {
   if (file.type === 'application/pdf') {
     try {
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-
-      const blob = new Blob([file], { type: 'application/pdf' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const loadingTask = pdfjsLib.getDocument(blobUrl);
-      const pdf = await loadingTask.promise;
-      const pageCount = pdf.numPages;
-
-      URL.revokeObjectURL(blobUrl);
-      return pageCount;
-    } catch (error) {
-      console.error('Error reading PDF page count with PDF.js:', error);
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const { PDFDocument } = await import('pdf-lib');
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        return pdfDoc.getPageCount();
-      } catch (pdfLibError) {
-        console.error('Error reading PDF page count with pdf-lib:', pdfLibError);
-        return Math.max(1, Math.floor(file.size / 50000));
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      console.log(`[Phase 10 Security] Verifying PDF server-side: ${file.name}`);
+      const response = await fetch('/api/upload/verify', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.verifiedPageCount) {
+          console.log(`[Phase 10 Security] Server verified page count: ${data.verifiedPageCount}`);
+          return data.verifiedPageCount;
+        }
       }
+      throw new Error('Server validation failed');
+    } catch (error) {
+      console.error('Error verifying PDF on server:', error);
+      // Fallback only if absolutely necessary, but in a true business app this should block checkout
+      return Math.max(1, Math.floor(file.size / 50000));
     }
   } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     file.type === 'application/msword') {
@@ -416,10 +416,10 @@ const countPagesInFile = async (file: File): Promise<number> => {
           return data.totalPages;
         }
       }
-      return 1;
+      throw new Error('Failed to parse docx pages via API');
     } catch (error) {
       console.error('Error parsing Word document:', error);
-      return 1;
+      throw error;
     }
   } else {
     // For other file types (images, etc.), assume 1 page
@@ -2405,23 +2405,40 @@ function OrderPageContent() {
                           multiple
                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.svg"
                           onChange={async (e) => {
-                            const files = Array.from(e.target.files || []);
-                            if (files.length > 0) {
+                            const validFiles = Array.from(e.target.files || []);
+                            
+                            if (validFiles.length > 0) {
                               setIsCountingPages(true);
                               setPdfLoaded(false);
 
                               // Add new files to the existing list
-                              setSelectedFiles(prev => [...prev, ...files]);
+                              setSelectedFiles(prev => [...prev, ...validFiles]);
 
                               // Create preview URLs for all files
-                              const newUrls = files.map(file => URL.createObjectURL(file));
+                              const newUrls = validFiles.map(file => URL.createObjectURL(file));
                               setPdfUrls(prev => [...prev, ...newUrls]);
 
                               // Count pages for each new file
                               const newPageCounts: number[] = [];
-                              for (const file of files) {
-                                const pageCount = await countPagesInFile(file);
-                                newPageCounts.push(pageCount);
+                              let hasErrors = false;
+                              for (const file of validFiles) {
+                                try {
+                                  const pageCount = await countPagesInFile(file);
+                                  newPageCounts.push(pageCount);
+                                } catch (error) {
+                                  console.error(`Failed to parse file: ${file.name}`, error);
+                                  alert(`❌ We couldn't automatically read the page count for "${file.name}". Please save it as a .PDF and try again to guarantee accurate pricing.`);
+                                  hasErrors = true;
+                                  break;
+                                }
+                              }
+
+                              if (hasErrors) {
+                                // Revert UI states if parsing failed
+                                setIsCountingPages(false);
+                                setSelectedFiles(prev => prev.slice(0, prev.length - validFiles.length));
+                                setPdfUrls(prev => prev.slice(0, prev.length - validFiles.length));
+                                return;
                               }
 
                               // Update page counts
@@ -2430,27 +2447,27 @@ function OrderPageContent() {
                               // Initialize service options for new files (default to 'service')
                               setPrintingOptions(prev => {
                                 const currentServiceOptions = prev.serviceOptions || [];
-                                const newServiceOptions = [...currentServiceOptions, ...files.map(() => 'service' as const)];
-                                console.log(`📋 Initializing service options: ${currentServiceOptions.length} existing + ${files.length} new = ${newServiceOptions.length} total`);
+                                const newServiceOptions = [...currentServiceOptions, ...validFiles.map(() => 'service' as const)];
+                                console.log(`📋 Initializing service options: ${currentServiceOptions.length} existing + ${validFiles.length} new = ${newServiceOptions.length} total`);
 
                                 // Initialize per-file pageColors array if mixed color is selected
                                 let updatedPageColors = prev.pageColors;
                                 if (prev.color === 'mixed') {
                                   const currentPageColors = Array.isArray(prev.pageColors) ? prev.pageColors : (prev.pageColors ? [prev.pageColors] : []);
-                                  const newPageColors = [...currentPageColors, ...files.map(() => ({ colorPages: [] as number[], bwPages: [] as number[] }))];
+                                  const newPageColors = [...currentPageColors, ...validFiles.map(() => ({ colorPages: [] as number[], bwPages: [] as number[] }))];
                                   updatedPageColors = newPageColors;
-                                  console.log(`📋 Initializing per-file pageColors: ${currentPageColors.length} existing + ${files.length} new = ${newPageColors.length} total`);
+                                  console.log(`📋 Initializing per-file pageColors: ${currentPageColors.length} existing + ${validFiles.length} new = ${newPageColors.length} total`);
                                 }
 
                                 // Initialize per-file printing options
                                 const currentFileOptions = prev.fileOptions || [];
-                                const newFileOptions = [...currentFileOptions, ...files.map(() => ({
+                                const newFileOptions = [...currentFileOptions, ...validFiles.map(() => ({
                                   pageSize: prev.pageSize || 'A4',
                                   color: prev.color || 'bw',
                                   sided: prev.sided || 'single',
                                   copies: prev.copies || 1,
                                 }))];
-                                console.log(`📋 Initializing per-file printing options: ${currentFileOptions.length} existing + ${files.length} new = ${newFileOptions.length} total`);
+                                console.log(`📋 Initializing per-file printing options: ${currentFileOptions.length} existing + ${validFiles.length} new = ${newFileOptions.length} total`);
 
                                 return {
                                   ...prev,
@@ -3804,47 +3821,11 @@ function OrderPageContent() {
                       </div>
 
                       {deliveryOption.type === 'pickup' && (
-                        <div className="ml-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                          <h4 className="font-medium text-green-800 mb-3 flex items-center gap-1">
-                            <BuildingIcon size={18} className="w-4.5 h-4.5" />
-                            Select Pickup Location
-                          </h4>
-
-                          {pickupLocations.length > 0 ? (
-                            <select
-                              value={selectedPickupLocation?._id || ''}
-                              onChange={async (e) => {
-                                const location = pickupLocations.find(loc => loc._id === e.target.value);
-                                setSelectedPickupLocation(location || null);
-                                setDeliveryOption(prev => ({
-                                  ...prev,
-                                  pickupLocationId: location?._id
-                                }));
-
-                                if (isAuthenticated && location) {
-                                  try {
-                                    await fetch('/api/user/profile', {
-                                      method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ defaultLocationId: location._id }),
-                                    });
-                                  } catch (error) {
-                                    console.error('Error saving default location:', error);
-                                  }
-                                }
-                              }}
-                              className="w-full px-3 py-2 border border-green-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                            >
-                              <option value="">Select a pickup location</option>
-                              {pickupLocations.map((location) => (
-                                <option key={location._id} value={location._id}>
-                                  {location.name} {location.isDefault ? '(Default)' : ''}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <p className="text-sm text-green-700">Loading pickup locations...</p>
-                          )}
+                        <div className="ml-6 mt-4">
+                          <PartnerMapSelector 
+                            onPartnerSelected={(id) => setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined }))}
+                            selectedPartnerId={deliveryOption.partnerId}
+                          />
                         </div>
                       )}
 

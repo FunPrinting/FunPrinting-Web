@@ -1,0 +1,95 @@
+name: Build Partner Applications
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger when a version tag is pushed (e.g. v1.0.0)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build-electron-pc:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: partner-app/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ./partner-app
+        run: npm ci
+
+      - name: Build Electron Executable (.exe)
+        working-directory: ./partner-app
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: FunPrintingPartner-Windows
+          path: partner-app/dist/*.exe
+
+  build-react-native-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: partner-mobile/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ./partner-mobile
+        run: npm ci
+
+      - name: Setup EAS (Expo Application Services)
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK
+        working-directory: ./partner-mobile
+        run: eas build --platform android --profile production --non-interactive --local
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: FunPrintingPartner-Android
+          path: partner-mobile/*.apk
+
+  release:
+    needs: [build-electron-pc, build-react-native-apk]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: FunPrintingPartner-Windows
+          path: release-artifacts
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: FunPrintingPartner-Android
+          path: release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-artifacts/*.exe
+            release-artifacts/*.apk
+          generate_release_notes: true

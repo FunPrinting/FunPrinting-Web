@@ -194,12 +194,17 @@ export async function GET(request: Request) {
     const nameSearch = url.searchParams.get('name') || '';
     const dateFrom = url.searchParams.get('dateFrom') || '';
     const dateTo = url.searchParams.get('dateTo') || '';
+    const partnerId = url.searchParams.get('partnerId') || '';
 
     console.log(`🔍 ADMIN API - Fetching orders page ${page} (limit ${limit}) at ${new Date().toISOString()}`);
 
     // Build search filter
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const searchFilter: Record<string, any> = {};
+
+    if (partnerId) {
+      searchFilter.partnerId = partnerId;
+    }
 
     if (nameSearch.trim()) {
       const nameRegex = { $regex: nameSearch.trim(), $options: 'i' };
@@ -232,6 +237,13 @@ export async function GET(request: Request) {
       Order.countDocuments({ paymentStatus: 'pending' }),
     ]);
 
+    // Phase 12: Calculate Financial Metrics (Total GMV, Platform 10%, Partner 90%)
+    // To ensure accurate financials, we must calculate this across ALL matching completed orders, not just the paginated slice
+    const allFinancials = await Order.find({ ...searchFilter, paymentStatus: 'completed' }).select('amount');
+    const totalGMV = allFinancials.reduce((sum, order) => sum + (order.amount || 0), 0);
+    const platformRevenue = Math.round(totalGMV * 0.10);
+    const partnerPayouts = Math.round(totalGMV * 0.90);
+
     const totalPages = Math.ceil(totalCount / limit);
 
     console.log(`🔍 ADMIN API - Fetched ${orders.length} of ${totalCount} orders (page ${page}/${totalPages}) at ${new Date().toISOString()}`);
@@ -243,6 +255,11 @@ export async function GET(request: Request) {
       count: orders.length,
       totalCount,
       page,
+      financials: {
+        totalGMV,
+        platformRevenue,
+        partnerPayouts
+      },
       limit,
       totalPages,
       statusCounts: {

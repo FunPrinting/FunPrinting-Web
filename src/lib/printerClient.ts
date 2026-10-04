@@ -2,6 +2,9 @@ import axios, { AxiosInstance } from 'axios';
 import { IOrder } from '@/models/Order';
 
 export interface PrintJobRequest {
+  // Phase 5: Routing
+  partnerId?: string;
+
   // Legacy: single file (for backward compatibility)
   fileUrl?: string;
   fileName?: string;
@@ -104,8 +107,6 @@ export class PrinterClient {
 
     this.apiKey = process.env.PRINTER_API_KEY || '';
     this.timeout = parseInt(process.env.PRINTER_API_TIMEOUT || '5000', 10);
-
-
   }
 
   /**
@@ -174,6 +175,38 @@ export class PrinterClient {
    * Send print job to printer API
    */
   async sendPrintJob(request: PrintJobRequest): Promise<PrintJobResponse> {
+    
+    // Phase 5 Route: If partnerId is provided, route directly to local WebSocket Engine
+    if (request.partnerId) {
+      console.log(`☁️ Phase 5: Routing print job to WebSocket Engine for Partner ${request.partnerId}`);
+      try {
+        const wsResponse = await axios.post('http://localhost:3001/api/dispatch-print-job', {
+          partnerId: request.partnerId,
+          order: {
+            orderId: request.orderId,
+            fileURL: request.fileUrl,
+            fileURLs: request.fileURLs,
+            printingOptions: request.printingOptions
+          }
+        });
+        
+        return {
+          success: wsResponse.data.success,
+          message: wsResponse.data.message || 'Dispatched via WS Engine',
+          jobId: request.orderId,
+          deliveryNumber: `WS-${Date.now().toString().slice(-4)}`
+        };
+      } catch (err: any) {
+        console.error('❌ Failed to route via WebSocket Engine:', err.message);
+        return {
+          success: false,
+          message: 'WebSocket Engine unavailable',
+          error: err.message
+        };
+      }
+    }
+
+    // Legacy Route
     const printerUrl = this.getPrinterUrl(request.printerIndex);
 
     if (!printerUrl) {
@@ -503,6 +536,7 @@ export async function sendPrintJobFromOrder(order: IOrder, printerIndex: number)
     }
 
     const printJob: PrintJobRequest = {
+      partnerId: order.partnerId,
       fileURLs,
       originalFileNames,
       fileTypes,
@@ -574,6 +608,7 @@ export async function sendPrintJobFromOrder(order: IOrder, printerIndex: number)
   }
 
   const printJob: PrintJobRequest = {
+    partnerId: order.partnerId,
     fileUrl: order.fileURL!,
     fileName,
     fileType: order.fileType || getFileTypeFromURL(order.fileURL!, fileName),

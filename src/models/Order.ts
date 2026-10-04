@@ -113,6 +113,7 @@ export interface IOrder {
   otpExpiresAt?: Date;            // OTP expiry time
   deliveryVerifiedAt?: Date;      // When delivery was verified/confirmed
   deliveryVerifiedBy?: string;    // Email of person who verified delivery
+  partnerId?: string;             // Reference to the Partner handling this order
   createdAt: Date;
   updatedAt: Date;
 }
@@ -306,6 +307,11 @@ const orderSchema = new mongoose.Schema<IOrder>({
   otpExpiresAt: Date,
   deliveryVerifiedAt: Date,
   deliveryVerifiedBy: String,
+  partnerId: {
+    type: String,
+    required: false,
+    index: true
+  },
 }, {
   timestamps: true,
 });

@@ -61,6 +61,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name,
             image: user.profilePicture,
+            role: user.role,
           };
         } catch (error) {
           // Re-throw EMAIL_NOT_VERIFIED so NextAuth can pass it to the frontend
@@ -117,7 +118,7 @@ export const authOptions: NextAuthOptions = {
             emailVerified: true,
             profilePicture: user.image,
             lastLogin: new Date(),
-            role: 'user', // Regular user by default
+            role: 'customer', // Regular customer by default
           });
 
           console.log(`✅ New user created: ${user.email}`);
@@ -134,6 +135,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.image = user.image;
+        token.role = (user as any).role;
       }
       
       // Refresh profile picture from database on each JWT update
@@ -154,6 +156,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token && session.user) {
         (session.user as any).id = token.id as string;
+        (session.user as any).role = token.role as string;
         // Include profile picture from token
         if (token.image) {
           session.user.image = token.image as string;
