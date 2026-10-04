@@ -158,9 +158,20 @@ export const authOptions: NextAuthOptions = {
       if (token.id) {
         try {
           await connectDB();
-          const dbUser = await User.findById(token.id);
+          let dbUser;
+          // Check if token.id is a valid ObjectId
+          if (token.id && (token.id as string).length === 24) {
+            dbUser = await User.findById(token.id);
+          } else if (token.email) {
+            dbUser = await User.findOne({ email: token.email });
+            if (dbUser) token.id = dbUser._id.toString(); // Self-heal
+          }
+          
           if (dbUser && dbUser.profilePicture) {
             token.image = dbUser.profilePicture;
+          }
+          if (dbUser && dbUser.role) {
+            token.role = dbUser.role;
           }
         } catch (error) {
           console.error('Error fetching user profile picture in JWT:', error);
@@ -180,7 +191,13 @@ export const authOptions: NextAuthOptions = {
           // Only fetch from database if not in token
           try {
             await connectDB();
-            const user = await User.findById(token.id);
+            let user;
+            if (token.id && (token.id as string).length === 24) {
+              user = await User.findById(token.id);
+            } else if (session.user.email) {
+              user = await User.findOne({ email: session.user.email });
+              if (user) (session.user as any).id = user._id.toString(); // Self-heal
+            }
             if (user && user.profilePicture) {
               session.user.image = user.profilePicture;
             }

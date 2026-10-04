@@ -14,11 +14,23 @@ export async function GET(request: Request) {
     }
 
     let role = (session.user as any).role;
-    const partnerId = (session.user as any).id;
+    let partnerId = (session.user as any).id;
+    
+    await connectDB();
+
+    // Resiliency: If partnerId is a legacy Google Provider ID instead of a valid MongoDB ObjectId
+    if (!partnerId || partnerId.length !== 24) {
+      const dbUser = await User.findOne({ email: session.user.email });
+      if (dbUser) {
+        partnerId = dbUser._id.toString();
+        role = dbUser.role;
+      } else {
+        return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
+      }
+    }
     
     if (role !== 'partner' && role !== 'admin') {
       // Auto-upgrade user to partner when they log in via the app
-      await connectDB();
       await User.findByIdAndUpdate(partnerId, { role: 'partner' });
       role = 'partner';
       console.log(`User ${partnerId} auto-upgraded to partner.`);
