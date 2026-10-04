@@ -180,7 +180,7 @@ export class PrinterClient {
     if (request.partnerId) {
       console.log(`☁️ Phase 5: Routing print job to WebSocket Engine for Partner ${request.partnerId}`);
       try {
-        const wsResponse = await axios.post('http://localhost:3001/api/dispatch-print-job', {
+        const wsResponse = await axios.post('https://funprinting-wss.onrender.com/api/dispatch-print-job', {
           partnerId: request.partnerId,
           order: {
             orderId: request.orderId,
