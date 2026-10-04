@@ -20,7 +20,15 @@ export default function PartnerDashboard() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      if (userAgent.indexOf('mac') !== -1) {
+      if (userAgent.indexOf('android') !== -1) {
+        setDownloadText('For Android Mobile');
+        setDownloadBtnText('Download .apk');
+        setDownloadLink('https://github.com/funprinting/partner-apps/releases/latest/download/FunPrintingPartner.apk');
+      } else if (userAgent.indexOf('iphone') !== -1 || userAgent.indexOf('ipad') !== -1) {
+        setDownloadText('Mobile App Coming Soon');
+        setDownloadBtnText('Coming Soon');
+        setDownloadLink('#');
+      } else if (userAgent.indexOf('mac') !== -1) {
         setDownloadText('For macOS');
         setDownloadBtnText('Download .dmg');
         setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg');

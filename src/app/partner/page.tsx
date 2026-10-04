@@ -11,7 +11,13 @@ export default function PartnerPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      if (userAgent.indexOf('mac') !== -1) {
+      if (userAgent.indexOf('android') !== -1) {
+        setDownloadText('Download Android App');
+        setDownloadLink('https://github.com/funprinting/partner-apps/releases/latest/download/FunPrintingPartner.apk');
+      } else if (userAgent.indexOf('iphone') !== -1 || userAgent.indexOf('ipad') !== -1) {
+        setDownloadText('Mobile App Coming Soon');
+        setDownloadLink('#');
+      } else if (userAgent.indexOf('mac') !== -1) {
         setDownloadText('Download for Mac');
         setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg'); // .dmg or .zip depending on your release format
       } else if (userAgent.indexOf('win') !== -1) {
@@ -112,14 +118,28 @@ export default function PartnerPage() {
           </p>
           
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            <button className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl">
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
-              Download for Windows
-            </button>
-            <button className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-100 border border-gray-300 text-gray-800 rounded-xl font-bold hover:bg-gray-200 transition-all shadow-sm">
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91 1.65.17 3.19.9 4.14 2.33-3.66 2.01-3.12 7.02.65 8.33-.24.63-.53 1.34-.88 2.08zm-4.73-15.5c.8-1.04 1.35-2.49 1.19-3.95-1.28.06-2.82.9-3.65 1.93-.72.88-1.38 2.37-1.18 3.79 1.45.13 2.84-.71 3.64-1.77z"/></svg>
-              Download for Mac
-            </button>
+            {downloadText === 'Download Android App' ? (
+              <a href="https://github.com/funprinting/partner-apps/releases/latest/download/FunPrintingPartner.apk" className="flex items-center justify-center gap-3 px-8 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg hover:shadow-xl">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                Download Android App
+              </a>
+            ) : downloadText === 'Mobile App Coming Soon' ? (
+              <button disabled className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-300 text-gray-600 rounded-xl font-bold cursor-not-allowed shadow-sm">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                Mobile App Coming Soon
+              </button>
+            ) : (
+              <>
+                <a href="https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe" className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl">
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                  Download for Windows
+                </a>
+                <a href="https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg" className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-100 border border-gray-300 text-gray-800 rounded-xl font-bold hover:bg-gray-200 transition-all shadow-sm">
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91 1.65.17 3.19.9 4.14 2.33-3.66 2.01-3.12 7.02.65 8.33-.24.63-.53 1.34-.88 2.08zm-4.73-15.5c.8-1.04 1.35-2.49 1.19-3.95-1.28.06-2.82.9-3.65 1.93-.72.88-1.38 2.37-1.18 3.79 1.45.13 2.84-.71 3.64-1.77z"/></svg>
+                  Download for Mac
+                </a>
+              </>
+            )}
           </div>
           <p className="mt-6 text-sm text-gray-500">Version 1.0.0 • Requires Windows 10+ or macOS 11+</p>
         </div>
