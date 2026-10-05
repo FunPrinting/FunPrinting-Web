@@ -3553,7 +3553,27 @@ function OrderPageContent() {
                     <div className="space-y-4">
                       <div className="mb-4">
                         <PartnerMapSelector 
-                          cartItems={cartItems}
+                          cartItems={[
+                            ...cartItems,
+                            ...selectedFiles.map((file, i) => {
+                              const fileOpts = getFilePrintingOptions(i, printingOptions);
+                              return {
+                                id: `virtual-${i}`,
+                                fileName: file.name,
+                                fileSize: file.size,
+                                pageCount: filePageCounts[i] || 1,
+                                printingOptions: {
+                                  pageSize: fileOpts.pageSize,
+                                  color: fileOpts.color,
+                                  sided: fileOpts.sided,
+                                  copies: fileOpts.copies,
+                                  serviceOption: printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service',
+                                  serviceOptions: printingOptions.serviceOptions?.[i] === 'binding' || printingOptions.serviceOption === 'binding' ? ['binding'] : [],
+                                  pageColors: fileOpts.pageColors,
+                                }
+                              };
+                            })
+                          ]}
                           onPartnerSelected={(id, dpName, price) => {
                             setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName }));
                             setPartnerCalculatedPrice(price || null);
