@@ -270,7 +270,8 @@ export async function POST(request: NextRequest) {
 
     // Send print job to printer API if this is a file order
     if (updateResult.orderType === 'file' && (updateResult.fileURL || (updateResult.fileURLs && updateResult.fileURLs.length > 0))) {
-      if (updateResult.deliveryOption?.partnerId) {
+      const targetPartnerId = updateResult.deliveryOption?.partnerId || updateResult.partnerId;
+      if (targetPartnerId) {
         // Send order to partner via WebSocket webhook
         try {
           const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
@@ -279,7 +280,7 @@ export async function POST(request: NextRequest) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              partnerId: updateResult.deliveryOption.partnerId,
+              partnerId: targetPartnerId,
               order: updateResult
             })
           });
