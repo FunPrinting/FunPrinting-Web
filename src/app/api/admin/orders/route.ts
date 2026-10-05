@@ -203,15 +203,24 @@ export async function GET(request: Request) {
     const searchFilter: Record<string, any> = {};
 
     if (partnerId) {
-      searchFilter.partnerId = partnerId;
+      if (!searchFilter.$and) searchFilter.$and = [];
+      searchFilter.$and.push({
+        $or: [
+          { partnerId: partnerId },
+          { 'deliveryOption.partnerId': partnerId }
+        ]
+      });
     }
 
     if (nameSearch.trim()) {
       const nameRegex = { $regex: nameSearch.trim(), $options: 'i' };
-      searchFilter.$or = [
-        { 'studentInfo.name': nameRegex },
-        { 'customerInfo.name': nameRegex },
-      ];
+      if (!searchFilter.$and) searchFilter.$and = [];
+      searchFilter.$and.push({
+        $or: [
+          { 'studentInfo.name': nameRegex },
+          { 'customerInfo.name': nameRegex },
+        ]
+      });
     }
 
     if (dateFrom || dateTo) {

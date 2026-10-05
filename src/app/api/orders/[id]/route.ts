@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
+import Partner from '@/models/Partner';
 
 export async function DELETE(
   request: NextRequest,
@@ -76,9 +77,27 @@ export async function GET(
       );
     }
     
+    // Find the partner if partnerId exists
+    let partnerInfo = null;
+    const partnerId = order.partnerId || order.deliveryOption?.partnerId;
+    if (partnerId) {
+      const partner = await Partner.findById(partnerId);
+      if (partner) {
+        partnerInfo = {
+          businessName: partner.businessName,
+          email: partner.email,
+          phone: partner.phone,
+          address: partner.address
+        };
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      order
+      order: {
+        ...order.toObject(),
+        partnerInfo
+      }
     });
 
   } catch (error) {

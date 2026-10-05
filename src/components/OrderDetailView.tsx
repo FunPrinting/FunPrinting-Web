@@ -424,6 +424,40 @@ export function OrderDetailView(props: OrderDetailViewProps) {
           </div>
         </div>
 
+        {/* Partner Information */}
+        {order.partnerInfo && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <PrinterIcon size={24} className="w-6 h-6" />
+              Print Shop Details
+            </h2>
+            <div className="space-y-3">
+              <div>
+                <span className="text-gray-600">Shop Name:</span>
+                <span className="ml-2 font-medium text-blue-600">{order.partnerInfo.businessName}</span>
+              </div>
+              {order.deliveryOption?.partnerDeliveryPoint && (
+                <div>
+                  <span className="text-gray-600">Delivery Point:</span>
+                  <span className="ml-2 font-medium">{order.deliveryOption.partnerDeliveryPoint}</span>
+                </div>
+              )}
+              {order.partnerInfo.phone && (
+                <div>
+                  <span className="text-gray-600">Phone:</span>
+                  <span className="ml-2 font-medium">{order.partnerInfo.phone}</span>
+                </div>
+              )}
+              {order.partnerInfo.address && (
+                <div>
+                  <span className="text-gray-600">Address:</span>
+                  <span className="ml-2 font-medium">{order.partnerInfo.address}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Delivery Information */}
         {order.deliveryOption && (
           <div className="bg-white rounded-lg shadow-lg p-6">

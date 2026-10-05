@@ -31,7 +31,7 @@ export default function AdminOTPAuth({
           const response = await fetch('/api/auth/send-otp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'adityapandey.dev.in@gmail.com' }),
+            body: JSON.stringify({ email: process.env.NEXT_PUBLIC_ADMIN_EMAIL }),
           });
 
           const data = await response.json();
@@ -65,7 +65,7 @@ export default function AdminOTPAuth({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          email: 'adityapandey.dev.in@gmail.com', 
+          email: process.env.NEXT_PUBLIC_ADMIN_EMAIL, 
           otp: otp 
         }),
       });
@@ -96,7 +96,7 @@ export default function AdminOTPAuth({
       const response = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'adityapandey.dev.in@gmail.com' }),
+        body: JSON.stringify({ email: process.env.NEXT_PUBLIC_ADMIN_EMAIL }),
       });
 
       const data = await response.json();

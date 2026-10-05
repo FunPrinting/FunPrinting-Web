@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has admin role OR is the specific admin email
-    const isAdmin = user.role === 'admin' || email.toLowerCase() === 'adityapandey.dev.in@gmail.com';
+    const isAdmin = user.role === 'admin' || email.toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
 
     return NextResponse.json({ isAdmin });
   } catch (error) {

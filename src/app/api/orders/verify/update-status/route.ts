@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     // Get session (may be null if not logged in)
     const session = await getServerSession();
     const userEmail = session?.user?.email || '';
-    const adminEmail = process.env.ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com';
+    const adminEmail = process.env.ADMIN_EMAIL ;
     const isAdmin = userEmail.toLowerCase() === adminEmail.toLowerCase();
     const isOrderOwner = userEmail.toLowerCase() === order.customerInfo.email.toLowerCase();
 

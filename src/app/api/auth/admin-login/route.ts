@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get admin credentials from environment variables
-    const adminEmail = process.env.ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com';
+    const adminEmail = process.env.ADMIN_EMAIL ;
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
     // Check if credentials match

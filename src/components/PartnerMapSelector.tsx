@@ -147,7 +147,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
         
         if (data.success) {
           // Calculate price for each partner (distance and filtering is now done on backend)
-          let validPartners = data.partners.map((p: Partner) => {
+          const validPartners = data.partners.map((p: Partner) => {
             const pricing = p.pricing || { perPageBW: 2, perPageColor: 10, binding: 30 };
             
             let total = 0;

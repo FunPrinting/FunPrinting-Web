@@ -6,7 +6,7 @@ const transporter = nodemailer.createTransport({
   port: parseInt(process.env.EMAIL_PORT || '587'),
   secure: false, // true for 465, false for other ports
   auth: {
-    user: process.env.EMAIL_HOST_USER || 'adityapandey.dev.in@gmail.com',
+    user: process.env.EMAIL_HOST_USER ,
     pass: process.env.EMAIL_HOST_PASSWORD || 'hagbaiwzqltgfflz',
   },
   tls: {
@@ -41,7 +41,7 @@ export interface OrderNotificationData {
 
 export async function sendNewOrderNotification(orderData: OrderNotificationData): Promise<boolean> {
   try {
-    const adminEmail = process.env.ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com';
+    const adminEmail = process.env.ADMIN_EMAIL ;
     
     // Debug logging
     console.log('📧 Sending new order notification...');
@@ -451,7 +451,7 @@ export async function sendPaymentReminderToCustomer(orderData: OrderNotification
 
 export async function sendPaymentReminderToAdmin(orderData: OrderNotificationData): Promise<boolean> {
   try {
-    const adminEmail = process.env.ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com';
+    const adminEmail = process.env.ADMIN_EMAIL ;
     
     console.log('📧 Sending payment reminder to admin...');
     console.log('📧 Admin email:', adminEmail);
@@ -547,7 +547,7 @@ export async function sendPaymentReminderToAdmin(orderData: OrderNotificationDat
 
 export async function sendPaymentNotification(orderData: OrderNotificationData, paymentStatus: 'completed' | 'failed'): Promise<boolean> {
   try {
-    const adminEmail = process.env.ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com';
+    const adminEmail = process.env.ADMIN_EMAIL ;
     
     const statusEmoji = paymentStatus === 'completed' ? '✅' : '❌';
     const statusColor = paymentStatus === 'completed' ? '#28a745' : '#dc3545';

@@ -36,7 +36,7 @@ export default function VerifyOrderPage() {
   const [successMessage, setSuccessMessage] = useState('');
 
   // Derived state
-  const isAdmin = user?.email?.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'adityapandey.dev.in@gmail.com').toLowerCase();
+  const isAdmin = user?.email?.toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
   const isOrderOwner = !!(user?.email && order?.fullEmail && user.email.toLowerCase() === order.fullEmail.toLowerCase());
 
   const fetchOrder = useCallback(async () => {

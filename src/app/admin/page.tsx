@@ -108,7 +108,7 @@ interface Order {
   };
 }
 
-function AdminDashboardContent() {
+export function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string }) {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -121,7 +121,7 @@ function AdminDashboardContent() {
   const [nameSearch, setNameSearch] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
-  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(initialPartnerId || null);
 
   // Re-fetch orders when a partner is selected/deselected
   useEffect(() => {
@@ -1109,7 +1109,7 @@ export default function AdminDashboard() {
     >
       <NotificationProvider>
         <Suspense fallback={<LoadingSpinner message="Loading admin dashboard..." />}>
-          <AdminDashboardContent />
+          <AdminDashboardContent initialPartnerId={undefined} />
         </Suspense>
       </NotificationProvider>
     </AdminGoogleAuth>

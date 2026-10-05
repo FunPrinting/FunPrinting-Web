@@ -18,3 +18,8 @@ env.template
 .env
 .env.local
 .env.production
+
+.env*
+.flaskenv*
+!.env.project
+!.env.vault

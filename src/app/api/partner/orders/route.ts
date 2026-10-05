@@ -25,7 +25,12 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'all';
     
     // Build query
-    const query: any = { partnerId: partner._id.toString() };
+    const query: any = { 
+      $or: [
+        { partnerId: partner._id.toString() },
+        { 'deliveryOption.partnerId': partner._id.toString() }
+      ]
+    };
     if (status !== 'all') {
       query.status = status;
     }
