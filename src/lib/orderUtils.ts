@@ -368,7 +368,9 @@ export const sanitizeOrderData = (orderData: any): OrderData => {
       deliveryCharge: orderData.deliveryOption?.deliveryCharge,
       address: orderData.deliveryOption?.address?.trim(),
       city: orderData.deliveryOption?.city?.trim(),
-      pinCode: orderData.deliveryOption?.pinCode?.trim()
+      pinCode: orderData.deliveryOption?.pinCode?.trim(),
+      partnerId: orderData.deliveryOption?.partnerId,
+      partnerDeliveryPoint: orderData.deliveryOption?.partnerDeliveryPoint
     },
     expectedDate: orderData.expectedDate ? new Date(orderData.expectedDate) : undefined,
     amount: Math.max(0, Math.min(100000, parseFloat(orderData.amount) || 0))
