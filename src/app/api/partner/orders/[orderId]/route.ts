@@ -25,7 +25,7 @@ export async function PATCH(
           const base64Payload = token.split('.')[1];
           const payload = Buffer.from(base64Payload, 'base64').toString('utf8');
           const parsed = JSON.parse(payload);
-          userId = parsed.userId || parsed.id;
+          userId = parsed.userId || parsed.id || parsed.sub || parsed.partnerId;
         } catch (e) {
           console.error("Token decode error:", e);
         }
