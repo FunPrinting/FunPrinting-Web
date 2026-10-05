@@ -30,7 +30,7 @@ export async function GET(
 
     // Explicitly fetch partner details to hydrate the response for the Success Page
     if (order.partnerId) {
-      const partner = await Partner.findById(order.partnerId).select('businessName address location isOnline isActive').lean();
+      const partner = await Partner.findById(order.partnerId).select('businessName address location isOnline isActive phoneNumbers deliveryPoints').lean();
       if (partner) {
         order.partnerDetails = partner;
       }

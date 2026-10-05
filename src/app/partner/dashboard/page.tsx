@@ -301,6 +301,78 @@ export default function PartnerDashboard() {
                 </div>
               </div>
             </div>
+            {/* Shop Settings */}
+            <div className="mt-8 bg-white shadow-lg rounded-xl overflow-hidden border border-gray-100 p-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <PrinterIcon className="w-6 h-6 text-gray-500" />
+                Shop Settings
+              </h3>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.target as HTMLFormElement;
+                const phoneNumbers = (form.elements.namedItem('phoneNumbers') as HTMLInputElement).value
+                  .split(',')
+                  .map(s => s.trim())
+                  .filter(Boolean);
+                
+                const updatedDeliveryPoints = [...(partnerData.deliveryPoints || [])];
+                updatedDeliveryPoints.forEach((dp, idx) => {
+                  const input = form.elements.namedItem(`dp_phone_${idx}`) as HTMLInputElement;
+                  if (input) {
+                    dp.contactNumber = input.value.trim();
+                  }
+                });
+                
+                const res = await fetch('/api/partner/profile', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phoneNumbers, deliveryPoints: updatedDeliveryPoints })
+                });
+                
+                if (res.ok) {
+                  const data = await res.json();
+                  setPartnerData(data.partner);
+                  alert('Settings updated successfully!');
+                } else {
+                  alert('Failed to update settings');
+                }
+              }}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Shop Phone Numbers (comma separated)</label>
+                  <input
+                    type="text"
+                    name="phoneNumbers"
+                    defaultValue={partnerData.phoneNumbers?.join(', ') || ''}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="e.g. +919876543210, 080-12345678"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">These numbers will be visible to all customers ordering from your shop.</p>
+                </div>
+                
+                {partnerData.deliveryPoints?.length > 0 && (
+                  <div className="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 className="font-medium text-gray-800 mb-3">Delivery Points Contact Numbers</h4>
+                    <p className="text-xs text-gray-500 mb-4">These numbers will ONLY be shown to customers who select the specific delivery point.</p>
+                    {partnerData.deliveryPoints.map((dp: any, idx: number) => (
+                      <div key={idx} className="flex gap-4 mb-3 items-center">
+                        <span className="w-1/3 text-sm font-medium text-gray-700">{dp.name}</span>
+                        <input
+                          type="text"
+                          name={`dp_phone_${idx}`}
+                          defaultValue={dp.contactNumber || ''}
+                          className="flex-1 px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="Contact Number for this delivery point"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors">
+                  Save Settings
+                </button>
+              </form>
+            </div>
 
             {/* Phase 8: Order Management Table */}
             <div className="mt-8 bg-white shadow-lg rounded-xl overflow-hidden border border-gray-100">

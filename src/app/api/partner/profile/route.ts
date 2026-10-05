@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
       // Update status if provided
       if (typeof data.isOnline !== 'undefined') partner.isOnline = data.isOnline;
       if (typeof data.isActive !== 'undefined') partner.isActive = data.isActive;
+      if (typeof data.phoneNumbers !== 'undefined') partner.phoneNumbers = data.phoneNumbers;
 
       await partner.save();
     } else {
@@ -116,7 +117,8 @@ export async function POST(request: NextRequest) {
         earnings: { totalRevenue: 0, pendingPayout: 0 },
         servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },
         pricing: data.pricing || { perPageBW: 5, perPageColor: 10, binding: 40 },
-        deliveryPoints: data.deliveryPoints || []
+        deliveryPoints: data.deliveryPoints || [],
+        phoneNumbers: data.phoneNumbers || []
       });
 
       await partner.save();

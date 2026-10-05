@@ -442,12 +442,30 @@ export function OrderDetailView(props: OrderDetailViewProps) {
                   <span className="ml-2 font-medium">{order.deliveryOption.partnerDeliveryPoint}</span>
                 </div>
               )}
-              {order.partnerInfo.phone && (
+              {(order.partnerInfo.phoneNumbers?.length > 0 || order.partnerInfo.phone) && (
                 <div>
-                  <span className="text-gray-600">Phone:</span>
-                  <span className="ml-2 font-medium">{order.partnerInfo.phone}</span>
+                  <span className="text-gray-600">Shop Phone:</span>
+                  <span className="ml-2 font-medium">
+                    {order.partnerInfo.phoneNumbers?.length > 0 
+                      ? order.partnerInfo.phoneNumbers.join(', ')
+                      : order.partnerInfo.phone}
+                  </span>
                 </div>
               )}
+              {(() => {
+                const selectedDeliveryPoint = order.partnerInfo.deliveryPoints?.find(
+                  (dp: any) => dp.name === order.deliveryOption?.partnerDeliveryPoint
+                );
+                if (selectedDeliveryPoint?.contactNumber) {
+                  return (
+                    <div>
+                      <span className="text-gray-600">Delivery Point Contact:</span>
+                      <span className="ml-2 font-medium text-green-700">{selectedDeliveryPoint.contactNumber}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               {order.partnerInfo.address && (
                 <div>
                   <span className="text-gray-600">Address:</span>

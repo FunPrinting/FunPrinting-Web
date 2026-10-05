@@ -14,6 +14,7 @@ export interface IPartner {
     state: string;
     zipCode: string;
   };
+  phoneNumbers: string[]; // Shop contact numbers
   isActive: boolean;
   isOnline: boolean;
   supportedPrinters: Array<{
@@ -41,6 +42,7 @@ export interface IPartner {
       type: 'Point';
       coordinates: [number, number]; // [longitude, latitude]
     };
+    contactNumber?: string;
     isActive: boolean;
   }>;
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
@@ -61,6 +63,7 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     state: { type: String },
     zipCode: { type: String },
   },
+  phoneNumbers: { type: [String], default: [] },
   isActive: { type: Boolean, required: true, default: true },
   isOnline: { type: Boolean, required: true, default: false },
   supportedPrinters: [{
@@ -88,6 +91,7 @@ const partnerSchema = new mongoose.Schema<IPartner>({
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], required: true }, // [lng, lat]
     },
+    contactNumber: { type: String },
     isActive: { type: Boolean, default: true }
   }],
   razorpayAccountId: { type: String, required: false },

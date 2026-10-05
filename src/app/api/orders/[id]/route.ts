@@ -86,7 +86,8 @@ export async function GET(
         partnerInfo = {
           businessName: partner.businessName,
           email: partner.email,
-          phone: partner.phone,
+          phoneNumbers: partner.phoneNumbers,
+          deliveryPoints: partner.deliveryPoints,
           address: partner.address
         };
       }
