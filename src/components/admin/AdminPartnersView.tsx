@@ -115,6 +115,7 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                  {partner.servicesOffered?.binding && <span className="px-2 py-1 bg-purple-50 text-purple-600 text-xs rounded border border-purple-100">Binding</span>}
                  {partner.servicesOffered?.cashOnDelivery && <span className="px-2 py-1 bg-green-50 text-green-600 text-xs rounded border border-green-100">COD</span>}
               </div>
+            </div>
           </div>
         ))}
 
