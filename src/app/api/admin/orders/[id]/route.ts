@@ -193,15 +193,16 @@ export async function DELETE(
     }
 
     // If the order has a partnerId, try to notify the partner desktop to cancel the job
-    if (order.deliveryOption && order.deliveryOption.partnerId) {
+    const targetPartnerId = order.deliveryOption?.partnerId || order.partnerId;
+    if (targetPartnerId) {
       try {
         const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
-        console.log(`🛑 Sending cancel request to partner ${order.deliveryOption.partnerId} for order ${order.orderId}`);
+        console.log(`🛑 Sending cancel request to partner ${targetPartnerId} for order ${order.orderId}`);
         await fetch(`${wssApiUrl}/api/cancel-print-job`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            partnerId: order.deliveryOption.partnerId,
+            partnerId: targetPartnerId,
             orderId: order.orderId
           })
         });
