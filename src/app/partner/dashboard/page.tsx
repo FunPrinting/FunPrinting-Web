@@ -20,19 +20,29 @@ export default function PartnerDashboard() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      if (userAgent.indexOf('android') !== -1) {
+      const isAndroid = /android/i.test(userAgent);
+      const isIOS = /iphone|ipad|ipod/i.test(userAgent);
+      const isMobile = isAndroid || isIOS || /mobile/i.test(userAgent);
+      const isMac = /mac/i.test(userAgent);
+      const isWin = /win/i.test(userAgent);
+
+      if (isAndroid) {
         setDownloadText('For Android Mobile');
         setDownloadBtnText('Download .apk');
         setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk');
-      } else if (userAgent.indexOf('iphone') !== -1 || userAgent.indexOf('ipad') !== -1) {
-        setDownloadText('Mobile App Coming Soon');
-        setDownloadBtnText('Coming Soon');
-        setDownloadLink('#');
-      } else if (userAgent.indexOf('mac') !== -1) {
+      } else if (isIOS) {
+        setDownloadText('For iOS Mobile');
+        setDownloadBtnText('Download iOS App');
+        setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest');
+      } else if (isMobile) {
+        setDownloadText('For Mobile Devices');
+        setDownloadBtnText('Download Mobile App');
+        setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk');
+      } else if (isMac && !isIOS) {
         setDownloadText('For macOS');
         setDownloadBtnText('Download .dmg');
         setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg');
-      } else if (userAgent.indexOf('win') !== -1) {
+      } else if (isWin) {
         setDownloadText('For Windows PC');
         setDownloadBtnText('Download .exe');
         setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');

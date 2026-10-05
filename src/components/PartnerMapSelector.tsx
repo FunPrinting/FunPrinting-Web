@@ -28,6 +28,16 @@ interface Partner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  pricing?: {
+    perPageBW: number;
+    perPageColor: number;
+    binding: number;
+  };
+  supportedPrinters?: Array<{
+    name: string;
+    isColor: boolean;
+    paperSizes: string[];
+  }>;
   deliveryPoints?: Array<{
     name: string;
     location: {
@@ -39,11 +49,12 @@ interface Partner {
 }
 
 interface PartnerMapSelectorProps {
-  onPartnerSelected: (partnerId: string, deliveryPointName?: string) => void;
+  onPartnerSelected: (partnerId: string, deliveryPointName?: string, calculatedPrice?: number) => void;
   selectedPartnerId?: string;
+  cartItems: any[];
 }
 
-export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerId }: PartnerMapSelectorProps) {
+export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerId, cartItems }: PartnerMapSelectorProps) {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,11 +88,62 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
       try {
         setIsLoading(true);
         const [lat, lng] = userLocation;
-        const res = await fetch(`/api/partners/nearby?lat=${lat}&lng=${lng}&radius=20`); // 20km radius
+        const res = await fetch(`/api/partners/nearby?lat=${lat}&lng=${lng}&radius=20`);
         const data = await res.json();
         
         if (data.success) {
-          setPartners(data.partners);
+          // Filter partners based on cart requirements
+          const requiresColor = cartItems.some(item => item.options?.color === 'color' || item.options?.color === 'mixed' || item.printingOptions?.color === 'color' || item.printingOptions?.color === 'mixed');
+          const requiresBinding = cartItems.some(item => item.options?.serviceOptions?.includes('binding') || item.options?.serviceOption === 'binding' || item.printingOptions?.serviceOptions?.includes('binding') || item.printingOptions?.serviceOption === 'binding');
+          const requiresA3 = cartItems.some(item => item.options?.pageSize === 'A3' || item.printingOptions?.pageSize === 'A3');
+
+          let validPartners = data.partners.filter((p: Partner) => {
+            if (requiresColor) {
+              const hasColorPrinter = p.supportedPrinters?.some(pr => pr.isColor);
+              if (!hasColorPrinter) return false;
+            }
+            if (requiresBinding && !p.servicesOffered?.binding) return false;
+            if (requiresA3) {
+              const hasA3Printer = p.supportedPrinters?.some(pr => pr.paperSizes?.includes('A3'));
+              if (!hasA3Printer) return false;
+            }
+            return true;
+          });
+
+          // Calculate price for each valid partner
+          validPartners = validPartners.map((p: Partner) => {
+            const pricing = p.pricing || { perPageBW: 2, perPageColor: 10, binding: 30 }; // Fallback pricing
+            
+            // Calculate total for cart
+            let total = 0;
+            for (const item of cartItems) {
+               const opts = item.options || item.printingOptions || {};
+               const copies = opts.copies || 1;
+               const pageSizeMultiplier = opts.pageSize === 'A3' ? 2 : 1;
+               const sidedMultiplier = opts.sided === 'double' ? 1.5 : 1;
+
+               let itemTotal = 0;
+               if (opts.color === 'mixed' && opts.pageColors) {
+                 const colorCount = opts.pageColors.colorPages?.length || 0;
+                 const bwCount = opts.pageColors.bwPages?.length || 0;
+                 itemTotal = ((colorCount * pricing.perPageColor) + (bwCount * pricing.perPageBW)) * pageSizeMultiplier * sidedMultiplier;
+               } else if (opts.color === 'color') {
+                 itemTotal = item.pageCount * pricing.perPageColor * pageSizeMultiplier * sidedMultiplier;
+               } else {
+                 itemTotal = item.pageCount * pricing.perPageBW * pageSizeMultiplier * sidedMultiplier;
+               }
+               itemTotal *= copies;
+
+               if (opts.serviceOption === 'binding' || (opts.serviceOptions && opts.serviceOptions.includes('binding'))) {
+                 itemTotal += pricing.binding * copies;
+               }
+               total += itemTotal;
+            }
+
+            return { ...p, calculatedPrice: Math.ceil(total) };
+          });
+
+          setPartners(validPartners);
         } else {
           setError(data.error);
         }
@@ -94,11 +156,11 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
     };
 
     fetchPartners();
-  }, [userLocation]);
+  }, [userLocation, cartItems]);
 
-  const handlePartnerSelect = (partner: Partner, deliveryPointName?: string) => {
+  const handlePartnerSelect = (partner: Partner & { calculatedPrice?: number }, deliveryPointName?: string) => {
     setSelectedDeliveryPoint(deliveryPointName);
-    onPartnerSelected(partner._id, deliveryPointName);
+    onPartnerSelected(partner._id, deliveryPointName, partner.calculatedPrice);
   };
 
   return (

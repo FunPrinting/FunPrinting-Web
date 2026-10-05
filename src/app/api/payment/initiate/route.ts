@@ -139,7 +139,29 @@ export async function POST(request: NextRequest) {
     const pageCount = printingOptions.pageCount || 1;
     console.log(`📥 Payment initiation - pageCount: ${pageCount}`);
 
-    // Get pricing from database
+    // Connect to database to fetch Partner Razorpay account & pricing
+    await connectDB();
+    
+    let partnerPricing: { perPageBW: number; perPageColor: number; binding: number } | null = null;
+    let partnerRazorpayId: string | null = null;
+    let partnerIdString: string | null = null;
+    
+    if (deliveryOption.partnerId) {
+      const Partner = (await import('@/models/Partner')).default;
+      const partner = await Partner.findById(deliveryOption.partnerId);
+      if (partner) {
+        partnerIdString = partner._id.toString();
+        if (partner.pricing) {
+          partnerPricing = partner.pricing;
+          console.log(`✅ Using custom pricing from Partner: ${partner.shopName}`);
+        }
+        if (partner.razorpayAccountId) {
+          partnerRazorpayId = partner.razorpayAccountId;
+        }
+      }
+    }
+
+    // Get pricing from database (fallback)
     const pricing = await getPricing();
     
     // Prepare file data first - prioritize arrays over single file fields
@@ -252,30 +274,54 @@ export async function POST(request: NextRequest) {
       const fileBwPages = effectivePageColors.bwPages.length;
       
       // Calculate base cost for this file using helper function
-      const fileBaseCost = calculateFileCost(
-        filePageCount,
-        fileColorPages,
-        fileBwPages,
-        fileBasePrice,
-        colorMultiplier,
-        fileSidedMultiplier,
-        fileOpts.copies,
-        fileOpts.color
-      );
-      calculatedAmount += fileBaseCost;
-      
-      // Add service option cost for this file if it exceeds limit
-      if (filePageCount > minServiceFeePageLimit) {
+      let fileBaseCost = 0;
+      if (partnerPricing) {
+        const pageSizeMultiplier = fileOpts.pageSize === 'A3' ? 2 : 1;
+        const sidedMultiplier = fileOpts.sided === 'double' ? 1.5 : 1;
+        
+        if (fileOpts.color === 'mixed' && effectivePageColors) {
+          fileBaseCost = ((fileColorPages * partnerPricing.perPageColor) + (fileBwPages * partnerPricing.perPageBW)) * pageSizeMultiplier * sidedMultiplier;
+        } else if (fileOpts.color === 'color') {
+          fileBaseCost = filePageCount * partnerPricing.perPageColor * pageSizeMultiplier * sidedMultiplier;
+        } else {
+          fileBaseCost = filePageCount * partnerPricing.perPageBW * pageSizeMultiplier * sidedMultiplier;
+        }
+        
+        fileBaseCost *= fileOpts.copies;
+        
         const fileServiceOption = printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service';
         if (fileServiceOption === 'binding') {
-          calculatedAmount += pricing.additionalServices.binding;
-        } else if (fileServiceOption === 'file') {
-          calculatedAmount += 10; // File handling fee
-        } else if (fileServiceOption === 'service') {
-          calculatedAmount += pricing.additionalServices.minServiceFee;
+          fileBaseCost += partnerPricing.binding * fileOpts.copies; 
+        }
+        
+        calculatedAmount += Math.ceil(fileBaseCost);
+      } else {
+        fileBaseCost = calculateFileCost(
+          filePageCount,
+          fileColorPages,
+          fileBwPages,
+          fileBasePrice,
+          colorMultiplier,
+          fileSidedMultiplier,
+          fileOpts.copies,
+          fileOpts.color
+        );
+        calculatedAmount += fileBaseCost;
+        
+        // Add service option cost for this file if it exceeds limit
+        if (filePageCount > minServiceFeePageLimit) {
+          const fileServiceOption = printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service';
+          if (fileServiceOption === 'binding') {
+            calculatedAmount += pricing.additionalServices.binding;
+          } else if (fileServiceOption === 'file') {
+            calculatedAmount += 10; // File handling fee
+          } else if (fileServiceOption === 'service') {
+            calculatedAmount += pricing.additionalServices.minServiceFee;
+          }
         }
       }
     }
+
     
     console.log(`🔍 Payment initiation - Per-file pricing:`);
     console.log(`  - Files: ${numFiles}`);
@@ -319,32 +365,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Connect to database to fetch Partner Razorpay account for Split Payment
-    await connectDB();
-    
     let transfers = undefined;
     if (deliveryOption.partnerId) {
-      const Partner = (await import('@/models/Partner')).default;
-      const partner = await Partner.findById(deliveryOption.partnerId);
-      
-      if (partner && partner.razorpayAccountId) {
+      if (partnerRazorpayId && partnerIdString) {
         // Calculate Partner share (e.g., 90% of baseAmount, we keep 10% platform fee)
         const partnerSharePercent = 90;
         const partnerAmountInPaise = Math.round((baseAmount * 100) * (partnerSharePercent / 100));
         
         transfers = [{
-          account: partner.razorpayAccountId,
+          account: partnerRazorpayId,
           amount: partnerAmountInPaise,
           currency: 'INR',
           notes: {
             orderType,
-            partnerId: partner._id.toString()
+            partnerId: partnerIdString
           },
           linked_account_notes: ['orderType'],
           on_hold: false
         }];
         
-        console.log(`🔗 Razorpay Route configured for Partner ${partner._id}: ${partnerSharePercent}% split (₹${partnerAmountInPaise / 100})`);
+        console.log(`🔗 Razorpay Route configured for Partner ${partnerIdString}: ${partnerSharePercent}% split (₹${partnerAmountInPaise / 100})`);
       } else {
          console.warn(`⚠️ Partner ${deliveryOption.partnerId} does not have a linked Razorpay account. Payment will be fully routed to the platform.`);
       }

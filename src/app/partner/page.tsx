@@ -11,16 +11,26 @@ export default function PartnerPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      if (userAgent.indexOf('android') !== -1) {
+      const isAndroid = /android/i.test(userAgent);
+      const isIOS = /iphone|ipad|ipod/i.test(userAgent);
+      const isMobile = isAndroid || isIOS || /mobile/i.test(userAgent);
+      const isMac = /mac/i.test(userAgent);
+      const isWin = /win/i.test(userAgent);
+
+      if (isAndroid) {
         setDownloadText('Download Android App');
         setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk');
-      } else if (userAgent.indexOf('iphone') !== -1 || userAgent.indexOf('ipad') !== -1) {
-        setDownloadText('Mobile App Coming Soon');
-        setDownloadLink('#');
-      } else if (userAgent.indexOf('mac') !== -1) {
+      } else if (isIOS) {
+        setDownloadText('Download iOS App');
+        // Placeholder for iOS App Store link, fallback to mobile releases
+        setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest'); 
+      } else if (isMobile) {
+        setDownloadText('Download Mobile App');
+        setDownloadLink('https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk');
+      } else if (isMac && !isIOS) {
         setDownloadText('Download for Mac');
-        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg'); // .dmg or .zip depending on your release format
-      } else if (userAgent.indexOf('win') !== -1) {
+        setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg'); 
+      } else if (isWin) {
         setDownloadText('Download for Windows');
         setDownloadLink('https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe');
       } else {
@@ -118,17 +128,7 @@ export default function PartnerPage() {
           </p>
           
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            {downloadText === 'Download Android App' ? (
-              <a href="https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk" className="flex items-center justify-center gap-3 px-8 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg hover:shadow-xl">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                Download Android App
-              </a>
-            ) : downloadText === 'Mobile App Coming Soon' ? (
-              <button disabled className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-300 text-gray-600 rounded-xl font-bold cursor-not-allowed shadow-sm">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                Mobile App Coming Soon
-              </button>
-            ) : (
+            {downloadText === 'Download Desktop App' ? (
               <>
                 <a href="https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe" className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl">
                   <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
@@ -139,6 +139,11 @@ export default function PartnerPage() {
                   Download for Mac
                 </a>
               </>
+            ) : (
+              <a href={downloadLink} className="flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                {downloadText}
+              </a>
             )}
           </div>
           <p className="mt-6 text-sm text-gray-500">Version 1.0.0 • Requires Windows 10+ or macOS 11+</p>

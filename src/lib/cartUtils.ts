@@ -144,10 +144,47 @@ export function estimateItemPrice(item: CartItem, pricing?: { basePrices?: { A4:
 }
 
 /**
+ * Calculate price for a single cart item based on a specific partner's custom pricing.
+ */
+export function calculatePartnerItemPrice(item: CartItem, partnerPricing: { perPageBW: number; perPageColor: number; binding: number }): number {
+    let total = 0;
+    const copies = item.printingOptions.copies || 1;
+    const pageSizeMultiplier = item.printingOptions.pageSize === 'A3' ? 2 : 1;
+    const sidedMultiplier = item.printingOptions.sided === 'double' ? 1.5 : 1; // Assuming 1.5x for double sided like the default
+
+    if (item.printingOptions.color === 'mixed' && item.printingOptions.pageColors) {
+        const colorCount = item.printingOptions.pageColors.colorPages.length;
+        const bwCount = item.printingOptions.pageColors.bwPages.length;
+        total = ((colorCount * partnerPricing.perPageColor) + (bwCount * partnerPricing.perPageBW)) * pageSizeMultiplier * sidedMultiplier;
+    } else if (item.printingOptions.color === 'color') {
+        total = item.pageCount * partnerPricing.perPageColor * pageSizeMultiplier * sidedMultiplier;
+    } else {
+        total = item.pageCount * partnerPricing.perPageBW * pageSizeMultiplier * sidedMultiplier;
+    }
+
+    total *= copies;
+
+    // Add binding cost if service option is binding
+    if (item.printingOptions.serviceOption === 'binding') {
+        total += partnerPricing.binding * copies; // Usually binding is per copy
+    }
+
+    return Math.ceil(total);
+}
+
+/**
  * Calculate estimated total price for all cart items
  */
 export function estimateCartTotal(pricing?: { basePrices?: { A4: number; A3: number }; multipliers?: { color: number; doubleSided: number }; additionalServices?: { binding: number } }): number {
     return getCart().reduce((sum, item) => sum + estimateItemPrice(item, pricing), 0);
+}
+
+/**
+ * Calculate total price for all cart items based on a specific partner's pricing.
+ */
+export function calculatePartnerCartTotal(partnerPricing: { perPageBW: number; perPageColor: number; binding: number }): number {
+    if (!partnerPricing) return 0;
+    return getCart().reduce((sum, item) => sum + calculatePartnerItemPrice(item, partnerPricing), 0);
 }
 
 /**

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     let userId;
     const session = await getServerSession(authOptions);
-    
+
     if (session && session.user) {
       userId = (session.user as any).id;
     } else {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   try {
     let userId;
     const session = await getServerSession(authOptions);
-    
+
     if (session && session.user) {
       userId = (session.user as any).id;
     } else {
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json();
-    
+
     await connectDB();
 
     let partner = await Partner.findOne({ userId: userId });
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       // Update existing
       partner.businessName = data.businessName || partner.businessName;
       partner.razorpayAccountId = data.razorpayAccountId || partner.razorpayAccountId;
-      
+
       if (data.location) {
         partner.location = data.location;
         partner.address = data.address;
@@ -87,10 +87,13 @@ export async function POST(request: NextRequest) {
       if (data.servicesOffered) {
         partner.servicesOffered = { ...partner.servicesOffered, ...data.servicesOffered };
       }
+      if (data.pricing) {
+        partner.pricing = data.pricing;
+      }
       if (data.deliveryPoints) {
         partner.deliveryPoints = data.deliveryPoints;
       }
-      
+
       // Update status if provided
       if (typeof data.isOnline !== 'undefined') partner.isOnline = data.isOnline;
       if (typeof data.isActive !== 'undefined') partner.isActive = data.isActive;
@@ -112,6 +115,7 @@ export async function POST(request: NextRequest) {
         isOnline: false,
         earnings: { totalRevenue: 0, pendingPayout: 0 },
         servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },
+        pricing: data.pricing || { perPageBW: 5, perPageColor: 10, binding: 40 },
         deliveryPoints: data.deliveryPoints || []
       });
 

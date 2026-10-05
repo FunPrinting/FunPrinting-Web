@@ -500,6 +500,7 @@ function OrderPageContent() {
     email: user?.email || '',
   });
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption>({ type: 'pickup' });
+  const [partnerCalculatedPrice, setPartnerCalculatedPrice] = useState<number | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [isPincodeLookup, setIsPincodeLookup] = useState(false);
   const [pincodeError, setPincodeError] = useState<string>('');
@@ -1319,265 +1320,11 @@ function OrderPageContent() {
     fetchPickupLocations();
   }, []);
 
-  // Calculate amount based on printing options and delivery
+  // Amount is determined entirely by the selected partner's pricing logic.
+  // The partnerCalculatedPrice is updated via the PartnerMapSelector when a delivery point is chosen.
   useEffect(() => {
-    const calculateAmount = async () => {
-      console.log('🔄 Pricing calculation triggered:', { pageCount, copies: printingOptions.copies || 1 });
-      // Always run pricing calculation to show base prices, even with default values
-      if ((printingOptions.copies || 1) > 0) {
-        try {
-          setPricingLoading(true);
-          // Fetch pricing from API
-          console.log('🔍 Fetching pricing from API...');
-          const response = await fetch('/api/pricing');
-          const data = await response.json();
-
-          console.log('📊 Pricing API response:', data);
-
-          if (data.success) {
-            const pricing = data.pricing;
-            setPricingData(pricing); // Store pricing data for UI display
-            setPricingLoading(false);
-
-            // Calculate pricing per file
-            let total = 0;
-            const minServiceFeePageLimit = pricing.additionalServices.minServiceFeePageLimit || 1;
-            const colorMultiplier = pricing.multipliers.color;
-
-            // Calculate cost for each file
-            for (let i = 0; i < selectedFiles.length; i++) {
-              const filePageCount = filePageCounts[i] || 1;
-
-              // Get per-file printing options
-              const fileOpts = getFilePrintingOptions(i, printingOptions);
-              const fileBasePrice = pricing.basePrices[fileOpts.pageSize];
-              const fileSidedMultiplier = fileOpts.sided === 'double' ? pricing.multipliers.doubleSided : 1;
-
-              // Get page colors for this file
-              const filePageColors = getFilePageColors(i, printingOptions.pageColors);
-              // Use file-specific pageColors if available in fileOpts, otherwise use global
-              const effectivePageColors = fileOpts.pageColors || filePageColors;
-              const fileColorPages = effectivePageColors.colorPages.length;
-              const fileBwPages = effectivePageColors.bwPages.length;
-
-              // Calculate base cost for this file using helper function
-              const fileBaseCost = calculateFileCost(
-                filePageCount,
-                fileColorPages,
-                fileBwPages,
-                fileBasePrice,
-                colorMultiplier,
-                fileSidedMultiplier,
-                fileOpts.copies,
-                fileOpts.color
-              );
-              total += fileBaseCost;
-
-              // Add service option cost for this file if it exceeds limit
-              if (filePageCount > minServiceFeePageLimit) {
-                const fileServiceOption = printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service';
-                if (fileServiceOption === 'binding') {
-                  total += pricing.additionalServices.binding;
-                } else if (fileServiceOption === 'file') {
-                  total += 10; // Plastic file fee
-                } else if (fileServiceOption === 'service') {
-                  total += pricing.additionalServices.minServiceFee;
-                }
-              }
-            }
-
-            // Add delivery charge if applicable (includes tier-based speed pricing)
-            if (deliveryOption.type === 'delivery' && deliveryOption.deliveryCharge) {
-              total += deliveryOption.deliveryCharge;
-            }
-
-            console.log(`💰 Frontend pricing calculation:`, {
-              pageCount,
-              color: printingOptions.color,
-              sided: printingOptions.sided,
-              copies: printingOptions.copies,
-              serviceOptions: printingOptions.serviceOptions,
-              total,
-              perFileBreakdown: selectedFiles.map((_, i) => {
-                const filePageCount = filePageCounts[i] || 1;
-                const fileOpts = getFilePrintingOptions(i, printingOptions);
-                const filePageColors = getFilePageColors(i, printingOptions.pageColors);
-                const effectivePageColors = fileOpts.pageColors || filePageColors;
-                const fileColorPages = effectivePageColors.colorPages.length;
-                const fileBwPages = effectivePageColors.bwPages.length;
-                const fileBasePrice = pricing.basePrices[fileOpts.pageSize];
-                const fileSidedMultiplier = fileOpts.sided === 'double' ? pricing.multipliers.doubleSided : 1;
-                const fileCost = calculateFileCost(
-                  filePageCount,
-                  fileColorPages,
-                  fileBwPages,
-                  fileBasePrice,
-                  colorMultiplier,
-                  fileSidedMultiplier,
-                  fileOpts.copies,
-                  fileOpts.color
-                );
-                return {
-                  fileIndex: i + 1,
-                  filePageCount,
-                  filePageSize: fileOpts.pageSize,
-                  fileColor: fileOpts.color,
-                  fileSided: fileOpts.sided,
-                  fileCopies: fileOpts.copies,
-                  fileColorPages,
-                  fileBwPages,
-                  fileCost
-                };
-              })
-            });
-
-            setAmount(total);
-          } else {
-            console.error('❌ Pricing API failed:', data.error);
-            console.log('🔄 Using fallback pricing...');
-            setPricingLoading(false);
-            // Fallback to hardcoded pricing if API fails
-            const basePrice = printingOptions.pageSize === 'A3' ? 10 : 5;
-            console.log(`💰 Fallback base price for ${printingOptions.pageSize}: ₹${basePrice}`);
-
-            // Calculate pricing per file (fallback)
-            let total = 0;
-            const colorMultiplier = 2; // Default fallback color multiplier
-
-            // Calculate cost for each file
-            for (let i = 0; i < selectedFiles.length; i++) {
-              const filePageCount = filePageCounts[i] || 1;
-
-              // Get per-file printing options
-              const fileOpts = getFilePrintingOptions(i, printingOptions);
-              const fileBasePrice = fileOpts.pageSize === 'A3' ? 10 : 5;
-              const fileSidedMultiplier = fileOpts.sided === 'double' ? 1.5 : 1;
-
-              // Get page colors for this file
-              const filePageColors = getFilePageColors(i, printingOptions.pageColors);
-              const effectivePageColors = fileOpts.pageColors || filePageColors;
-              const fileColorPages = effectivePageColors.colorPages.length;
-              const fileBwPages = effectivePageColors.bwPages.length;
-
-              // Calculate base cost for this file using helper function
-              const fileBaseCost = calculateFileCost(
-                filePageCount,
-                fileColorPages,
-                fileBwPages,
-                fileBasePrice,
-                colorMultiplier,
-                fileSidedMultiplier,
-                fileOpts.copies,
-                fileOpts.color
-              );
-              total += fileBaseCost;
-
-              // Add service option cost for this file if it exceeds limit
-              if (filePageCount > 1) {
-                const fileServiceOption = printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service';
-                if (fileServiceOption === 'binding') {
-                  total += 20; // Default binding cost
-                } else if (fileServiceOption === 'file') {
-                  total += 10;
-                } else if (fileServiceOption === 'service') {
-                  total += 5; // Default minimal service fee
-                }
-              }
-            }
-
-            if (deliveryOption.type === 'delivery' && deliveryOption.deliveryCharge) {
-              total += deliveryOption.deliveryCharge;
-            }
-
-            console.log(`💰 Frontend fallback pricing calculation:`, {
-              pageCount,
-              basePrice,
-              color: printingOptions.color,
-              sided: printingOptions.sided,
-              copies: printingOptions.copies,
-              serviceOptions: printingOptions.serviceOptions,
-              total
-            });
-
-            setAmount(total);
-          }
-        } catch (error) {
-          console.error('❌ Error fetching pricing:', error);
-          console.log('🔄 Using fallback pricing due to error...');
-          // Fallback to hardcoded pricing
-          const basePrice = printingOptions.pageSize === 'A3' ? 10 : 5;
-          console.log(`💰 Fallback base price for ${printingOptions.pageSize}: ₹${basePrice}`);
-
-          // Calculate pricing per file (error fallback)
-          let total = 0;
-          const colorMultiplier = 2; // Default fallback color multiplier
-
-          // Calculate cost for each file
-          for (let i = 0; i < selectedFiles.length; i++) {
-            const filePageCount = filePageCounts[i] || 1;
-
-            // Get per-file printing options
-            const fileOpts = getFilePrintingOptions(i, printingOptions);
-            const fileBasePrice = fileOpts.pageSize === 'A3' ? 10 : 5;
-            const fileSidedMultiplier = fileOpts.sided === 'double' ? 1.5 : 1;
-
-            // Get page colors for this file
-            const filePageColors = getFilePageColors(i, printingOptions.pageColors);
-            const effectivePageColors = fileOpts.pageColors || filePageColors;
-            const fileColorPages = effectivePageColors.colorPages.length;
-            const fileBwPages = effectivePageColors.bwPages.length;
-
-            // Calculate base cost for this file using helper function
-            const fileBaseCost = calculateFileCost(
-              filePageCount,
-              fileColorPages,
-              fileBwPages,
-              fileBasePrice,
-              colorMultiplier,
-              fileSidedMultiplier,
-              fileOpts.copies,
-              fileOpts.color
-            );
-            total += fileBaseCost;
-
-            // Add service option cost for this file if it exceeds limit
-            if (filePageCount > 1) {
-              const fileServiceOption = printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || 'service';
-              if (fileServiceOption === 'binding') {
-                total += 20; // Default binding cost
-              } else if (fileServiceOption === 'file') {
-                total += 10;
-              } else if (fileServiceOption === 'service') {
-                total += 5; // Default minimal service fee
-              }
-            }
-          }
-
-          if (deliveryOption.type === 'delivery' && deliveryOption.deliveryCharge) {
-            total += deliveryOption.deliveryCharge;
-          }
-
-          console.log(`💰 Frontend error fallback pricing calculation:`, {
-            pageCount,
-            basePrice,
-            color: printingOptions.color,
-            sided: printingOptions.sided,
-            copies: printingOptions.copies,
-            serviceOptions: printingOptions.serviceOptions,
-            total
-          });
-
-          setAmount(total);
-        }
-      } else {
-        // Reset amount if copies is invalid
-        console.log('🔄 Resetting amount - copies is 0 or invalid');
-        setAmount(0);
-      }
-    };
-
-    calculateAmount();
-  }, [pageCount, printingOptions, deliveryOption, selectedFiles, filePageCounts]);
+    setAmount(partnerCalculatedPrice || 0);
+  }, [partnerCalculatedPrice]);
 
 
   // Save phone number immediately (bypassing debounce)
@@ -3804,385 +3551,20 @@ function OrderPageContent() {
                     )}
 
                     <div className="space-y-4">
-                      <div className="flex items-center space-x-4">
-                        <label className="flex items-center">
-                          <input
-                            type="radio"
-                            name="deliveryType"
-                            value="pickup"
-                            checked={deliveryOption.type === 'pickup'}
-                            onChange={() => setDeliveryOption({ type: 'pickup', pickupLocationId: selectedPickupLocation?._id })}
-                            className="mr-2"
-                          />
-                          <span className="font-medium flex items-center gap-1">
-                            <BuildingIcon size={18} className="w-4.5 h-4.5" />
-                            Pickup from Campus (FREE)
-                          </span>
-                        </label>
+                      <div className="mb-4">
+                        <p className="text-gray-600 text-sm mb-4">
+                          Select a nearby partner delivery point to see exact pricing and submit your order. Map markers are color-coded based on pricing (Green = Cheaper, Red = More Expensive).
+                        </p>
+                        <PartnerMapSelector 
+                          cartItems={cartItems}
+                          onPartnerSelected={(id, dpName, price) => {
+                            setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName }));
+                            setPartnerCalculatedPrice(price || null);
+                          }}
+                          selectedPartnerId={deliveryOption.partnerId}
+                        />
                       </div>
-
-                      {deliveryOption.type === 'pickup' && (
-                        <div className="ml-6 mt-4">
-                          <PartnerMapSelector 
-                            onPartnerSelected={(id, dpName) => setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName }))}
-                            selectedPartnerId={deliveryOption.partnerId}
-                          />
-                        </div>
-                      )}
-
-                      <div className="flex items-center space-x-4">
-                        <label className="flex items-center">
-                          <input
-                            type="radio"
-                            name="deliveryType"
-                            value="delivery"
-                            checked={deliveryOption.type === 'delivery'}
-                            onChange={() => setDeliveryOption(prev => ({
-                              type: 'delivery',
-                              recipientName: prev.recipientName || customerInfo.name || '',
-                              recipientPhone: prev.recipientPhone || customerInfo.phone || '',
-                            }))}
-                            className="mr-2"
-                          />
-                          <span className="font-medium flex items-center gap-1">
-                            <TruckIcon size={18} className="w-4.5 h-4.5" />
-                            Home Delivery {deliveryRateInfo ? `(₹${deliveryRateInfo.charge})` : ''}
-                          </span>
-                        </label>
-                      </div>
-
-                      {deliveryOption.type === 'delivery' && (
-                        <div className="ml-6 p-5 bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-blue-200 shadow-sm">
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                              📍 Delivery Address
-                            </h4>
-                            <button
-                              type="button"
-                              disabled={isDetectingLocation}
-                              onClick={async () => {
-                                if (!navigator.geolocation) {
-                                  toast.error('Geolocation is not supported by your browser');
-                                  return;
-                                }
-                                setIsDetectingLocation(true);
-                                navigator.geolocation.getCurrentPosition(
-                                  async (position) => {
-                                    try {
-                                      const { latitude, longitude } = position.coords;
-                                      const res = await fetch(
-                                        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
-                                        { headers: { 'Accept-Language': 'en' } }
-                                      );
-                                      const data = await res.json();
-                                      if (data?.address) {
-                                        const addr = data.address;
-                                        const pin = addr.postcode || '';
-                                        setDeliveryOption(prev => ({
-                                          ...prev,
-                                          flatBuilding: [addr.house_number, addr.building, addr.apartment].filter(Boolean).join(', ') || prev.flatBuilding || '',
-                                          address: [addr.road, addr.neighbourhood, addr.suburb].filter(Boolean).join(', ') || '',
-                                          landmark: addr.amenity || addr.commercial || prev.landmark || '',
-                                          city: addr.city || addr.town || addr.county || addr.state_district || '',
-                                          state: addr.state || '',
-                                          pinCode: pin,
-                                        }));
-                                        toast.success('Location detected! Please verify the details.');
-                                      } else {
-                                        toast.error('Could not determine address from location');
-                                      }
-                                    } catch {
-                                      toast.error('Failed to fetch address from location');
-                                    } finally {
-                                      setIsDetectingLocation(false);
-                                    }
-                                  },
-                                  (err) => {
-                                    setIsDetectingLocation(false);
-                                    if (err.code === err.PERMISSION_DENIED) {
-                                      toast.error('Location permission denied. Please allow location access.');
-                                    } else {
-                                      toast.error('Could not detect location. Please enter manually.');
-                                    }
-                                  },
-                                  { enableHighAccuracy: true, timeout: 10000 }
-                                );
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg border border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {isDetectingLocation ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-blue-600 border-t-transparent"></div>
-                                  Detecting...
-                                </>
-                              ) : (
-                                <>
-                                  📍 Use My Location
-                                </>
-                              )}
-                            </button>
-                          </div>
-                          <div className="space-y-4">
-                            {/* Recipient Info */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Recipient Name *</label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={deliveryOption.recipientName || ''}
-                                  onChange={(e) => setDeliveryOption(prev => ({ ...prev, recipientName: e.target.value }))}
-                                  placeholder="Full name"
-                                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number *</label>
-                                <input
-                                  type="tel"
-                                  required
-                                  value={deliveryOption.recipientPhone || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
-                                    setDeliveryOption(prev => ({ ...prev, recipientPhone: val }));
-                                  }}
-                                  placeholder="10-digit mobile"
-                                  maxLength={10}
-                                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Flat / House / Building */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Flat / House No. / Building *</label>
-                              <input
-                                type="text"
-                                required
-                                value={deliveryOption.flatBuilding || ''}
-                                onChange={(e) => setDeliveryOption(prev => ({ ...prev, flatBuilding: e.target.value }))}
-                                placeholder="e.g. Flat 302, Tower B, Green Valley Apartments"
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                              />
-                            </div>
-
-                            {/* Area / Street / Locality */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Area / Street / Locality *</label>
-                              <textarea
-                                required
-                                value={deliveryOption.address || ''}
-                                onChange={(e) => setDeliveryOption(prev => ({ ...prev, address: e.target.value }))}
-                                rows={2}
-                                placeholder="e.g. Sector 62, Near Metro Station"
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white resize-none"
-                              />
-                            </div>
-
-                            {/* Landmark */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Landmark (Optional)</label>
-                              <input
-                                type="text"
-                                value={deliveryOption.landmark || ''}
-                                onChange={(e) => setDeliveryOption(prev => ({ ...prev, landmark: e.target.value }))}
-                                placeholder="e.g. Near SBI Bank, Opposite City Mall"
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                              />
-                            </div>
-
-                            {/* PIN Code, City, State */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">PIN Code *</label>
-                                <div className="relative">
-                                  <input
-                                    type="text"
-                                    required
-                                    value={deliveryOption.pinCode || ''}
-                                    onChange={async (e) => {
-                                      const pin = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
-                                      setDeliveryOption(prev => ({ ...prev, pinCode: pin }));
-                                      setPincodeError('');
-
-                                      if (pin.length === 6) {
-                                        setIsPincodeLookup(true);
-                                        try {
-                                          const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
-                                          const data = await res.json();
-                                          if (data?.[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
-                                            const po = data[0].PostOffice[0];
-                                            setDeliveryOption((prev: DeliveryOption) => ({
-                                              ...prev,
-                                              city: po.District || po.Division || '',
-                                              state: po.State || '',
-                                            }));
-                                            // Fetch delivery rate after pincode lookup succeeds
-                                            fetchDeliveryRate(pin);
-                                          } else {
-                                            setPincodeError('Invalid PIN code');
-                                          }
-                                        } catch {
-                                          // Silently fail — user can still type manually
-                                        } finally {
-                                          setIsPincodeLookup(false);
-                                        }
-                                      } else {
-                                        // Clear auto-filled fields when pincode changes
-                                        setDeliveryOption(prev => ({ ...prev, city: '', state: '' }));
-                                      }
-                                    }}
-                                    maxLength={6}
-                                    placeholder="6-digit PIN"
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white ${pincodeError ? 'border-red-400' : 'border-gray-300'
-                                      }`}
-                                  />
-                                  {isPincodeLookup && (
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
-                                    </div>
-                                  )}
-                                </div>
-                                {pincodeError && <p className="text-xs text-red-500 mt-1">{pincodeError}</p>}
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">City *</label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={deliveryOption.city || ''}
-                                  onChange={(e) => setDeliveryOption(prev => ({ ...prev, city: e.target.value }))}
-                                  placeholder={isPincodeLookup ? 'Loading...' : 'City'}
-                                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">State *</label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={deliveryOption.state || ''}
-                                  onChange={(e) => setDeliveryOption(prev => ({ ...prev, state: e.target.value }))}
-                                  placeholder={isPincodeLookup ? 'Loading...' : 'State'}
-                                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Delivery note */}
-                            <div className="flex items-start gap-2 p-3 bg-white rounded-lg border border-blue-100">
-                              <span className="text-blue-500 mt-0.5">ℹ️</span>
-                              <p className="text-xs text-gray-600">
-                                Enter your 6-digit PIN code and City & State will be auto-filled. Delivery charges vary based on your location.
-                              </p>
-                            </div>
-
-                            {/* Delivery Speed Options - shown only for Home Delivery */}
-                            <div className="mt-5">
-                              <label className="block text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                                ⚡ Delivery Speed
-                              </label>
-                              {isFetchingRate ? (
-                                <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-                                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
-                                  Fetching delivery rates...
-                                </div>
-                              ) : deliveryRateInfo?.tiers && deliveryRateInfo.tiers.length > 0 ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                  {deliveryRateInfo.tiers.map((tier: { id: string; label: string; description: string; emoji: string; deliveryCharge: number; estimatedDays: number; courierName: string }) => {
-                                    const isSelected = deliverySpeed === tier.id;
-                                    const colorMap: Record<string, { border: string; bg: string; ring: string; hover: string; text: string; checkBg: string }> = {
-                                      standard: { border: 'border-green-500', bg: 'bg-green-50', ring: 'ring-green-200', hover: 'hover:border-green-300', text: 'text-green-600', checkBg: 'bg-green-500' },
-                                      express: { border: 'border-blue-500', bg: 'bg-blue-50', ring: 'ring-blue-200', hover: 'hover:border-blue-300', text: 'text-blue-600', checkBg: 'bg-blue-500' },
-                                      sameday: { border: 'border-purple-500', bg: 'bg-purple-50', ring: 'ring-purple-200', hover: 'hover:border-purple-300', text: 'text-purple-600', checkBg: 'bg-purple-500' },
-                                    };
-                                    const colors = colorMap[tier.id] || colorMap.standard;
-
-                                    return (
-                                      <button
-                                        key={tier.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setDeliverySpeed(tier.id as 'standard' | 'sameday');
-                                          const d = new Date();
-                                          d.setDate(d.getDate() + (tier.estimatedDays || 5));
-                                          setExpectedDate(d.toISOString().split('T')[0]);
-                                          setDeliveryOption((prev: DeliveryOption) => ({ ...prev, deliveryCharge: tier.deliveryCharge }));
-                                        }}
-                                        className={`relative p-4 rounded-xl border-2 text-left transition-all duration-200 ${isSelected
-                                          ? `${colors.border} ${colors.bg} ring-2 ${colors.ring} shadow-md`
-                                          : `border-gray-200 bg-white ${colors.hover} hover:shadow-sm`
-                                          }`}
-                                      >
-                                        {isSelected && (
-                                          <div className={`absolute -top-2 -right-2 ${colors.checkBg} text-white rounded-full w-5 h-5 flex items-center justify-center text-xs`}>✓</div>
-                                        )}
-                                        {tier.id === 'sameday' && (
-                                          <span className="absolute -top-2 left-3 bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">EXPRESS</span>
-                                        )}
-                                        <div className="text-xl mb-1">{tier.emoji}</div>
-                                        <div className="font-semibold text-gray-800 text-sm">{tier.label}</div>
-                                        <div className="text-xs text-gray-500">{tier.description}</div>
-                                        <div className={`mt-2 text-sm font-bold ${colors.text}`}>
-                                          ₹{tier.deliveryCharge}
-                                        </div>
-                                        <div className="text-[10px] text-gray-400 mt-0.5">via {tier.courierName}</div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                  {(['standard', 'express', 'sameday'] as const).map((speed) => {
-                                    const info = {
-                                      standard: { emoji: '📦', label: 'Standard', desc: '3-5 business days', color: 'green' },
-                                      express: { emoji: '🚀', label: 'Express', desc: '1-2 business days', color: 'blue' },
-                                      sameday: { emoji: '⚡', label: 'Same Day', desc: 'Within 4-6 hours', color: 'purple' },
-                                    }[speed];
-                                    const isSelected = deliverySpeed === speed;
-                                    return (
-                                      <button
-                                        key={speed}
-                                        type="button"
-                                        onClick={() => {
-                                          setDeliverySpeed(speed);
-                                          const d = new Date();
-                                          d.setDate(d.getDate() + (speed === 'sameday' ? 0 : speed === 'express' ? 2 : 5));
-                                          setExpectedDate(d.toISOString().split('T')[0]);
-                                        }}
-                                        className={`relative p-4 rounded-xl border-2 text-left transition-all duration-200 ${isSelected
-                                          ? `border-${info.color}-500 bg-${info.color}-50 ring-2 ring-${info.color}-200 shadow-md`
-                                          : `border-gray-200 bg-white hover:border-${info.color}-300 hover:shadow-sm`
-                                          }`}
-                                      >
-                                        {isSelected && (
-                                          <div className={`absolute -top-2 -right-2 bg-${info.color}-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs`}>✓</div>
-                                        )}
-                                        {speed === 'sameday' && (
-                                          <span className="absolute -top-2 left-3 bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">EXPRESS</span>
-                                        )}
-                                        <div className="text-xl mb-1">{info.emoji}</div>
-                                        <div className="font-semibold text-gray-800 text-sm">{info.label}</div>
-                                        <div className="text-xs text-gray-500">{info.desc}</div>
-                                        <div className="mt-2 text-sm font-bold text-gray-400">
-                                          Enter PIN for rate
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                                📅 Est. delivery: {expectedDate ? new Date(expectedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Select a speed'}
-                                {deliveryRateInfo?.tiers && deliverySpeed !== 'standard' && <span className="text-orange-600 font-medium"> • Express charges apply</span>}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
-
-                    {/* Delivery speed is now selected above in the main form */}
                   </div>
                 )}
               </div>
@@ -4281,13 +3663,17 @@ function OrderPageContent() {
                         handlePayment();
                       }
                     }}
-                    disabled={isProcessingPayment || uploadProgress.uploading || (isAuthenticated && !isRazorpayLoaded)}
+                    disabled={!deliveryOption.partnerId || amount === 0 || isProcessingPayment || uploadProgress.uploading || (isAuthenticated && !isRazorpayLoaded)}
                     className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all text-lg shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     {!isAuthenticated ? (
                       <span className="flex items-center justify-center gap-2">
                         <LockIcon size={20} className="w-5 h-5" />
                         Sign In to Place Order
+                      </span>
+                    ) : !deliveryOption.partnerId ? (
+                      <span className="flex items-center justify-center gap-2">
+                        📍 Select Delivery Point
                       </span>
                     ) : !isRazorpayLoaded ? (
                       <span className="flex items-center justify-center gap-2">
@@ -4307,7 +3693,7 @@ function OrderPageContent() {
                     ) : (
                       <span className="flex items-center justify-center gap-2">
                         <MoneyIcon size={20} className="w-5 h-5" />
-                        Pay ₹{amount.toFixed(2)}
+                        Pay ₹{(amount * 1.03).toFixed(2)}
                       </span>
                     )}
                   </button>
@@ -4767,11 +4153,7 @@ function OrderPageContent() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        {pricing ? (
-                          <p className="font-bold text-sm text-gray-800">₹{estimateItemPrice(item, pricing)}</p>
-                        ) : (
-                          <div className="h-5 w-16 bg-gray-200 animate-pulse rounded ml-auto"></div>
-                        )}
+                        <span className="text-xs text-gray-400 italic">TBD</span>
                       </div>
                     </div>
                   </div>
@@ -4782,21 +4164,13 @@ function OrderPageContent() {
             {/* Cart Footer */}
             {cartItems.length > 0 && (
               <div className="border-t p-4 bg-white">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-sm text-gray-600">Est. Subtotal:</span>
-                  {pricing ? (
-                    <span className="font-bold text-lg text-gray-800">₹{estimateCartTotal(pricing)}</span>
-                  ) : (
-                    <div className="h-7 w-24 bg-gray-200 animate-pulse rounded"></div>
-                  )}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600">Total Price:</span>
+                  <span className="text-sm font-semibold text-gray-800">Calculated at Checkout</span>
                 </div>
-                <p className="text-xs text-gray-400 mb-3">+ delivery charges • exact price at checkout</p>
-
-                <div className="bg-green-50 border border-green-200 rounded-lg p-2 mb-3">
-                  <p className="text-xs text-green-700 flex items-center gap-1">
-                    💰 <strong>Saving on delivery!</strong> Combined weight: {(getCartWeight() * 1000).toFixed(0)}g — one delivery charge for all items
-                  </p>
-                </div>
+                <p className="text-xs text-gray-500 mb-4 bg-blue-50 p-2 rounded-lg border border-blue-100 flex gap-2">
+                  <span>💡</span> Prices vary based on the delivery partner you select at checkout.
+                </p>
 
                 <button
                   onClick={loadCartForCheckout}

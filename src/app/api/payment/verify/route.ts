@@ -270,25 +270,54 @@ export async function POST(request: NextRequest) {
 
     // Send print job to printer API if this is a file order
     if (updateResult.orderType === 'file' && updateResult.fileURL) {
-      try {
-        console.log(`🖨️ Sending print job to printer API for order: ${updateResult.orderId}`);
-        printJobResult = await sendPrintJobFromOrder(updateResult, printerIndex);
-
-        if (printJobResult.success) {
-          // Update order status to 'printing' and delivery number
-          const updateFields: any = { orderStatus: 'printing', status: 'printing' };
-          if (printJobResult.deliveryNumber) {
-            deliveryNumber = printJobResult.deliveryNumber;
-            updateFields.deliveryNumber = deliveryNumber;
+      if (updateResult.deliveryOption?.partnerId) {
+        // Send order to partner via WebSocket webhook
+        try {
+          const wssApiUrl = process.env.WSS_API_URL || 'http://localhost:3001';
+          console.log(`🖨️ Dispatching partner print job via WSS for order: ${updateResult.orderId}`);
+          const dispatchRes = await fetch(`${wssApiUrl}/api/dispatch-print-job`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              partnerId: updateResult.deliveryOption.partnerId,
+              order: updateResult
+            })
+          });
+          
+          if (dispatchRes.ok) {
+            console.log(`✅ Partner print job dispatched to socket room`);
+            const updateFields: any = { orderStatus: 'printing', status: 'printing' };
+            if (deliveryNumber) {
+              updateFields.deliveryNumber = deliveryNumber;
+            }
+            await Order.findByIdAndUpdate(updateResult._id, { $set: updateFields });
+          } else {
+            console.error(`❌ Failed to dispatch partner print job via WSS: ${dispatchRes.statusText}`);
           }
-          await Order.findByIdAndUpdate(updateResult._id, { $set: updateFields });
-          console.log(`✅ Print job sent successfully. Order status updated to 'printing'. Delivery number: ${deliveryNumber}`);
-        } else {
-          console.warn(`⚠️ Print job failed: ${printJobResult.message}. Order stays as 'pending' for manual printing.`);
+        } catch (error) {
+          console.error(`❌ Error dispatching partner print job via WSS:`, error);
         }
-      } catch (printJobError) {
-        console.error('❌ Error sending print job:', printJobError);
-        // Don't fail the order if print job fails - admin can manually print later
+      } else {
+        try {
+          console.log(`🖨️ Sending print job to global printer API for order: ${updateResult.orderId}`);
+          printJobResult = await sendPrintJobFromOrder(updateResult, printerIndex);
+
+          if (printJobResult.success) {
+            // Update order status to 'printing' and delivery number
+            const updateFields: any = { orderStatus: 'printing', status: 'printing' };
+            if (printJobResult.deliveryNumber) {
+              deliveryNumber = printJobResult.deliveryNumber;
+              updateFields.deliveryNumber = deliveryNumber;
+            }
+            await Order.findByIdAndUpdate(updateResult._id, { $set: updateFields });
+            console.log(`✅ Print job sent successfully. Order status updated to 'printing'. Delivery number: ${deliveryNumber}`);
+          } else {
+            console.warn(`⚠️ Print job failed: ${printJobResult.message}. Order stays as 'pending' for manual printing.`);
+          }
+        } catch (printJobError) {
+          console.error('❌ Error sending print job:', printJobError);
+          // Don't fail the order if print job fails - admin can manually print later
+        }
       }
     }
 

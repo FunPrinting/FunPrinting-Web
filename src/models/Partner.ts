@@ -30,6 +30,11 @@ export interface IPartner {
     binding: boolean;
     cashOnDelivery: boolean;
   };
+  pricing?: {
+    perPageBW: number;
+    perPageColor: number;
+    binding: number;
+  };
   deliveryPoints: Array<{
     name: string;
     location: {
@@ -71,6 +76,11 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     printing: { type: Boolean, default: true },
     binding: { type: Boolean, default: false },
     cashOnDelivery: { type: Boolean, default: false },
+  },
+  pricing: {
+    perPageBW: { type: Number, default: 2 },
+    perPageColor: { type: Number, default: 10 },
+    binding: { type: Number, default: 30 },
   },
   deliveryPoints: [{
     name: { type: String, required: true },
