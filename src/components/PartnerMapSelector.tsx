@@ -78,6 +78,10 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
   // UI State
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(null);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   // 1. Get User Location
   useEffect(() => {
@@ -98,6 +102,11 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
     }
   }, []);
 
+  // Reset page when cart changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [cartItems]);
+
   // 2. Fetch Nearby Partners
   useEffect(() => {
     if (!userLocation) return;
@@ -106,33 +115,25 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
       try {
         setIsLoading(true);
         const [lat, lng] = userLocation;
-        const res = await fetch(`/api/partners/nearby?lat=${lat}&lng=${lng}&radius=20`);
+        
+        // Calculate requirements based on cart
+        const requiresColor = cartItems.some(item => item.options?.color === 'color' || item.options?.color === 'mixed' || item.printingOptions?.color === 'color' || item.printingOptions?.color === 'mixed');
+        const requiresBinding = cartItems.some(item => item.options?.serviceOptions?.includes('binding') || item.options?.serviceOption === 'binding' || item.printingOptions?.serviceOptions?.includes('binding') || item.printingOptions?.serviceOption === 'binding');
+        const requiresA3 = cartItems.some(item => item.options?.pageSize === 'A3' || item.printingOptions?.pageSize === 'A3');
+        
+        let url = `/api/partners/nearby?lat=${lat}&lng=${lng}&radius=20&page=${currentPage}&limit=10`;
+        if (requiresColor) url += '&color=true';
+        if (requiresBinding) url += '&binding=true';
+        if (requiresA3) url += '&a3=true';
+
+        const res = await fetch(url);
         const data = await res.json();
         
         if (data.success) {
-          // Filter partners based on cart requirements
-          const requiresColor = cartItems.some(item => item.options?.color === 'color' || item.options?.color === 'mixed' || item.printingOptions?.color === 'color' || item.printingOptions?.color === 'mixed');
-          const requiresBinding = cartItems.some(item => item.options?.serviceOptions?.includes('binding') || item.options?.serviceOption === 'binding' || item.printingOptions?.serviceOptions?.includes('binding') || item.printingOptions?.serviceOption === 'binding');
-          const requiresA3 = cartItems.some(item => item.options?.pageSize === 'A3' || item.printingOptions?.pageSize === 'A3');
-
-          let validPartners = data.partners.filter((p: Partner) => {
-            if (requiresColor) {
-              const hasColorPrinter = p.supportedPrinters?.some(pr => pr.isColor);
-              if (!hasColorPrinter) return false;
-            }
-            if (requiresBinding && !p.servicesOffered?.binding) return false;
-            if (requiresA3) {
-              const hasA3Printer = p.supportedPrinters?.some(pr => pr.paperSizes?.includes('A3'));
-              if (!hasA3Printer) return false;
-            }
-            return true;
-          });
-
-          // Calculate price and distance for each valid partner
-          validPartners = validPartners.map((p: Partner) => {
-            const pricing = p.pricing || { perPageBW: 2, perPageColor: 10, binding: 30 }; // Fallback pricing
+          // Calculate price for each partner (distance and filtering is now done on backend)
+          let validPartners = data.partners.map((p: Partner) => {
+            const pricing = p.pricing || { perPageBW: 2, perPageColor: 10, binding: 30 };
             
-            // Calculate total for cart
             let total = 0;
             for (const item of cartItems) {
                const opts = item.options || item.printingOptions || {};
@@ -158,17 +159,13 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
                total += itemTotal;
             }
 
-            const pLat = p.location?.coordinates[1] || 0;
-            const pLng = p.location?.coordinates[0] || 0;
-            const distance = calculateDistance(lat, lng, pLat, pLng);
-
-            return { ...p, calculatedPrice: Math.ceil(total), distance };
+            return { ...p, calculatedPrice: Math.ceil(total) };
           });
           
-          // Sort by distance
-          validPartners.sort((a: Partner, b: Partner) => (a.distance || 0) - (b.distance || 0));
-
           setPartners(validPartners);
+          if (data.pagination) {
+            setTotalPages(data.pagination.totalPages);
+          }
         } else {
           setError(data.error);
         }
@@ -181,7 +178,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
     };
 
     fetchPartners();
-  }, [userLocation, cartItems]);
+  }, [userLocation, cartItems, currentPage]);
 
   const handlePartnerSelect = (partner: Partner, deliveryPointName?: string) => {
     setSelectedDeliveryPoint(deliveryPointName);
@@ -245,116 +242,152 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
                   <p className="text-gray-500">Try expanding your search radius or changing options.</p>
                 </div>
               ) : (
-                partners.map(partner => (
-                  <div 
-                    key={partner._id} 
-                    className={`bg-white rounded-xl border transition-all duration-200 ${selectedPartnerId === partner._id ? 'border-blue-500 shadow-md ring-1 ring-blue-500' : 'border-gray-200 shadow-sm hover:border-gray-300 hover:shadow-md'}`}
-                  >
-                    {/* Card Main Body */}
-                    <div className="p-5 flex flex-col sm:flex-row justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                              {partner.businessName}
-                              {selectedPartnerId === partner._id && (
-                                <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                              )}
-                            </h3>
-                            <p className="text-gray-500 text-sm mt-1">{partner.address.street}, {partner.address.city}</p>
+                <>
+                  {partners.map(partner => (
+                    <div 
+                      key={partner._id} 
+                      className={`bg-white rounded-xl border transition-all duration-200 ${selectedPartnerId === partner._id ? 'border-blue-500 shadow-md ring-1 ring-blue-500' : 'border-gray-200 shadow-sm hover:border-gray-300 hover:shadow-md'}`}
+                    >
+                      {/* Card Main Body */}
+                      <div className="p-5 flex flex-col sm:flex-row justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                {partner.businessName}
+                                {selectedPartnerId === partner._id && (
+                                  <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                )}
+                              </h3>
+                              <p className="text-gray-500 text-sm mt-1">{partner.address.street}, {partner.address.city}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-4 mt-4">
+                             <div className="flex items-center text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
+                               <svg className="w-4 h-4 mr-1.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                               {partner.distance?.toFixed(1)} km away
+                             </div>
+                             <button 
+                               onClick={() => setExpandedPartnerId(expandedPartnerId === partner._id ? null : partner._id)}
+                               className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                             >
+                               {expandedPartnerId === partner._id ? 'Hide details' : 'View more details'}
+                               <svg className={`w-4 h-4 transition-transform ${expandedPartnerId === partner._id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                             </button>
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-4 mt-4">
-                           <div className="flex items-center text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
-                             <svg className="w-4 h-4 mr-1.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                             {partner.distance?.toFixed(1)} km away
-                           </div>
-                           <button 
-                             onClick={() => setExpandedPartnerId(expandedPartnerId === partner._id ? null : partner._id)}
-                             className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                           >
-                             {expandedPartnerId === partner._id ? 'Hide details' : 'View more details'}
-                             <svg className={`w-4 h-4 transition-transform ${expandedPartnerId === partner._id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                           </button>
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-gray-100 pt-4 sm:pt-0 sm:pl-6 min-w-[140px]">
+                          <div className="text-left sm:text-right">
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Price</p>
+                            <p className="text-2xl font-bold text-gray-900">₹{partner.calculatedPrice}</p>
+                          </div>
+                          <button
+                            onClick={() => handlePartnerSelect(partner, undefined)}
+                            className={`mt-0 sm:mt-3 px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${selectedPartnerId === partner._id && !selectedDeliveryPoint ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
+                          >
+                            {selectedPartnerId === partner._id && !selectedDeliveryPoint ? 'Selected' : 'Select'}
+                          </button>
                         </div>
                       </div>
-                      
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-gray-100 pt-4 sm:pt-0 sm:pl-6 min-w-[140px]">
-                        <div className="text-left sm:text-right">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Price</p>
-                          <p className="text-2xl font-bold text-gray-900">₹{partner.calculatedPrice}</p>
+
+                      {/* Expanded Details Section */}
+                      {expandedPartnerId === partner._id && (
+                        <div className="bg-gray-50 p-5 border-t border-gray-200 rounded-b-xl text-sm">
+                          
+                          {/* Base Pricing Matrix */}
+                          <div className="mb-6">
+                            <h4 className="font-semibold text-gray-900 mb-3 text-xs uppercase tracking-wider">Base Pricing</h4>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <p className="text-gray-500 text-xs mb-1">B&W Print</p>
+                                <p className="font-semibold text-gray-900">₹{partner.pricing?.perPageBW || 2} <span className="text-xs text-gray-500 font-normal">/ page</span></p>
+                              </div>
+                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <p className="text-gray-500 text-xs mb-1">Color Print</p>
+                                <p className="font-semibold text-gray-900">₹{partner.pricing?.perPageColor || 10} <span className="text-xs text-gray-500 font-normal">/ page</span></p>
+                              </div>
+                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <p className="text-gray-500 text-xs mb-1">Binding</p>
+                                <p className="font-semibold text-gray-900">₹{partner.pricing?.binding || 30} <span className="text-xs text-gray-500 font-normal">/ doc</span></p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Delivery Points */}
+                          {partner.deliveryPoints && partner.deliveryPoints.length > 0 && (
+                            <div>
+                              <h4 className="font-semibold text-gray-900 mb-3 text-xs uppercase tracking-wider">Delivery Points</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {partner.deliveryPoints.map((dp, idx) => (
+                                  <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                      <span className="font-medium text-gray-800">{dp.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <a 
+                                        href={`https://www.google.com/maps?q=${dp.location.coordinates[1]},${dp.location.coordinates[0]}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                        title="Open in Maps"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                      </a>
+                                      <button
+                                        onClick={() => handlePartnerSelect(partner, dp.name)}
+                                        className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${selectedPartnerId === partner._id && selectedDeliveryPoint === dp.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                      >
+                                        Select Point
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                         </div>
-                        <button
-                          onClick={() => handlePartnerSelect(partner, undefined)}
-                          className={`mt-0 sm:mt-3 px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${selectedPartnerId === partner._id && !selectedDeliveryPoint ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
-                        >
-                          {selectedPartnerId === partner._id && !selectedDeliveryPoint ? 'Selected' : 'Select'}
-                        </button>
+                      )}
+                    </div>
+                  ))}
+                  
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between bg-white px-4 py-3 border border-gray-200 rounded-xl mt-4">
+                      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm text-gray-700">
+                            Showing page <span className="font-medium">{currentPage}</span> of <span className="font-medium">{totalPages}</span>
+                          </p>
+                        </div>
+                        <div>
+                          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                              disabled={currentPage === 1}
+                              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="sr-only">Previous</span>
+                              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" /></svg>
+                            </button>
+                            
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                              disabled={currentPage === totalPages}
+                              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="sr-only">Next</span>
+                              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                            </button>
+                          </nav>
+                        </div>
                       </div>
                     </div>
-
-                    {/* Expanded Details Section */}
-                    {expandedPartnerId === partner._id && (
-                      <div className="bg-gray-50 p-5 border-t border-gray-200 rounded-b-xl text-sm">
-                        
-                        {/* Base Pricing Matrix */}
-                        <div className="mb-6">
-                          <h4 className="font-semibold text-gray-900 mb-3 text-xs uppercase tracking-wider">Base Pricing</h4>
-                          <div className="grid grid-cols-3 gap-4">
-                            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                              <p className="text-gray-500 text-xs mb-1">B&W Print</p>
-                              <p className="font-semibold text-gray-900">₹{partner.pricing?.perPageBW || 2} <span className="text-xs text-gray-500 font-normal">/ page</span></p>
-                            </div>
-                            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                              <p className="text-gray-500 text-xs mb-1">Color Print</p>
-                              <p className="font-semibold text-gray-900">₹{partner.pricing?.perPageColor || 10} <span className="text-xs text-gray-500 font-normal">/ page</span></p>
-                            </div>
-                            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                              <p className="text-gray-500 text-xs mb-1">Binding</p>
-                              <p className="font-semibold text-gray-900">₹{partner.pricing?.binding || 30} <span className="text-xs text-gray-500 font-normal">/ doc</span></p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Delivery Points */}
-                        {partner.deliveryPoints && partner.deliveryPoints.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-3 text-xs uppercase tracking-wider">Delivery Points</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {partner.deliveryPoints.map((dp, idx) => (
-                                <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    <span className="font-medium text-gray-800">{dp.name}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <a 
-                                      href={`https://www.google.com/maps?q=${dp.location.coordinates[1]},${dp.location.coordinates[0]}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                      title="Open in Maps"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                    </a>
-                                    <button
-                                      onClick={() => handlePartnerSelect(partner, dp.name)}
-                                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${selectedPartnerId === partner._id && selectedDeliveryPoint === dp.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                                    >
-                                      Select Point
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                      </div>
-                    )}
-                  </div>
-                ))
+                  )}
+                </>
               )}
             </div>
           )}
