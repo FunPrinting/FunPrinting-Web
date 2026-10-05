@@ -128,12 +128,21 @@ class ConversionQueue {
     } catch (fetchError) {
       clearTimeout(timeoutId);
       
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error('❌ Conversion timeout');
-        return {
-          success: false,
-          error: 'Conversion timeout',
-        };
+      if (fetchError instanceof Error) {
+        if (fetchError.name === 'AbortError') {
+          console.error('❌ Conversion timeout');
+          return {
+            success: false,
+            error: 'Conversion timeout',
+          };
+        }
+        if (fetchError.message === 'fetch failed') {
+          console.error('❌ Conversion service unreachable (fetch failed)');
+          return {
+            success: false,
+            error: 'PDF Conversion Service is currently unreachable or offline.',
+          };
+        }
       }
       
       throw fetchError;
@@ -277,7 +286,10 @@ export async function convertDocxToPdfSync(
     };
   } catch (error) {
     console.error('❌ Error in PDF conversion:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (errorMessage === 'fetch failed') {
+      errorMessage = 'PDF Conversion Service is currently unreachable or offline.';
+    }
     console.error('❌ Error details:', errorMessage);
     
     return {
@@ -390,10 +402,14 @@ export async function checkConversionStatus(
     };
   } catch (error) {
     console.error('❌ Error checking conversion status:', error);
+    let errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    if (errorMsg === 'fetch failed') {
+      errorMsg = 'PDF Conversion Service is currently unreachable or offline.';
+    }
     return {
       jobId,
       status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMsg,
     };
   }
 }
