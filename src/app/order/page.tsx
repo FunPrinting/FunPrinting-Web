@@ -3552,9 +3552,6 @@ function OrderPageContent() {
 
                     <div className="space-y-4">
                       <div className="mb-4">
-                        <p className="text-gray-600 text-sm mb-4">
-                          Select a nearby partner delivery point to see exact pricing and submit your order. Map markers are color-coded based on pricing (Green = Cheaper, Red = More Expensive).
-                        </p>
                         <PartnerMapSelector 
                           cartItems={cartItems}
                           onPartnerSelected={(id, dpName, price) => {
