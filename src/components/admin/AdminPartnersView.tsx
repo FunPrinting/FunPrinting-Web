@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { DollarIcon, BuildingIcon, CheckIcon, WarningIcon } from '@/components/SocialIcons';
 
 interface Partner {
@@ -116,12 +115,6 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                  {partner.servicesOffered?.binding && <span className="px-2 py-1 bg-purple-50 text-purple-600 text-xs rounded border border-purple-100">Binding</span>}
                  {partner.servicesOffered?.cashOnDelivery && <span className="px-2 py-1 bg-green-50 text-green-600 text-xs rounded border border-green-100">COD</span>}
               </div>
-            </div>
-            <Link href={`/admin/partner/${partner._id}/orders`} className="bg-gray-50 px-5 py-3 border-t border-gray-200 block hover:bg-gray-100 transition-colors" onClick={(e) => e.stopPropagation()}>
-              <span className="text-sm font-medium text-indigo-600 flex items-center gap-1">
-                View Orders &rarr;
-              </span>
-            </Link>
           </div>
         ))}
 
