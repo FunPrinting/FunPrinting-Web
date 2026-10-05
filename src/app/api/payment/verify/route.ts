@@ -273,7 +273,7 @@ export async function POST(request: NextRequest) {
       if (updateResult.deliveryOption?.partnerId) {
         // Send order to partner via WebSocket webhook
         try {
-          const wssApiUrl = process.env.WSS_API_URL || 'http://localhost:3001';
+          const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
           console.log(`🖨️ Dispatching partner print job via WSS for order: ${updateResult.orderId}`);
           const dispatchRes = await fetch(`${wssApiUrl}/api/dispatch-print-job`, {
             method: 'POST',
