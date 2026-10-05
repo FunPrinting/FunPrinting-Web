@@ -85,20 +85,36 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
 
   // 1. Get User Location
   useEffect(() => {
+    const fetchIPLocation = async () => {
+      try {
+        const response = await fetch('https://ipwho.is/');
+        const data = await response.json();
+        if (data && data.success && data.latitude && data.longitude) {
+          setUserLocation([data.latitude, data.longitude]);
+          setError(null);
+        } else {
+          setError('Could not determine location automatically. Please search manually.');
+          setIsLoading(false);
+        }
+      } catch (err) {
+        setError('Network error while retrieving location. Please search manually.');
+        setIsLoading(false);
+      }
+    };
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setUserLocation([position.coords.latitude, position.coords.longitude]);
         },
         (err) => {
-          console.error('Geolocation error:', err);
-          setError('Please enable location services in your browser to find nearby printing partners.');
-          setIsLoading(false);
-        }
+          console.warn('Geolocation error (fallback to IP):', err);
+          fetchIPLocation();
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
       );
     } else {
-      setError('Geolocation is not supported by your browser. Please use a modern browser.');
-      setIsLoading(false);
+      fetchIPLocation();
     }
   }, []);
 
