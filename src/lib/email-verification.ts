@@ -17,7 +17,7 @@ const transporter = nodemailer.createTransport({
 // Send verification email
 export async function sendVerificationEmail(email: string, name: string, token: string): Promise<boolean> {
   try {
-    const verificationUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auth/verify-email?token=${token}`;
+    const verificationUrl = `${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/auth/verify-email?token=${token}`;
     
     const mailOptions = {
       from: process.env.EMAIL_USER || 'noreply@printservice.com',
@@ -80,7 +80,7 @@ export async function sendVerificationEmail(email: string, name: string, token: 
 // Send password reset email
 export async function sendPasswordResetEmail(email: string, name: string, token: string): Promise<boolean> {
   try {
-    const resetUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auth/reset-password?token=${token}`;
+    const resetUrl = `${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/auth/reset-password?token=${token}`;
     
     const mailOptions = {
       from: process.env.EMAIL_USER || 'noreply@printservice.com',

@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     // Replace placeholders in Word document
     let personalizedWordBuffer: Buffer;
     try {
-      const replaceResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/replace-placeholders`, {
+      const replaceResponse = await fetch(`${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/api/replace-placeholders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     // Convert Word to PDF using Adobe API
     let pdfBuffer: Buffer;
     try {
-      const convertResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/convert-word-to-pdf`, {
+      const convertResponse = await fetch(`${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/api/convert-word-to-pdf`, {
         method: 'POST',
         body: (() => {
           const formData = new FormData();

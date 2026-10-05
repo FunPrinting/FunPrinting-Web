@@ -36,7 +36,7 @@ export interface PDFConversionResponse {
 export class PDFApiClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = process.env.NEXTAUTH_URL || 'http://localhost:3000') {
+  constructor(baseUrl: string = process.env.NEXTAUTH_URL || 'https://www.funprinting.store') {
     this.baseUrl = baseUrl;
   }
 

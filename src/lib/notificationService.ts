@@ -126,12 +126,12 @@ export async function sendNewOrderNotification(orderData: OrderNotificationData)
             </div>
             
             <div style="text-align: center; margin-top: 30px;">
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin/orders/${orderData.orderId}" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/admin/orders/${orderData.orderId}" 
                  style="display: inline-block; background: #007bff; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 📊 View Order Details
               </a>
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/admin" 
                  style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 🏠 Admin Dashboard
@@ -320,12 +320,12 @@ export async function sendCustomerOrderConfirmation(orderData: OrderNotification
             </div>
             
             <div style="text-align: center; margin-top: 30px;">
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/my-orders" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/my-orders" 
                  style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 📋 View My Orders
               </a>
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/contact" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/contact" 
                  style="display: inline-block; background: #007bff; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 📞 Contact Support
@@ -417,12 +417,12 @@ export async function sendPaymentReminderToCustomer(orderData: OrderNotification
             </div>
             
             <div style="text-align: center; margin-top: 30px;">
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/my-orders" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/my-orders" 
                  style="display: inline-block; background: #ff6b35; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 💳 Complete Payment Now
               </a>
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/contact" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/contact" 
                  style="display: inline-block; background: #007bff; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 📞 Need Help?
@@ -513,12 +513,12 @@ export async function sendPaymentReminderToAdmin(orderData: OrderNotificationDat
             </div>
             
             <div style="text-align: center; margin-top: 30px;">
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin/orders/${orderData.orderId}" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/admin/orders/${orderData.orderId}" 
                  style="display: inline-block; background: #ffc107; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 📊 View Order Details
               </a>
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/admin" 
                  style="display: inline-block; background: #007bff; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin: 0 10px;">
                 🏠 Admin Dashboard
@@ -573,7 +573,7 @@ export async function sendPaymentNotification(orderData: OrderNotificationData, 
             </div>
             
             <div style="text-align: center;">
-              <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin/orders/${orderData.orderId}" 
+              <a href="${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/admin/orders/${orderData.orderId}" 
                  style="display: inline-block; background: #007bff; color: white; padding: 15px 30px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold;">
                 View Order Details

@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
         try {
           // Route to our new template order endpoint
-          const templateOrderResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/orders/template`, {
+          const templateOrderResponse = await fetch(`${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/api/orders/template`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
