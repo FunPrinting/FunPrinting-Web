@@ -128,7 +128,7 @@ export async function isAdminUser(): Promise<boolean> {
     }
 
     // Check if user has admin role OR is the specific admin email
-    return userDoc.role === 'admin' || user.email.toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+    return userDoc.role === 'admin' || user.email.toLowerCase() === (process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL);
   } catch (error) {
     console.error('Error checking admin status:', error);
     return false;

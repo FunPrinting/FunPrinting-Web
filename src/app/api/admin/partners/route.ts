@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     // Authorization: Only admin can access
-    const isAdmin = session?.user?.email?.toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
+    const isAdmin = session?.user?.email?.toLowerCase() === (process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL)?.toLowerCase();
     
     if (!isAdmin) {
       return NextResponse.json(
