@@ -9,6 +9,7 @@ export default function PartnerDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [partnerData, setPartnerData] = useState<any>(null);
+  const [shopPhones, setShopPhones] = useState<string[]>([]);
   const [partnerOrders, setPartnerOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -64,6 +65,7 @@ export default function PartnerDashboard() {
           const data = await res.json();
           if (data.success && data.partner) {
             setPartnerData(data.partner);
+            setShopPhones(data.partner.phoneNumbers || []);
             
             // Phase 8: Fetch Orders
             const ordersRes = await fetch('/api/partner/orders');
@@ -310,10 +312,7 @@ export default function PartnerDashboard() {
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 const form = e.target as HTMLFormElement;
-                const phoneNumbers = (form.elements.namedItem('phoneNumbers') as HTMLInputElement).value
-                  .split(',')
-                  .map(s => s.trim())
-                  .filter(Boolean);
+                const phoneNumbers = shopPhones.map(s => s.trim()).filter(Boolean);
                 
                 const updatedDeliveryPoints = [...(partnerData.deliveryPoints || [])];
                 updatedDeliveryPoints.forEach((dp, idx) => {
@@ -332,21 +331,40 @@ export default function PartnerDashboard() {
                 if (res.ok) {
                   const data = await res.json();
                   setPartnerData(data.partner);
+                  setShopPhones(data.partner.phoneNumbers || []);
                   alert('Settings updated successfully!');
                 } else {
                   alert('Failed to update settings');
                 }
               }}>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Shop Phone Numbers (comma separated)</label>
-                  <input
-                    type="text"
-                    name="phoneNumbers"
-                    defaultValue={partnerData.phoneNumbers?.join(', ') || ''}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="e.g. +919876543210, 080-12345678"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">These numbers will be visible to all customers ordering from your shop.</p>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-medium text-gray-700">Shop Phone Numbers</label>
+                    <button type="button" onClick={() => setShopPhones([...shopPhones, ''])} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Add Phone Number</button>
+                  </div>
+                  <div className="space-y-2">
+                    {shopPhones.map((phone, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={phone}
+                          onChange={(e) => {
+                            const newPhones = [...shopPhones];
+                            newPhones[idx] = e.target.value;
+                            setShopPhones(newPhones);
+                          }}
+                          className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="e.g. +919876543210"
+                        />
+                        <button type="button" onClick={() => {
+                          const newPhones = shopPhones.filter((_, i) => i !== idx);
+                          setShopPhones(newPhones);
+                        }} className="text-red-500 hover:text-red-700 p-2">✕</button>
+                      </div>
+                    ))}
+                    {shopPhones.length === 0 && <p className="text-sm text-gray-500 italic">No phone numbers added yet.</p>}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">These numbers will be visible to all customers ordering from your shop.</p>
                 </div>
                 
                 {partnerData.deliveryPoints?.length > 0 && (
