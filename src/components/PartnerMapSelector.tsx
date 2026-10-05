@@ -91,7 +91,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
         const data = await response.json();
         if (data && data.success && data.latitude && data.longitude) {
           setUserLocation([data.latitude, data.longitude]);
-          setError(null);
+          setError('');
         } else {
           setError('Could not determine location automatically. Please search manually.');
           setIsLoading(false);
