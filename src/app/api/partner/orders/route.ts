@@ -7,15 +7,35 @@ import Partner from '@/models/Partner';
 
 export async function GET(request: NextRequest) {
   try {
+    let userId;
     const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
+    
+    if (session && session.user) {
+      userId = (session.user as any).id;
+    } else {
+      // Allow fallback to Bearer token for Desktop/Mobile Apps
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.split(' ')[1];
+          const base64Payload = token.split('.')[1];
+          const payload = Buffer.from(base64Payload, 'base64').toString('utf8');
+          const parsed = JSON.parse(payload);
+          userId = parsed.userId || parsed.id;
+        } catch (e) {
+          console.error("Token decode error:", e);
+        }
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     await connectDB();
 
     // First find the partner associated with this user
-    const partner = await Partner.findOne({ userId: (session.user as any).id });
+    const partner = await Partner.findOne({ userId });
     if (!partner) {
       return NextResponse.json({ success: false, error: 'Partner profile not found' }, { status: 404 });
     }
