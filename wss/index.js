@@ -85,8 +85,13 @@ app.post('/api/dispatch-print-job', (req, res) => {
   io.to(`partner_${partnerId}`).emit('new_print_job', {
     jobId: order.orderId,
     timestamp: Date.now(),
-    documentUrl: order.fileURL || (order.fileURLs ? order.fileURLs[0] : null),
-    options: order.printingOptions
+    documentUrl: order.fileURL || (order.fileURLs ? order.fileURLs[0] : null), // legacy
+    fileURLs: order.fileURLs,
+    originalFileNames: order.originalFileNames,
+    fileTypes: order.fileTypes,
+    options: order.printingOptions,
+    customer: order.customerInfo,
+    orderDetails: order
   });
 
   res.status(200).json({ success: true, message: 'Print job dispatched to socket room' });

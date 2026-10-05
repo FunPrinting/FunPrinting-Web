@@ -730,7 +730,7 @@ export function OrderDetailView(props: OrderDetailViewProps) {
                         Files in this Order
                       </span>
                       <span className="px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full">
-                        {order.fileURLs.length} {order.fileURLs.length === 1 ? 'file' : 'files'}
+                        {(order.fileURLs || [order.fileURL]).filter(Boolean).length} {(order.fileURLs || [order.fileURL]).filter(Boolean).length === 1 ? 'file' : 'files'}
                       </span>
                     </div>
                     <span className="text-xs text-gray-600">
@@ -739,7 +739,7 @@ export function OrderDetailView(props: OrderDetailViewProps) {
                   </div>
 
                   <div className="space-y-2 mb-4 max-h-64 overflow-y-auto border-2 border-gray-300 rounded-lg p-3 bg-white shadow-sm">
-                    {order.fileURLs.map((fileURL: string, idx: number) => {
+                    {(order.fileURLs || [order.fileURL]).filter(Boolean).map((fileURL: string, idx: number) => {
                       const fileName =
                         order.originalFileNames?.[idx] || `File ${idx + 1}`;
                       const fileType =
