@@ -54,8 +54,8 @@ export interface IOrder {
     }>;
   };
   paymentStatus: 'pending' | 'completed' | 'failed';
-  orderStatus: 'pending' | 'processing' | 'printing' | 'printed' | 'dispatched' | 'delivered';
-  status: 'pending_payment' | 'paid' | 'processing' | 'printing' | 'printed' | 'dispatched' | 'delivered' | 'cancelled' | 'refunded';
+  orderStatus: 'pending' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed';
+  status: 'pending_payment' | 'paid' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
   amount: number;
   deliveryOption: {
     type: 'pickup' | 'delivery';
@@ -206,12 +206,12 @@ const orderSchema = new mongoose.Schema<IOrder>({
   },
   orderStatus: {
     type: String,
-    enum: ['pending', 'processing', 'printing', 'printed', 'dispatched', 'delivered'],
+    enum: ['pending', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched', 'delivered', 'completed'],
     default: 'pending',
   },
   status: {
     type: String,
-    enum: ['pending_payment', 'paid', 'processing', 'printing', 'printed', 'dispatched', 'delivered', 'cancelled', 'refunded'],
+    enum: ['pending_payment', 'paid', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched', 'delivered', 'completed', 'cancelled', 'refunded'],
     default: 'pending_payment',
   },
   amount: {
