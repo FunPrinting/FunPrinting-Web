@@ -192,6 +192,24 @@ export async function DELETE(
       );
     }
 
+    // If the order has a partnerId, try to notify the partner desktop to cancel the job
+    if (order.deliveryOption && order.deliveryOption.partnerId) {
+      try {
+        const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
+        console.log(`🛑 Sending cancel request to partner ${order.deliveryOption.partnerId} for order ${order.orderId}`);
+        await fetch(`${wssApiUrl}/api/cancel-print-job`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            partnerId: order.deliveryOption.partnerId,
+            orderId: order.orderId
+          })
+        });
+      } catch (err) {
+        console.error('Failed to dispatch cancel-print-job webhook:', err);
+      }
+    }
+
     console.log(`Order ${order.orderId} deleted successfully`);
     return NextResponse.json({
       success: true,

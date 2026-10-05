@@ -97,6 +97,21 @@ app.post('/api/dispatch-print-job', (req, res) => {
   res.status(200).json({ success: true, message: 'Print job dispatched to socket room' });
 });
 
+app.post('/api/cancel-print-job', (req, res) => {
+  const { partnerId, orderId } = req.body;
+  
+  if (!partnerId || !orderId) {
+    return res.status(400).json({ error: 'Missing partnerId or orderId' });
+  }
+
+  console.log(`🛑 Cancelling print job for Order ${orderId} to Partner ${partnerId}`);
+  
+  // Emit cancel event to partner's room
+  io.to(`partner_${partnerId}`).emit('cancel_print_job', { jobId: orderId });
+
+  res.status(200).json({ success: true, message: 'Cancel request dispatched to socket room' });
+});
+
 const PORT = process.env.WSS_PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 FunPrinting WebSocket Cloud Engine running on port ${PORT}`);
