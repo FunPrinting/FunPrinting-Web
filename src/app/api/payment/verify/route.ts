@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send print job to printer API if this is a file order
-    if (updateResult.orderType === 'file' && updateResult.fileURL) {
+    if (updateResult.orderType === 'file' && (updateResult.fileURL || (updateResult.fileURLs && updateResult.fileURLs.length > 0))) {
       if (updateResult.deliveryOption?.partnerId) {
         // Send order to partner via WebSocket webhook
         try {
