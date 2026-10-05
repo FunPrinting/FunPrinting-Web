@@ -451,7 +451,18 @@ export function OrderDetailView(props: OrderDetailViewProps) {
               {order.partnerInfo.address && (
                 <div>
                   <span className="text-gray-600">Address:</span>
-                  <span className="ml-2 font-medium">{order.partnerInfo.address}</span>
+                  <span className="ml-2 font-medium">
+                    {typeof order.partnerInfo.address === 'string'
+                      ? order.partnerInfo.address
+                      : [
+                          order.partnerInfo.address.street,
+                          order.partnerInfo.address.city,
+                          order.partnerInfo.address.state,
+                          order.partnerInfo.address.zipCode
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                  </span>
                 </div>
               )}
             </div>
