@@ -59,6 +59,8 @@ export interface OrderData {
     address?: string;
     city?: string;
     pinCode?: string;
+    partnerId?: string;
+    partnerDeliveryPoint?: string;
   };
   expectedDate?: Date;
   amount: number;
