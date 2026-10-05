@@ -54,7 +54,10 @@ export async function PATCH(
     // Find order and ensure it belongs to this partner
     const order = await Order.findOne({ 
       orderId: resolvedParams.orderId,
-      'deliveryOption.partnerId': partner._id.toString()
+      $or: [
+        { partnerId: partner._id.toString() },
+        { 'deliveryOption.partnerId': partner._id.toString() }
+      ]
     });
 
     if (!order) {
