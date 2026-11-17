@@ -60,6 +60,8 @@ export async function POST(request: NextRequest) {
       // isActive (approval) is set by an admin only and is ignored here.
       if (typeof data.isOnline === 'boolean') partner.isOnline = partner.isActive ? data.isOnline : false;
       if (typeof data.phoneNumbers !== 'undefined') partner.phoneNumbers = data.phoneNumbers;
+      // auto: paid orders go straight to the print queue; manual: the shop accepts each one
+      if (data.acceptanceMode === 'auto' || data.acceptanceMode === 'manual') partner.acceptanceMode = data.acceptanceMode;
 
       await partner.save();
     } else {

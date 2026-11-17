@@ -30,7 +30,12 @@ vi.mock('@/lib/payments/razorpayApi', () => ({
   releaseTransfer: vi.fn(async (id: string) => { rz.released.push(id); return { id }; }),
 }));
 const side = vi.hoisted(() => ({ dispatched: [] as string[], invoices: [] as string[], adminNotices: 0, invoiceFails: 0 }));
-vi.mock('@/lib/wssClient', () => ({ dispatchPrintJob: vi.fn(async (_p: string, o: any) => { side.dispatched.push(o.orderId); return { ok: true, delivered: 1 }; }) }));
+vi.mock('@/lib/wssClient', () => ({
+  dispatchPrintJob: vi.fn(async (_p: string, o: any) => { side.dispatched.push(o.orderId); return { ok: true, delivered: 1 }; }),
+  notifyPartnerJobs: vi.fn(async () => ({ ok: true, delivered: 1 })),
+  cancelPrintJob: vi.fn(async () => ({ ok: true, delivered: 1 })),
+}));
+vi.mock('@/lib/jobs/emails', () => ({ sendShopDelayEmail: vi.fn(async () => true), sendRefundEmail: vi.fn(async () => true) }));
 vi.mock('@/lib/invoiceEmail', () => ({
   sendInvoiceEmail: vi.fn(async (o: any) => {
     if (side.invoiceFails > 0) { side.invoiceFails -= 1; return false; }
@@ -39,10 +44,6 @@ vi.mock('@/lib/invoiceEmail', () => ({
   }),
 }));
 vi.mock('@/lib/notificationService', () => ({ sendPaymentNotification: vi.fn(async () => { side.adminNotices += 1; return true; }) }));
-vi.mock('@/lib/printerClient', () => ({
-  generateDeliveryNumber: () => 'A202611171',
-  sendPrintJobFromOrder: vi.fn(async (o: any) => { side.dispatched.push(o.orderId); return { success: true }; }),
-}));
 const afterQueue = vi.hoisted(() => [] as Array<() => unknown>);
 vi.mock('next/server', async (orig) => ({ ...(await orig<typeof import('next/server')>()), after: (fn: () => unknown) => afterQueue.push(fn) }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn() }));
@@ -69,6 +70,7 @@ const KEY_SECRET = 'rzp_secret_test';
 const WEBHOOK_SECRET = 'whsec_test';
 const user = { id: '64b7f0c2a1e4d5f6a7b8c9d0', email: 'buyer@example.com', role: 'customer', name: 'Buyer' };
 let mongo: MongoMemoryServer;
+let shopId = '';
 
 async function drainAfter() {
   while (afterQueue.length) await afterQueue.shift()!();
@@ -83,7 +85,7 @@ function checkoutInput(over: Record<string, unknown> = {}) {
     idempotencyKey: `key-${Math.random().toString(36).slice(2)}`,
     customerInfo: { name: 'Buyer', phone: '9876543210', email: user.email },
     files: [{ receipt: receipt(10), pageSize: 'A4', color: 'bw', sided: 'single', copies: 1 }],
-    delivery: { type: 'pickup' },
+    delivery: { type: 'pickup', partnerId: shopId },
     ...over,
   } as any;
 }
@@ -160,7 +162,9 @@ beforeEach(async () => {
   side.invoiceFails = 0;
   afterQueue.length = 0;
   delete process.env.RAZORPAY_ROUTE_ENABLED;
-  // Pricing used when no partner is chosen
+  // Default shop for checkouts: B&W ₹5/page, colour ₹10, binding ₹30
+  const shop = await Partner.create({ userId: 'shop-owner', businessName: 'Default Shop', isActive: true, pricing: { perPageBW: 5, perPageColor: 10, binding: 30 }, location: { type: 'Point', coordinates: [77, 28] } });
+  shopId = String(shop._id);
   await Pricing.create({
     basePrices: { A4: 5, A3: 10 },
     multipliers: { color: 2, doubleSided: 1.5 },
@@ -173,12 +177,12 @@ beforeEach(async () => {
 describe('checkout', () => {
   it('prices from the receipt, creates a pending order, a Payment and a link for the total in paise', async () => {
     const r = await createPrintCheckout(user, checkoutInput(), 'http://localhost');
-    // 10 pages × ₹5 + ₹5 service = ₹55 → +3% = ₹56.65
-    expect(r.amounts).toEqual({ subtotal: 5500, fee: 165, total: 5665 });
-    expect(rz.created[0]).toMatchObject({ amount: 5665, referenceId: r.referenceId, callbackUrl: 'http://localhost/api/payments/callback' });
+    // 10 pages × ₹5 = ₹50 → +3% = ₹51.50
+    expect(r.amounts).toEqual({ subtotal: 5000, fee: 150, total: 5150 });
+    expect(rz.created[0]).toMatchObject({ amount: 5150, referenceId: r.referenceId, callbackUrl: 'http://localhost/api/payments/callback' });
     expect(rz.created[0].expireBy * 1000 - Date.now()).toBeGreaterThan(15 * 60_000);
     const order = await Order.findOne({ orderId: r.orderId }).lean<any>();
-    expect(order).toMatchObject({ status: 'pending_payment', paymentStatus: 'pending', amount: 55, paymentRef: r.referenceId, pricing: { total: 56.65 } });
+    expect(order).toMatchObject({ status: 'pending_payment', paymentStatus: 'pending', amount: 50, paymentRef: r.referenceId, pricing: { total: 51.5 } });
   });
 
   it('is idempotent for the same key (double click)', async () => {
@@ -209,11 +213,11 @@ describe('checkout', () => {
   it('computes the delivery charge on the server', async () => {
     const r = await createPrintCheckout(
       user,
-      checkoutInput({ delivery: { type: 'delivery', speed: 'express', recipientName: 'B', recipientPhone: '9876543210', address: 'X', city: 'C', state: 'S', pinCode: '110001' } }),
+      checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'express', recipientName: 'B', recipientPhone: '9876543210', address: 'X', city: 'C', state: 'S', pinCode: '110001' } }),
       'http://x'
     );
     // estimated: 0.06 kg → 1 slab ₹26, express ₹39
-    expect(r.amounts.subtotal).toBe(5500 + 3900);
+    expect(r.amounts.subtotal).toBe(5000 + 3900);
   });
 });
 
@@ -230,7 +234,7 @@ describe('settlement', () => {
     expect(await res2.json()).toEqual({ status: 'duplicate' });
 
     const order = await Order.findOne({ orderId: r.orderId }).lean<any>();
-    expect(order).toMatchObject({ paymentStatus: 'completed', status: 'printing', razorpayPaymentId: paymentId, amountPaid: 56.65 });
+    expect(order).toMatchObject({ paymentStatus: 'completed', status: 'printing', razorpayPaymentId: paymentId, amountPaid: 51.5 });
     expect(side.dispatched).toEqual([r.orderId]);
     expect(side.invoices).toEqual([r.orderId]);
     expect(side.adminNotices).toBe(1);
@@ -334,12 +338,12 @@ describe('reconcile, retries and refunds', () => {
     await syncPaymentFromRazorpay(r.referenceId, 'reconcile');
 
     const { refundId, amount } = await startRefund(r.referenceId, { reason: 'Shop closed', actor: 'admin@example.com' });
-    expect(amount).toBe(5665);
+    expect(amount).toBe(5150);
     const evt = { event: 'refund.processed', payload: { refund: { entity: { id: refundId, payment_id: paymentId, amount } } } };
     await webhook(webhookRequest(evt));
     await webhook(webhookRequest(evt)); // different event id, same refund
     const p = await Payment.findOne({ referenceId: r.referenceId }).lean<any>();
-    expect(p).toMatchObject({ status: 'refunded', amountRefunded: 5665 });
+    expect(p).toMatchObject({ status: 'refunded', amountRefunded: 5150 });
     expect((await Order.findOne({ orderId: r.orderId }).lean<any>())).toMatchObject({ paymentStatus: 'refunded', status: 'refunded' });
     await expect(startRefund(r.referenceId, { reason: 'again', actor: 'a' })).rejects.toThrow(/refunded/);
   });
@@ -405,9 +409,9 @@ describe('review fixes', () => {
     // A second attempt for the same order (e.g. an old open link) gets paid too
     const second = await Payment.create({
       referenceId: `${r.orderId}_9`, purpose: 'print_order', status: 'created', userEmail: user.email, orderId: r.orderId,
-      amounts: { subtotal: 5500, fee: 165, total: 5665 }, razorpay: {}, expiresAt: new Date(Date.now() + 60_000), fulfilment: { attempts: 0 }, events: [],
+      amounts: { subtotal: 5000, fee: 150, total: 5150 }, razorpay: {}, expiresAt: new Date(Date.now() + 60_000), fulfilment: { attempts: 0 }, events: [],
     });
-    await settlePaid({ referenceId: second.referenceId, razorpayPaymentId: 'pay_second', amountPaid: 5665, source: 'webhook' });
+    await settlePaid({ referenceId: second.referenceId, razorpayPaymentId: 'pay_second', amountPaid: 5150, source: 'webhook' });
     await runFulfilment(second.referenceId);
     expect(side.dispatched).toHaveLength(1);
     expect(side.invoices).toHaveLength(1);
@@ -420,9 +424,9 @@ describe('review fixes', () => {
     const r = await createPrintCheckout(user, checkoutInput(), 'http://x');
     const other = await Payment.create({
       referenceId: `${r.orderId}_8`, purpose: 'print_order', status: 'created', userEmail: user.email, orderId: r.orderId,
-      amounts: { subtotal: 5500, fee: 165, total: 5665 }, razorpay: { paymentLinkId: 'plink_other' }, expiresAt: new Date(Date.now() + 600_000), fulfilment: { attempts: 0 }, events: [],
+      amounts: { subtotal: 5000, fee: 150, total: 5150 }, razorpay: { paymentLinkId: 'plink_other' }, expiresAt: new Date(Date.now() + 600_000), fulfilment: { attempts: 0 }, events: [],
     });
-    rz.links.set('plink_other', { id: 'plink_other', status: 'created', amount: 5665, amount_paid: 0, reference_id: other.referenceId });
+    rz.links.set('plink_other', { id: 'plink_other', status: 'created', amount: 5150, amount_paid: 0, reference_id: other.referenceId });
     const linkId = (await Payment.findOne({ referenceId: r.referenceId }).lean<any>()).razorpay.paymentLinkId;
     payLink(linkId);
     await syncPaymentFromRazorpay(r.referenceId, 'webhook');

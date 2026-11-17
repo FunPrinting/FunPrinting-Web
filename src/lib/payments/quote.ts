@@ -9,14 +9,11 @@
  * - copies, sizes and options are validated;
  * - the delivery charge is computed by the server.
  *
- * Partner pricing (when an order goes to a partner shop), per file:
+ * Every order is printed by a partner shop and priced with that shop's rates, per file:
  *   (colourPages × perPageColor + bwPages × perPageBW) × (A3 ? 2 : 1) × (double ? 1.5 : 1) × copies
  *   + binding × copies when binding is chosen; rounded up to the rupee.
- * Global pricing (no partner), per file:
- *   (colourPages × base × colourMultiplier + bwPages × base) × sidedMultiplier × copies
- *   + a service charge when the file has more than `minServiceFeePageLimit` pages:
- *     binding → binding price, file → ₹10, service → minServiceFee.
- * Then delivery is added, and the processing fee is added on top (see money.ts).
+ * This is the formula the order page shows (PartnerMapSelector). Then delivery is
+ * added, and the processing fee is added on top (see money.ts).
  */
 import { rupeesToPaise } from '@/lib/payments/money';
 
@@ -40,12 +37,6 @@ export interface PartnerPricing {
   perPageBW: number;
   perPageColor: number;
   binding: number;
-}
-
-export interface GlobalPricing {
-  basePrices: { A4: number; A3: number };
-  multipliers: { color: number; doubleSided: number };
-  additionalServices: { binding: number; minServiceFee: number; minServiceFeePageLimit: number };
 }
 
 export interface QuoteLine {
@@ -76,7 +67,9 @@ export class QuoteError extends Error {
 }
 
 export const MAX_COPIES = 100;
-const FILE_HANDLING_FEE_RUPEES = 10;
+
+/** Rates used when a shop has not set its own (same as the order page). */
+export const DEFAULT_PARTNER_PRICING: PartnerPricing = { perPageBW: 2, perPageColor: 10, binding: 30 };
 
 /** Colour pages that actually exist in the file, de-duplicated. */
 export function normaliseColorPages(colorPages: unknown, pages: number): number[] {
@@ -121,51 +114,20 @@ function quotePartnerFile(file: QuoteFile, p: PartnerPricing): QuoteFileResult {
   return { name: file.name, pages: file.pages, colorPageCount: split.color, bwPageCount: split.bw, amount: rupeesToPaise(totalRupees), lines };
 }
 
-function quoteGlobalFile(file: QuoteFile, g: GlobalPricing): QuoteFileResult {
-  const split = colourSplit(file);
-  const base = g.basePrices[file.pageSize];
-  const sided = file.sided === 'double' ? g.multipliers.doubleSided : 1;
-  const printing = (split.color * base * g.multipliers.color + split.bw * base) * sided * file.copies;
-  const lines: QuoteLine[] = [{ label: 'Printing', amount: rupeesToPaise(printing) }];
-
-  let service = 0;
-  const limit = g.additionalServices.minServiceFeePageLimit || 1;
-  if (file.pages > limit) {
-    const option = file.service ?? 'service';
-    if (option === 'binding') {
-      service = g.additionalServices.binding;
-      lines.push({ label: 'Binding', amount: rupeesToPaise(service) });
-    } else if (option === 'file') {
-      service = FILE_HANDLING_FEE_RUPEES;
-      lines.push({ label: 'File handling', amount: rupeesToPaise(service) });
-    } else {
-      service = g.additionalServices.minServiceFee;
-      lines.push({ label: 'Service fee', amount: rupeesToPaise(service) });
-    }
-  }
-  return {
-    name: file.name,
-    pages: file.pages,
-    colorPageCount: split.color,
-    bwPageCount: split.bw,
-    amount: lines.reduce((sum, l) => sum + l.amount, 0),
-    lines,
-  };
-}
-
 export function quotePrintOrder(input: {
   files: QuoteFile[];
-  partnerPricing?: PartnerPricing | null;
-  globalPricing: GlobalPricing;
+  partnerPricing: PartnerPricing;
   deliveryChargePaise?: number;
 }): PrintQuote {
   if (!input.files.length) throw new QuoteError('Add at least one file');
   if (input.files.length > 20) throw new QuoteError('At most 20 files per order');
+  const r = input.partnerPricing;
+  if (![r.perPageBW, r.perPageColor, r.binding].every((v) => Number.isFinite(v) && v >= 0)) {
+    throw new QuoteError('This shop has invalid prices; please choose another shop');
+  }
   input.files.forEach(validate);
 
-  const files = input.files.map((f) =>
-    input.partnerPricing ? quotePartnerFile(f, input.partnerPricing) : quoteGlobalFile(f, input.globalPricing)
-  );
+  const files = input.files.map((f) => quotePartnerFile(f, input.partnerPricing));
   const delivery = Math.max(0, Math.round(input.deliveryChargePaise ?? 0));
   return { files, delivery, subtotal: files.reduce((s, f) => s + f.amount, 0) + delivery };
 }

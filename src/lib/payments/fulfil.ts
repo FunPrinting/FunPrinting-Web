@@ -2,7 +2,6 @@ import 'server-only';
 import connectDB from '@/lib/mongodb';
 import Payment, { type IPayment, type PaymentEvent } from '@/models/Payment';
 import Order from '@/models/Order';
-import PrintJob from '@/models/PrintJob';
 import CreatorEarning from '@/models/CreatorEarning';
 import { logger } from '@/lib/logger';
 import { MAX_FULFILMENT_ATTEMPTS } from '@/lib/payments/config';
@@ -162,66 +161,18 @@ async function closeOtherOpenLinks(p: IPayment) {
   }
 }
 
-async function dispatchOrder(p: IPayment) {
-  const order = await Order.findOne({ orderId: p.orderId });
-  if (!order || order.paymentStatus !== 'completed') return;
+/**
+ * Creates the print job for the order; the job service assigns it to the shop and
+ * notifies the shop's devices. One job per order, so repeating this is harmless.
+ */
+async function createPrintJob(p: IPayment) {
+  // Paid before the job service existed and already pushed to the shop: don't send again
+  if (p.fulfilment?.dispatch) return;
+  const order = await Order.findOne({ orderId: p.orderId }).select('paymentStatus paymentRef orderType').lean<{ paymentStatus: string; paymentRef?: string; orderType: string } | null>();
+  if (!order || order.paymentStatus !== 'completed' || order.orderType !== 'file') return;
   if (order.paymentRef && order.paymentRef !== p.referenceId) throw new StopFulfilment('order paid by another payment');
-  const { generateDeliveryNumber, sendPrintJobFromOrder } = await import('@/lib/printerClient');
-  if (!order.deliveryNumber) {
-    order.deliveryNumber = generateDeliveryNumber(1);
-    await Order.updateOne({ _id: order._id, deliveryNumber: { $exists: false } }, { $set: { deliveryNumber: order.deliveryNumber } });
-  }
-  if (order.orderType !== 'file' || !(order.fileURL || order.fileURLs?.length)) return;
-
-  const partnerId = order.deliveryOption?.partnerId || order.partnerId;
-  let sent = false;
-  if (partnerId) {
-    const { dispatchPrintJob } = await import('@/lib/wssClient');
-    const result = await dispatchPrintJob(String(partnerId), order.toObject());
-    if (!result.ok) throw new Error(`WSS dispatch failed: ${result.error ?? result.status}`);
-    sent = result.delivered > 0;
-    if (!sent) {
-      // The partner sees the order in their order list; Phase 3 adds pull-based delivery
-      logger.warn({ orderId: order.orderId, partnerId }, 'partner has no connected device; order stays paid until it is picked up');
-      await Payment.updateOne({ _id: p._id }, { $push: { events: event('dispatch_no_device', 'system', String(partnerId)) } });
-    }
-  } else {
-    // Central printer (removed in Phase 3, when every order goes to a partner)
-    const result = await sendPrintJobFromOrder(order, 1);
-    sent = Boolean(result.success);
-    // Retried by the reconcile job; flagged for review after repeated failures
-    if (!sent) throw new Error(`Central printer did not accept the job: ${result.message ?? 'no details'}`);
-  }
-  if (sent) {
-    await Order.updateOne({ _id: order._id, status: 'paid' }, { $set: { status: 'printing', orderStatus: 'printing' } });
-  }
-}
-
-async function createPrintJobRecord(p: IPayment) {
-  const order = await Order.findOne({ orderId: p.orderId }).lean<Record<string, any> | null>();
-  const fileURL = order?.fileURL || order?.fileURLs?.[0];
-  if (!order || order.orderType !== 'file' || !fileURL) return;
-  if (await PrintJob.exists({ orderId: String(order._id) })) return;
-  const opts = order.printingOptions || {};
-  await PrintJob.create({
-    orderId: String(order._id),
-    orderNumber: order.orderId,
-    customerName: order.customerInfo?.name,
-    customerEmail: order.customerInfo?.email,
-    fileURL,
-    fileName: order.originalFileName || order.originalFileNames?.[0] || 'document.pdf',
-    fileType: order.fileTypes?.[0] || order.fileType || 'application/pdf',
-    printingOptions: {
-      pageSize: opts.pageSize || 'A4',
-      color: opts.color || 'bw',
-      sided: opts.sided || 'single',
-      copies: opts.copies || 1,
-      pageCount: Math.max(1, opts.pageCount || 1),
-    },
-    priority: 'normal',
-    estimatedDuration: Math.ceil((opts.pageCount || 1) * (opts.copies || 1) * 0.5),
-    status: order.status === 'printing' ? 'printing' : 'pending',
-  });
+  const { createJobForOrder } = await import('@/lib/jobs/service');
+  await createJobForOrder(p.orderId!, { paymentRef: p.referenceId, paidAt: p.paidAt });
 }
 
 async function sendInvoice(p: IPayment) {
@@ -281,8 +232,7 @@ async function createCreatorEarning(p: IPayment) {
 const PLANS: Record<IPayment['purpose'], Array<[Step, (p: IPayment) => Promise<void>]>> = {
   print_order: [
     ['order', markOrderPaid],
-    ['dispatch', dispatchOrder],
-    ['printJob', createPrintJobRecord],
+    ['printJob', createPrintJob],
     ['invoice', sendInvoice],
     ['adminNotice', notifyAdmin],
   ],

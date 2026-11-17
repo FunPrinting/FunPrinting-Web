@@ -168,3 +168,11 @@ export function dispatchPrintJob(partnerId: string, order: any): Promise<WssResu
 export function cancelPrintJob(partnerId: string, orderId: string): Promise<WssResult> {
   return postToRooms('/api/cancel-print-job', partnerId, (room) => ({ partnerId: room, orderId: String(orderId) }));
 }
+
+/**
+ * Tells a partner's devices that their job list changed ("jobs:available"). Devices
+ * then fetch jobs from the API (src/app/api/partner/v1); the socket carries no job data.
+ */
+export function notifyPartnerJobs(partnerId: string, reason: 'new' | 'updated' | 'cancelled'): Promise<WssResult> {
+  return postToRooms('/api/notify-jobs', partnerId, (room) => ({ partnerId: room, reason }));
+}

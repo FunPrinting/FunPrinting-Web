@@ -63,6 +63,8 @@ export interface IOrder {
   checkoutKey?: string;
   // Short lock while /api/orders/[id]/pay creates a link
   payLockUntil?: Date;
+  // When the customer was told the shop hasn't accepted yet (refund now / keep waiting)
+  shopDelayNotifiedAt?: Date;
   // Price breakdown computed by the server at checkout (rupees)
   pricing?: {
     subtotal: number;
@@ -238,6 +240,7 @@ const orderSchema = new mongoose.Schema<IOrder>({
   paymentRef: String,
   checkoutKey: String,
   payLockUntil: Date,
+  shopDelayNotifiedAt: Date,
   pricing: {
     subtotal: Number,
     fee: Number,

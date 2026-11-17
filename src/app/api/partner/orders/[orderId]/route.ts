@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { resolvePartnerRequest } from '@/lib/authz';
-import { checkPartnerTarget, checkPartnerTransition, STATUS_RANK } from '@/lib/partnerOrderTransitions';
-import { releasePartnerTransfer } from '@/lib/payments/refunds';
+import { checkPartnerTarget, checkPartnerTransition } from '@/lib/partnerOrderTransitions';
+import { syncJobFromOrderStatus } from '@/lib/jobs/service';
 import { withRequestLogger } from '@/lib/logger';
 import Order from '@/models/Order';
 
@@ -58,15 +58,11 @@ export async function PATCH(
     }
 
     log.info({ orderId, partnerId: partnerIdStr, from: order.status, to: status }, 'partner order status updated');
-    // The partner's Route share is held until the job is printed
-    if (updated.paymentRef && STATUS_RANK[status] >= STATUS_RANK.printed) {
-      const ref = String(updated.paymentRef);
-      after(() =>
-        releasePartnerTransfer(ref)
-          .then((r) => log.info({ referenceId: ref, result: r }, 'partner transfer release'))
-          .catch((err) => log.error({ err, referenceId: ref }, 'partner transfer release failed'))
-      );
-    }
+    // Keep the print job in step; reaching "printed" also releases the held partner share
+    const label = `partner:${partnerIdStr}`;
+    after(() =>
+      syncJobFromOrderStatus(orderId, status, label).catch((err) => log.error({ err, orderId }, 'job sync failed'))
+    );
     return NextResponse.json({ success: true, order: updated });
   } catch (error) {
     log.error({ err: error }, 'partner order status update failed');

@@ -266,6 +266,41 @@ export default function PartnerDashboard() {
               </div>
             </div>
 
+            {/* Order acceptance */}
+            <div className="mt-8 bg-white shadow-lg rounded-xl p-6 border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900">Accepting orders</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Automatic: paid orders go straight to your print queue. Manual: you accept each order first.
+                If you haven&apos;t accepted an order within 10 minutes, the customer may cancel it for a refund;
+                orders not accepted within 24 hours are refunded automatically. Declining an order refunds the customer.
+              </p>
+              <div className="mt-4 inline-flex rounded-lg border border-gray-200 p-1" role="radiogroup" aria-label="Order acceptance">
+                {(['auto', 'manual'] as const).map((mode) => {
+                  const active = (partnerData.acceptanceMode ?? 'auto') === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={async () => {
+                        if (active) return;
+                        const res = await fetch('/api/partner/profile', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ acceptanceMode: mode }),
+                        });
+                        if (res.ok) setPartnerData({ ...partnerData, acceptanceMode: mode });
+                      }}
+                      className={`px-4 py-2 rounded-md text-sm font-semibold ${active ? 'bg-indigo-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      {mode === 'auto' ? 'Automatic' : 'Manual'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Hardware & Downloads */}
             <div className="grid grid-cols-1 gap-8 mt-8">
               <div className="bg-white shadow-lg rounded-xl p-6 border border-gray-100" id="download">

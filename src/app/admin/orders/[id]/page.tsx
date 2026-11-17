@@ -251,25 +251,16 @@ function OrderDetailPageContent() {
     try {
       console.log(`🖨️ Sending order ${order.orderId} to print queue`);
 
-      const response = await fetch('/api/printer', {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.orderId)}/job`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orderId: order.orderId,
-          printerIndex: 1 // Default to printer 1, can be made configurable
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend' }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        showSuccess(`Order #${order.orderId} sent to print queue successfully!`);
-        // Optionally update order status to 'printing'
-        if (order.orderStatus !== 'printing') {
-          await updateOrderStatus('printing');
-        }
+        showSuccess(`Order #${order.orderId} is in the shop's print queue`);
         // Refresh order data to get updated delivery number
         if (params.id) {
           await fetchOrder(params.id as string);
@@ -279,7 +270,7 @@ function OrderDetailPageContent() {
       }
     } catch (error) {
       console.error('Error sending to print queue:', error);
-      showError('Failed to send order to print queue. Please check printer API connection.');
+      showError('Failed to send the order to the shop.');
     } finally {
       setIsPrinting(false);
     }

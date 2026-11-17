@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/authz';
-import { cancelPrintJob } from '@/lib/wssClient';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { validateOrderStateTransition, logOrderEvent, OrderStatus } from '@/lib/orderUtils';
@@ -159,6 +158,9 @@ export async function PATCH(
       { new: true }
     );
 
+    const { syncJobFromOrderStatus } = await import('@/lib/jobs/service');
+    await syncJobFromOrderStatus(order.orderId, newStatus, `admin:${auth.email}`).catch((error) => console.error('Job sync failed:', error));
+
     logOrderEvent('status_updated', order.orderId, {
       from: currentStatus,
       to: newStatus,
@@ -203,18 +205,12 @@ export async function DELETE(
       );
     }
 
-    // If the order has a partnerId, try to notify the partner desktop to cancel the job
-    const targetPartnerId = order.deliveryOption?.partnerId || order.partnerId;
-    if (targetPartnerId) {
-      try {
-        console.log(`🛑 Sending cancel request to partner ${targetPartnerId} for order ${order.orderId}`);
-        const cancelResult = await cancelPrintJob(String(targetPartnerId), order.orderId);
-        if (!cancelResult.ok) {
-          console.warn(`⚠ cancel-print-job for order ${order.orderId} was not accepted by WSS`);
-        }
-      } catch (err) {
-        console.error('Failed to dispatch cancel-print-job webhook:', err);
-      }
+    // Stop any print job for it (no refund here: refunds go through the job's cancel action)
+    try {
+      const { cancelJob } = await import('@/lib/jobs/deadlines');
+      await cancelJob(order.orderId, { reason: 'Order deleted by admin', actor: `admin:${auth.email}`, refund: false, force: true });
+    } catch (err) {
+      console.warn(`Could not cancel the print job for deleted order ${order.orderId}:`, err);
     }
 
     console.log(`Order ${order.orderId} deleted successfully`);

@@ -70,6 +70,7 @@ export interface ReconcileReport {
   legacyRecovered: number;
   refundsApplied: number;
   transfersReleased: number;
+  jobDeadlines: number;
   ordersCancelled: number;
   errors: number;
 }
@@ -82,7 +83,7 @@ export interface ReconcileReport {
  */
 export async function reconcilePayments({ limit = 50 } = {}): Promise<ReconcileReport> {
   await connectDB();
-  const report: ReconcileReport = { checked: 0, settled: 0, closed: 0, fulfilmentRetried: 0, legacyRecovered: 0, refundsApplied: 0, transfersReleased: 0, ordersCancelled: 0, errors: 0 };
+  const report: ReconcileReport = { checked: 0, settled: 0, closed: 0, fulfilmentRetried: 0, legacyRecovered: 0, refundsApplied: 0, transfersReleased: 0, jobDeadlines: 0, ordersCancelled: 0, errors: 0 };
   const now = Date.now();
 
   const stale = await Payment.find({ status: 'created', createdAt: { $lt: new Date(now - 10 * 60_000) } })
@@ -180,6 +181,17 @@ export async function reconcilePayments({ limit = 50 } = {}): Promise<ReconcileR
       report.errors += 1;
       logger.error({ err: error, referenceId: p.referenceId }, 'reconcile: transfer release failed');
     }
+  }
+
+  // Print job deadlines (reassign / refund), in case no QStash message arrived
+  try {
+    const { sweepDeadlines } = await import('@/lib/jobs/deadlines');
+    const jobs = await sweepDeadlines(limit);
+    report.jobDeadlines = jobs.accept + jobs.refund;
+    report.errors += jobs.errors;
+  } catch (error) {
+    report.errors += 1;
+    logger.error({ err: error }, 'reconcile: job deadline sweep failed');
   }
 
   const cutoff = new Date(now - UNPAID_ORDER_TTL_HOURS * 3600_000);

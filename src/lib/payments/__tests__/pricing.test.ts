@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type GlobalPricing, type QuoteFile } from '@/lib/payments/quote';
+import { normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
 import { assertChargeable, formatINR, percentOf, rupeesToPaise, withProcessingFee } from '@/lib/payments/money';
 
-const global: GlobalPricing = {
-  basePrices: { A4: 5, A3: 10 },
-  multipliers: { color: 2, doubleSided: 1.5 },
-  additionalServices: { binding: 20, minServiceFee: 5, minServiceFeePageLimit: 1 },
-};
 const partner = { perPageBW: 2, perPageColor: 10, binding: 30 };
 const file = (o: Partial<QuoteFile> = {}): QuoteFile => ({ name: 'a.pdf', pages: 10, pageSize: 'A4', color: 'bw', sided: 'single', copies: 1, ...o });
 
@@ -35,21 +30,21 @@ describe('money', () => {
 
 describe('quotePrintOrder — partner pricing (formula of the order page map)', () => {
   it('B&W, colour, A3, double-sided, copies, binding', () => {
-    expect(quotePrintOrder({ files: [file()], partnerPricing: partner, globalPricing: global }).subtotal).toBe(2000); // 10 × ₹2
-    expect(quotePrintOrder({ files: [file({ color: 'color' })], partnerPricing: partner, globalPricing: global }).subtotal).toBe(10000);
+    expect(quotePrintOrder({ files: [file()], partnerPricing: partner }).subtotal).toBe(2000); // 10 × ₹2
+    expect(quotePrintOrder({ files: [file({ color: 'color' })], partnerPricing: partner }).subtotal).toBe(10000);
     const fancy = file({ pageSize: 'A3', sided: 'double', copies: 3, service: 'binding' });
     // 10 × 2 × 2 × 1.5 × 3 = 180 + binding 30 × 3 = 90 → ₹270
-    expect(quotePrintOrder({ files: [fancy], partnerPricing: partner, globalPricing: global }).subtotal).toBe(27000);
+    expect(quotePrintOrder({ files: [fancy], partnerPricing: partner }).subtotal).toBe(27000);
   });
 
   it('rounds up to the rupee per file', () => {
     // 3 pages × ₹2 × 1.5 (double) = ₹9; 1 page × 2 × 1.5 = ₹3; 1.5 pages impossible → use 0.5 multiplier case
-    const q = quotePrintOrder({ files: [file({ pages: 1, sided: 'double', copies: 1 })], partnerPricing: { ...partner, perPageBW: 1.25 }, globalPricing: global });
+    const q = quotePrintOrder({ files: [file({ pages: 1, sided: 'double', copies: 1 })], partnerPricing: { ...partner, perPageBW: 1.25 } });
     expect(q.subtotal).toBe(200); // 1.875 → ₹2
   });
 
   it('mixed colour charges every non-colour page as B&W (before: empty B&W list was free)', () => {
-    const q = quotePrintOrder({ files: [file({ color: 'mixed', colorPages: [1, 2] })], partnerPricing: partner, globalPricing: global });
+    const q = quotePrintOrder({ files: [file({ color: 'mixed', colorPages: [1, 2] })], partnerPricing: partner });
     expect(q.files[0]).toMatchObject({ colorPageCount: 2, bwPageCount: 8 });
     expect(q.subtotal).toBe((2 * 10 + 8 * 2) * 100);
   });
@@ -59,24 +54,16 @@ describe('quotePrintOrder — partner pricing (formula of the order page map)', 
   });
 });
 
-describe('quotePrintOrder — global pricing', () => {
-  it('base × colour multiplier × sides × copies + service fee above the page limit', () => {
-    // 10 B&W A4: 10 × ₹5 = ₹50 + service fee ₹5
-    expect(quotePrintOrder({ files: [file()], globalPricing: global }).subtotal).toBe(5500);
-    // binding instead of service fee
-    expect(quotePrintOrder({ files: [file({ service: 'binding' })], globalPricing: global }).subtotal).toBe(7000);
-    // file handling ₹10
-    expect(quotePrintOrder({ files: [file({ service: 'file' })], globalPricing: global }).subtotal).toBe(6000);
-    // a 1-page file pays no service charge
-    expect(quotePrintOrder({ files: [file({ pages: 1 })], globalPricing: global }).subtotal).toBe(500);
-    // colour, double-sided, 2 copies: 10 × 5 × 2 × 1.5 × 2 = ₹300 + ₹5
-    expect(quotePrintOrder({ files: [file({ color: 'color', sided: 'double', copies: 2 })], globalPricing: global }).subtotal).toBe(30500);
+describe('quotePrintOrder — delivery and several files', () => {
+  it('adds delivery and sums files', () => {
+    const q = quotePrintOrder({ files: [file(), file({ pages: 1 })], partnerPricing: partner, deliveryChargePaise: 2600 });
+    expect(q.delivery).toBe(2600);
+    expect(q.subtotal).toBe(2000 + 200 + 2600);
   });
 
-  it('adds delivery and sums several files', () => {
-    const q = quotePrintOrder({ files: [file(), file({ pages: 1 })], globalPricing: global, deliveryChargePaise: 2600 });
-    expect(q.delivery).toBe(2600);
-    expect(q.subtotal).toBe(5500 + 500 + 2600);
+  it('rejects a shop with invalid rates', () => {
+    expect(() => quotePrintOrder({ files: [file()], partnerPricing: { ...partner, perPageBW: -1 } })).toThrow(QuoteError);
+    expect(() => quotePrintOrder({ files: [file()], partnerPricing: { ...partner, binding: NaN } })).toThrow(QuoteError);
   });
 });
 
@@ -91,12 +78,12 @@ describe('quotePrintOrder — validation', () => {
     [{ sided: 'triple' as never }],
     [{ service: 'gold' as never }],
   ])('rejects %o', (bad) => {
-    expect(() => quotePrintOrder({ files: [file(bad)], globalPricing: global })).toThrow(QuoteError);
+    expect(() => quotePrintOrder({ files: [file(bad)], partnerPricing: partner })).toThrow(QuoteError);
   });
 
   it('rejects empty and oversized orders', () => {
-    expect(() => quotePrintOrder({ files: [], globalPricing: global })).toThrow(QuoteError);
-    expect(() => quotePrintOrder({ files: Array(21).fill(file()), globalPricing: global })).toThrow(QuoteError);
+    expect(() => quotePrintOrder({ files: [], partnerPricing: partner })).toThrow(QuoteError);
+    expect(() => quotePrintOrder({ files: Array(21).fill(file()), partnerPricing: partner })).toThrow(QuoteError);
   });
 
   it('parcel weight matches the order page formula', () => {

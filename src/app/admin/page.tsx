@@ -174,50 +174,6 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
     setFilteredOrders(filtered);
   }, [orders, statusFilter, paymentFilter]);
 
-  const processPendingOrders = async () => {
-    setIsLoading(true);
-    try {
-      console.log('🔄 Manually processing pending orders...');
-      const response = await fetch('/api/printer/process-pending', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const { processed, skipped, failed, orders } = data.results;
-        if (processed > 0) {
-          showSuccess(`Successfully processed ${processed} orders - they are now in the print queue!`);
-        } else if (failed > 0) {
-          // Build detailed error message
-          let errorMessage = `Failed to process ${failed} order(s).`;
-          const failedOrders = orders?.filter((o: any) => o.status === 'failed' || o.status === 'error') || [];
-          if (failedOrders.length > 0) {
-            const details = failedOrders.map((failedOrder: { orderId: string; message: string }) =>
-              `Order ${failedOrder.orderId}: ${failedOrder.message}`
-            ).join('; ');
-            errorMessage += ` ${details}`;
-          }
-          showError(errorMessage);
-        } else {
-          showInfo(data.message || 'No orders needed processing');
-        }
-        // Refresh orders after processing
-        await fetchOrders();
-      } else {
-        showError(`Failed to process orders: ${data.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error processing pending orders:', error);
-      showError('An error occurred while processing orders');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const fetchOrders = async (page: number = currentPage, overrides?: { name?: string; dateFrom?: string; dateTo?: string }) => {
     setIsLoading(true);
     try {
@@ -370,28 +326,6 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
             subtitle="Manage all printing orders and track their status"
             actions={
               <>
-                <button
-                  onClick={processPendingOrders}
-                  disabled={isLoading}
-                  className="bg-green-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base mr-2"
-                >
-                  <span className="hidden sm:inline flex items-center gap-2">
-                    {isLoading ? 'Processing...' : (
-                      <>
-                        <PrinterIcon size={18} className="w-4.5 h-4.5" />
-                        Process Pending Orders
-                      </>
-                    )}
-                  </span>
-                  <span className="sm:hidden flex items-center gap-2">
-                    {isLoading ? 'Processing...' : (
-                      <>
-                        <PrinterIcon size={18} className="w-4.5 h-4.5" />
-                        Process
-                      </>
-                    )}
-                  </span>
-                </button>
                 <button
                   onClick={refreshOrdersWithPaymentCheck}
                   disabled={isLoading || isCheckingPayments}
@@ -563,12 +497,6 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
               title="Errors"
               description="Errors and warnings users ran into"
               href="/admin/errors"
-            />
-            <AdminCard
-              icon={<PrinterIcon size={32} className="w-8 h-8" />}
-              title="Printer Monitor"
-              description="Monitor printer API and queue status"
-              href="/admin/printer-monitor"
             />
             <AdminCard
               icon={<DollarIcon size={32} className="w-8 h-8" />}
@@ -992,16 +920,15 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
                                 e.stopPropagation();
                                 setPrintingOrders(prev => new Set(prev).add(order._id));
                                 try {
-                                  const response = await fetch('/api/printer', {
+                                  const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.orderId)}/job`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ orderId: order.orderId, printerIndex: 1 }),
+                                    body: JSON.stringify({ action: 'resend' }),
                                   });
                                   const data = await response.json();
                                   if (data.success) {
-                                    showSuccess(`Order #${order.orderId} sent to print queue!`);
-                                    // Update order status to printing
-                                    await updateOrderStatus(order._id, 'printing');
+                                    showSuccess(`Order #${order.orderId} is in the shop's print queue`);
+                                    await fetchOrders();
                                   } else {
                                     showError(`Failed to send to print queue: ${data.error || 'Unknown error'}`);
                                   }
@@ -1018,12 +945,12 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
                               }}
                               disabled={printingOrders.has(order._id)}
                               className="block w-full bg-indigo-600 text-white text-center px-3 py-1 rounded text-xs hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                              title="Send to Print Queue"
+                              title="Put this order back in its shop's print queue"
                             >
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                               </svg>
-                              {printingOrders.has(order._id) ? 'Sending...' : 'Print'}
+                              {printingOrders.has(order._id) ? 'Sending...' : 'Send to shop'}
                             </button>
                           )}
                         </div>

@@ -46,6 +46,8 @@ export interface IPartner {
     isActive: boolean;
   }>;
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
+  // auto: paid orders go straight to the print queue; manual: the partner accepts each order
+  acceptanceMode: 'auto' | 'manual';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,6 +97,7 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     isActive: { type: Boolean, default: true }
   }],
   razorpayAccountId: { type: String, required: false },
+  acceptanceMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
 }, {
   timestamps: true,
 });

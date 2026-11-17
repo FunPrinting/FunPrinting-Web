@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@thasmorato/docx-parser": "^1.4.0",
+    "@upstash/qstash": "^2.12.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.4",
     "bcryptjs": "^3.0.2",

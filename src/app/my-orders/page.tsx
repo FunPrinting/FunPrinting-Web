@@ -61,6 +61,7 @@ interface Order {
   amount: number;
   razorpayOrderId?: string;
   paymentRef?: string;
+  shopDelayNotifiedAt?: string;
   razorpayPaymentId?: string;
   createdAt: string;
   shiprocket?: {
@@ -450,6 +451,14 @@ export default function MyOrdersPage() {
                         <div>
                           <span className="text-sm font-medium text-gray-700">Amount:</span>
                           <span className="text-lg font-semibold text-gray-900 ml-2">₹{order.amount}</span>
+                        </div>
+                      )}
+
+                      {/* Paid, but the shop hasn't accepted yet */}
+                      {order.shopDelayNotifiedAt && order.paymentStatus === 'completed' && order.status === 'paid' && (
+                        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          The shop hasn&apos;t accepted this order yet. You can keep waiting (it is refunded automatically if not accepted within 24 hours), or{' '}
+                          <a href={`/orders/${encodeURIComponent(order.orderId)}/choose`} className="font-semibold underline">get a refund now</a>.
                         </div>
                       )}
 

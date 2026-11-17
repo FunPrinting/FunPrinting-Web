@@ -3,11 +3,10 @@ import { z } from 'zod';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
-import { getPricing } from '@/lib/pricing';
 import { getFileTypeFromFileNames } from '@/lib/fileTypeDetection';
 import { getDeliveryQuote, isValidPincode, tierCharge } from '@/lib/delivery/rates';
 import { verifyUploadReceipt, type UploadReceipt } from '@/lib/uploads/receipt';
-import { normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
+import { DEFAULT_PARTNER_PRICING, normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
 import { assertChargeable, paiseToRupees, withProcessingFee } from '@/lib/payments/money';
 import { createLinkForPayment, newPaymentAttempt, type CheckoutResult } from '@/lib/payments/links';
 import type { SessionUser } from '@/lib/authz';
@@ -45,8 +44,7 @@ export const printCheckoutSchema = z.object({
     .max(20),
   delivery: z.object({
     type: z.enum(['pickup', 'delivery']),
-    pickupLocationId: z.string().max(64).optional(),
-    partnerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    partnerId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Choose a print shop'),
     partnerDeliveryPoint: z.string().max(200).optional(),
     speed: z.enum(['standard', 'express', 'sameday']).optional(),
     recipientName: z.string().trim().max(100).optional(),
@@ -63,25 +61,6 @@ export const printCheckoutSchema = z.object({
 });
 
 export type PrintCheckoutInput = z.infer<typeof printCheckoutSchema>;
-
-async function pickupLocationSnapshot(id: string | undefined) {
-  if (!id) return undefined;
-  const PickupLocation = (await import('@/models/PickupLocation')).default;
-  const loc = await PickupLocation.findById(id).lean<Record<string, unknown> | null>().catch(() => null);
-  if (!loc) return undefined;
-  const pick = (k: string) => loc[k] as never;
-  return {
-    _id: String(loc._id),
-    name: pick('name'),
-    address: pick('address'),
-    lat: pick('lat'),
-    lng: pick('lng'),
-    contactPerson: pick('contactPerson'),
-    contactPhone: pick('contactPhone'),
-    operatingHours: pick('operatingHours'),
-    gmapLink: pick('gmapLink'),
-  };
-}
 
 /**
  * Creates the order (pending_payment), the Payment record and the Razorpay Payment
@@ -115,12 +94,15 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     service: f.service,
   }));
 
-  // 2. Shop: must be an approved partner
-  let partner: { _id: unknown; businessName?: string; pricing?: { perPageBW: number; perPageColor: number; binding: number }; razorpayAccountId?: string } | null = null;
-  if (input.delivery.partnerId) {
-    partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean();
-    if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
-  }
+  // 2. Shop: every order goes to an approved partner (the platform's own shop is one too)
+  const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<{
+    _id: unknown;
+    businessName?: string;
+    pricing?: { perPageBW: number; perPageColor: number; binding: number };
+    razorpayAccountId?: string;
+  } | null>();
+  if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
+  const partnerPricing = partner.pricing ?? DEFAULT_PARTNER_PRICING;
 
   // 3. Delivery charge, computed here
   let deliveryChargePaise = 0;
@@ -137,10 +119,9 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   }
 
   // 4. Price
-  const globalPricing = await getPricing();
   let quote;
   try {
-    quote = quotePrintOrder({ files: quoteFiles, partnerPricing: partner?.pricing ?? null, globalPricing, deliveryChargePaise });
+    quote = quotePrintOrder({ files: quoteFiles, partnerPricing, deliveryChargePaise });
   } catch (error) {
     if (error instanceof QuoteError) throw new CheckoutError(error.message);
     throw error;
@@ -189,9 +170,8 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     deliveryOption: {
       ...input.delivery,
       deliveryCharge,
-      pickupLocation: input.delivery.type === 'pickup' && !partner ? await pickupLocationSnapshot(input.delivery.pickupLocationId) : undefined,
     },
-    partnerId: partner ? String(partner._id) : undefined,
+    partnerId: String(partner._id),
     expectedDate: expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : undefined,
     amount: paiseToRupees(totals.subtotal),
     pricing: {
@@ -200,7 +180,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
       total: paiseToRupees(totals.total),
       delivery: paiseToRupees(quote.delivery),
       files: quote.files.map((f) => ({ name: f.name, pages: f.pages, colorPages: f.colorPageCount, bwPages: f.bwPageCount, amount: paiseToRupees(f.amount) })),
-      partnerPricing: Boolean(partner?.pricing),
+      partnerPricing: true,
     },
     paymentStatus: 'pending',
     orderStatus: 'pending',
@@ -226,7 +206,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     idempotencyKey: input.idempotencyKey,
     orderId: order.orderId,
     totals,
-    partner: partner ? { id: String(partner._id), accountId: partner.razorpayAccountId } : undefined,
+    partner: { id: String(partner._id), accountId: partner.razorpayAccountId },
   });
   const result = await createLinkForPayment(payment, {
     description: `FunPrinting order ${order.orderId}`,

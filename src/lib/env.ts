@@ -61,6 +61,11 @@ const serverEnvSchema = z.object({
   WSS_API_URL: optionalUrl,
   WSS_DISPATCH_SECRET: optionalString,
 
+  // Print job deadlines (optional)
+  QSTASH_TOKEN: optionalString,
+  QSTASH_CURRENT_SIGNING_KEY: optionalString,
+  QSTASH_NEXT_SIGNING_KEY: optionalString,
+
   // Rate limiting
   UPSTASH_REDIS_REST_URL: optionalUrl,
   UPSTASH_REDIS_REST_TOKEN: optionalString,
