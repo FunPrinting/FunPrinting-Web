@@ -112,6 +112,15 @@ export default function PartnerDashboard() {
       </div>
 
       <main className="-mt-32 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {isProfileComplete && !partnerData?.isActive && (
+          <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow">
+            <h2 className="font-semibold">Your partner application is under review</h2>
+            <p className="mt-1 text-sm">
+              We&apos;ll check your shop details and payout account. Once approved you can go online,
+              receive orders and sign in to the FunPrinting Partner app.
+            </p>
+          </div>
+        )}
         {!isProfileComplete ? (
           <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Complete Your Partner Profile</h2>

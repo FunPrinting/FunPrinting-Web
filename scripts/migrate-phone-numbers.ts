@@ -15,7 +15,7 @@
  */
 
 import mongoose from 'mongoose';
-import connectDB from '../src/lib/mongodb';
+import connectDB from './lib/db';
 import User from '../src/models/User';
 import Order from '../src/models/Order';
 import AdminInfo from '../src/models/AdminInfo';

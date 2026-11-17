@@ -175,7 +175,7 @@ export function canAccessOrder(
  */
 export async function resolvePartnerRequest(
   request: Request,
-  { allowMissing = false }: { allowMissing?: boolean } = {}
+  { allowMissing = false, allowInactive = false }: { allowMissing?: boolean; allowInactive?: boolean } = {}
 ): Promise<
   | { partner: any; userId: string }
   | NextResponse
@@ -213,6 +213,12 @@ export async function resolvePartnerRequest(
       { success: false, error: 'Partner profile not found' },
       { status: 404 }
     );
+  }
+  // Unapproved or deactivated partners can manage their profile (allowInactive)
+  // but cannot see or act on orders. This also cuts off device tokens of a
+  // partner an admin deactivates, without waiting for the token to expire.
+  if (partner && !partner.isActive && !allowInactive) {
+    return forbidden('Partner account is not active');
   }
   return { partner, userId };
 }

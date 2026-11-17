@@ -33,9 +33,9 @@ export function getMailTransporter(): Transporter {
         user: process.env.EMAIL_HOST_USER,
         pass: process.env.EMAIL_HOST_PASSWORD,
       },
-      tls: {
-        rejectUnauthorized: false,
-      },
+      // STARTTLS is required and the server certificate is verified, so the
+      // credentials can't be read by anyone intercepting the connection
+      requireTLS: true,
     });
   }
   return cachedTransporter;

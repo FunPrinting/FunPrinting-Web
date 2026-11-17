@@ -18,9 +18,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limit by IP and by email (5 per 10 minutes each)
-    const ipLimited = await checkRateLimit(otpSendRateLimit, `ip:${getClientIdentifier(request)}`);
+    const ipLimited = await checkRateLimit(otpSendRateLimit, `ip:${getClientIdentifier(request)}`, { failClosed: true });
     if (ipLimited) return ipLimited;
-    const emailLimited = await checkRateLimit(otpSendRateLimit, `email:${email}`);
+    const emailLimited = await checkRateLimit(otpSendRateLimit, `email:${email}`, { failClosed: true });
     if (emailLimited) return emailLimited;
 
     if (!isMailConfigured()) {

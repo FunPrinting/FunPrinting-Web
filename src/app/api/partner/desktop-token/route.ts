@@ -43,15 +43,13 @@ export async function GET() {
     const userRole: string = dbUser.role || 'customer';
     const partner = await Partner.findOne({ userId });
 
-    const hasPartnerRole = userRole === 'partner' || userRole === 'admin';
-    const hasActivePartner = Boolean(partner && partner.isActive);
-
     // A token needs a Partner document (its _id is the routing key for print jobs)
-    if (!partner || (!hasPartnerRole && !hasActivePartner)) {
-      return NextResponse.json(
-        { error: 'not_a_partner', applyUrl: '/partner' },
-        { status: 403 }
-      );
+    if (!partner) {
+      return NextResponse.json({ error: 'not_a_partner', applyUrl: '/partner' }, { status: 403 });
+    }
+    // ...and that partner must be approved by an admin
+    if (!partner.isActive) {
+      return NextResponse.json({ error: 'partner_pending_approval', applyUrl: '/partner/dashboard' }, { status: 403 });
     }
 
     const role: 'partner' | 'admin' = userRole === 'admin' ? 'admin' : 'partner';

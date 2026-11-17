@@ -1,6 +1,6 @@
 import 'server-only';
 import mongoose from 'mongoose';
-import { getServerEnv } from '@/lib/env';
+import { EnvError } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
 /**
@@ -18,8 +18,10 @@ async function connectDB() {
   if (mongoose.connection.readyState === 1) return mongoose.connection;
 
   if (!cache.promise) {
-    // Throws a readable EnvError listing every missing/invalid variable
-    const { MONGODB_URI } = getServerEnv();
+    // Only the database URI is needed here; the full env is checked once at startup
+    // (src/instrumentation.ts), so an unrelated missing variable can't break DB access.
+    const MONGODB_URI = process.env.MONGODB_URI?.trim();
+    if (!MONGODB_URI) throw new EnvError(['MONGODB_URI is required']);
     cache.promise = mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,

@@ -32,6 +32,11 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Order not found or unauthorized' }, { status: 404 });
     }
 
+    // Repeating the current status (reprint, double click, desktop auto-update) is a no-op
+    if (order.status === status) {
+      return NextResponse.json({ success: true, order, unchanged: true });
+    }
+
     const check = checkPartnerTransition(order, status);
     if (!check.ok) {
       return NextResponse.json({ success: false, error: check.error }, { status: 400 });

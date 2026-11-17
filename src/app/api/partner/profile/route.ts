@@ -5,7 +5,7 @@ import Partner from '@/models/Partner';
 // GET Partner Profile
 export async function GET(request: NextRequest) {
   try {
-    const resolved = await resolvePartnerRequest(request, { allowMissing: true });
+    const resolved = await resolvePartnerRequest(request, { allowMissing: true, allowInactive: true });
     if (resolved instanceof NextResponse) return resolved;
 
     const { partner } = resolved;
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 // CREATE / UPDATE Partner Profile
 export async function POST(request: NextRequest) {
   try {
-    const resolved = await resolvePartnerRequest(request, { allowMissing: true });
+    const resolved = await resolvePartnerRequest(request, { allowMissing: true, allowInactive: true });
     if (resolved instanceof NextResponse) return resolved;
     const { userId } = resolved;
 
@@ -35,7 +35,12 @@ export async function POST(request: NextRequest) {
     if (partner) {
       // Update existing
       partner.businessName = data.businessName || partner.businessName;
-      partner.razorpayAccountId = data.razorpayAccountId || partner.razorpayAccountId;
+      // The linked account receives the partner's payout split. A partner may set it
+      // while the application is pending (the admin reviews it before approving);
+      // after approval only an admin can change it (/api/admin/partners/[id]).
+      if (!partner.isActive && typeof data.razorpayAccountId === 'string' && data.razorpayAccountId.trim()) {
+        partner.razorpayAccountId = data.razorpayAccountId.trim();
+      }
 
       if (data.location) {
         partner.location = data.location;
@@ -51,9 +56,9 @@ export async function POST(request: NextRequest) {
         partner.deliveryPoints = data.deliveryPoints;
       }
 
-      // Update status if provided
-      if (typeof data.isOnline !== 'undefined') partner.isOnline = data.isOnline;
-      if (typeof data.isActive !== 'undefined') partner.isActive = data.isActive;
+      // Online/offline is the partner's choice, but only once approved.
+      // isActive (approval) is set by an admin only and is ignored here.
+      if (typeof data.isOnline === 'boolean') partner.isOnline = partner.isActive ? data.isOnline : false;
       if (typeof data.phoneNumbers !== 'undefined') partner.phoneNumbers = data.phoneNumbers;
 
       await partner.save();
@@ -66,10 +71,12 @@ export async function POST(request: NextRequest) {
       partner = new Partner({
         userId: userId,
         businessName: data.businessName,
-        razorpayAccountId: data.razorpayAccountId,
+        razorpayAccountId: typeof data.razorpayAccountId === 'string' ? data.razorpayAccountId.trim() : undefined,
         location: data.location,
         address: data.address,
-        isActive: true,
+        // New partners wait for admin approval before they can receive orders,
+        // appear in /api/partners/nearby, or get a device token
+        isActive: false,
         isOnline: false,
         earnings: { totalRevenue: 0, pendingPayout: 0 },
         servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },

@@ -8,6 +8,7 @@ interface Partner {
   businessName: string;
   isOnline: boolean;
   isActive: boolean;
+  razorpayAccountId?: string;
   servicesOffered: {
     printing: boolean;
     binding: boolean;
@@ -29,6 +30,28 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const setActive = async (partner: Partner, isActive: boolean) => {
+    if (!isActive && !window.confirm(`Deactivate ${partner.businessName}? They will stop receiving orders and their devices will be signed out.`)) {
+      return;
+    }
+    setUpdatingId(partner._id);
+    try {
+      const res = await fetch(`/api/admin/partners/${partner._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+      setPartners((list) => list.map((p) => (p._id === partner._id ? { ...p, ...data.partner } : p)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   useEffect(() => {
     fetchPartners();
@@ -89,8 +112,8 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                     {partner.businessName || 'Unnamed Shop'}
                   </h3>
                   <div className="flex gap-2 mt-2">
-                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${partner.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {partner.isActive ? 'Active' : 'Inactive'}
+                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${partner.isActive ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {partner.isActive ? 'Approved' : 'Pending approval'}
                     </span>
                     <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${partner.isOnline ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                       {partner.isOnline ? 'Online' : 'Offline'}
@@ -114,6 +137,23 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                  {partner.servicesOffered?.printing && <span className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded border border-blue-100">Printing</span>}
                  {partner.servicesOffered?.binding && <span className="px-2 py-1 bg-purple-50 text-purple-600 text-xs rounded border border-purple-100">Binding</span>}
                  {partner.servicesOffered?.cashOnDelivery && <span className="px-2 py-1 bg-green-50 text-green-600 text-xs rounded border border-green-100">COD</span>}
+              </div>
+
+              <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                <span className="text-xs text-gray-500 truncate" title={partner.razorpayAccountId || ''}>
+                  Payout: {partner.razorpayAccountId || 'no linked account'}
+                </span>
+                <button
+                  type="button"
+                  disabled={updatingId === partner._id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActive(partner, !partner.isActive);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-50 ${partner.isActive ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                >
+                  {updatingId === partner._id ? 'Saving…' : partner.isActive ? 'Deactivate' : 'Approve'}
+                </button>
               </div>
             </div>
           </div>

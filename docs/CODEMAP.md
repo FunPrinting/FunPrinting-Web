@@ -28,7 +28,7 @@ Rules for new code:
 | `requireAdmin()` | Session with `role: admin`, or email in `ADMIN_EMAILS` / `ADMIN_EMAIL` | 401 / 403 |
 | `canAccessOrder(user, order)` | Admin, or `order.customerInfo.email` matches the session | caller returns 404 |
 | `requirePartnerToken(req)` | `Authorization: Bearer` JWT from `/api/partner/desktop-token`, HS256 with `NEXTAUTH_SECRET`, expiry enforced | 401 |
-| `resolvePartnerRequest(req)` | Partner token, or the web session; loads the `Partner` document | 401 / 404 |
+| `resolvePartnerRequest(req)` | Partner token, or the web session; loads the `Partner` document and requires `isActive` unless `allowInactive` | 401 / 403 / 404 |
 | `requireCronSecret(req)` | `Authorization: Bearer $CRON_SECRET` (Vercel Cron) or `x-cron-secret` | 401, also when unset |
 | `templateAuth` (`src/lib/templateAuth.ts`) | Session-based template ownership checks | 401 / 403 |
 
@@ -56,11 +56,13 @@ Rules for new code:
 ### Partners
 | Route | Methods | Guard | Notes | Changes in |
 |---|---|---|---|---|
-| `/api/partner/desktop-token` | GET | session | Issues a 30-day device JWT; requires a Partner document | Phase 4: one-time code + refresh tokens |
+| `/api/partner/desktop-token` | GET | session | Issues a 30-day device JWT; requires an approved (`isActive`) Partner | Phase 4: one-time code + refresh tokens |
 | `/api/partner/orders` | GET | partner | Orders assigned to the partner | Phase 3: Partner API v1 (jobs, claim) |
 | `/api/partner/orders/[orderId]` | PATCH | partner | Forward-only status moves (`src/lib/partnerOrderTransitions.ts`), conditional update | Phase 3: order state machine |
-| `/api/partner/profile`, `/api/partner/financials` | GET, POST | partner | | Phase 4: approval before activation |
+| `/api/partner/profile` | GET, POST | partner (inactive allowed) | Apply / edit shop. New partners start `isActive: false`; partners can't set `isActive`, and can't change `razorpayAccountId` after approval | Phase 4 |
+| `/api/partner/financials` | GET | partner | | |
 | `/api/admin/partners` | GET | admin | | Phase 4 |
+| `/api/admin/partners/[id]` | PATCH | admin | Approve/deactivate (`isActive`), set the Route linked account | Phase 4 |
 
 ### Admin (all `requireAdmin` except where noted)
 `/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (GET public: template fill pages read it), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.

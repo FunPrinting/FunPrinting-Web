@@ -4,7 +4,7 @@
  */
 
 import mongoose from 'mongoose';
-import connectDB from '../src/lib/mongodb';
+import connectDB from './lib/db';
 import Order from '../src/models/Order';
 import { getFileTypeFromFilename, getFileTypeFromFileNames } from '../src/lib/fileTypeDetection';
 

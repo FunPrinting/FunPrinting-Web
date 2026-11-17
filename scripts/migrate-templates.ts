@@ -11,7 +11,7 @@
  */
 
 import mongoose from 'mongoose';
-import connectDB from '../src/lib/mongodb';
+import connectDB from './lib/db';
 import DynamicTemplate from '../src/models/DynamicTemplate';
 import User from '../src/models/User';
 

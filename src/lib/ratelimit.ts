@@ -85,7 +85,8 @@ export function getClientIdentifier(request: NextRequest): string {
  */
 export async function checkRateLimit(
     rateLimiter: Ratelimit,
-    identifier: string
+    identifier: string,
+    { failClosed = false }: { failClosed?: boolean } = {}
 ): Promise<NextResponse | null> {
     try {
         const { success, limit, remaining, reset } = await rateLimiter.limit(identifier);
@@ -112,7 +113,15 @@ export async function checkRateLimit(
 
         return null; // Within limit
     } catch (error) {
-        // If rate limiting fails (Redis down), allow the request through
+        if (failClosed) {
+            // Security-sensitive limits (OTP) must not be bypassable by a Redis outage
+            console.error('⚠️ Rate limit check failed, rejecting request:', error);
+            return NextResponse.json(
+                { success: false, error: 'Service temporarily unavailable. Please try again shortly.' },
+                { status: 503, headers: { 'Retry-After': '30' } }
+            );
+        }
+        // Other limits: allow the request through when Redis is down
         console.error('⚠️ Rate limit check failed, allowing request:', error);
         return null;
     }

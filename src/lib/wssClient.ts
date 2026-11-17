@@ -104,19 +104,52 @@ async function postSigned(path: string, payload: Record<string, unknown>): Promi
 }
 
 /**
+ * Socket rooms that should receive a partner's jobs.
+ *
+ * Tokens issued before the Phase 0 fix carried partnerId = User._id, so installed apps
+ * that still hold one sit in room partner_<User._id>. Until those 365-day tokens have
+ * expired (all were issued before 2026-11-18, so by 2027-11-18), also send to that room.
+ * A socket is only ever in one room, so no device receives a job twice.
+ * TODO(2027-11-18): drop the legacy room.
+ */
+async function partnerRooms(partnerId: string): Promise<string[]> {
+  const rooms = [partnerId];
+  try {
+    const [{ default: connectDB }, { default: Partner }] = await Promise.all([
+      import('@/lib/mongodb'),
+      import('@/models/Partner'),
+    ]);
+    await connectDB();
+    const partner = await Partner.findById(partnerId).select('userId').lean<{ userId?: unknown }>();
+    const legacy = partner?.userId ? String(partner.userId) : '';
+    if (/^[0-9a-fA-F]{24}$/.test(legacy) && legacy !== partnerId) rooms.push(legacy);
+  } catch (error) {
+    logger.warn({ err: error, partnerId }, 'could not resolve legacy partner room');
+  }
+  return rooms;
+}
+
+async function postToRooms(
+  path: string,
+  partnerId: string,
+  build: (roomId: string) => Record<string, unknown>
+): Promise<WssResult> {
+  const rooms = await partnerRooms(String(partnerId));
+  const results = await Promise.all(rooms.map((room) => postSigned(path, build(room))));
+  const primary = results[0];
+  const delivered = results.reduce((sum, r) => sum + (r.ok ? r.delivered : 0), 0);
+  return { ...primary, ok: results.some((r) => r.ok), delivered };
+}
+
+/**
  * Sends a print job to the partner's socket room (partner_<Partner._id>).
  * `delivered` is the number of connected partner sockets that received it.
  */
 export function dispatchPrintJob(partnerId: string, order: any): Promise<WssResult> {
-  return postSigned('/api/dispatch-print-job', {
-    partnerId: String(partnerId),
-    order: toDispatchOrder(order),
-  });
+  const payload = toDispatchOrder(order);
+  return postToRooms('/api/dispatch-print-job', partnerId, (room) => ({ partnerId: room, order: payload }));
 }
 
 export function cancelPrintJob(partnerId: string, orderId: string): Promise<WssResult> {
-  return postSigned('/api/cancel-print-job', {
-    partnerId: String(partnerId),
-    orderId: String(orderId),
-  });
+  return postToRooms('/api/cancel-print-job', partnerId, (room) => ({ partnerId: room, orderId: String(orderId) }));
 }

@@ -1,9 +1,21 @@
 import crypto from 'crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const partnerLookup = vi.hoisted(() => ({ userId: null as string | null }));
+vi.mock('@/lib/mongodb', () => ({ default: vi.fn(async () => undefined) }));
+vi.mock('@/models/Partner', () => ({
+  default: {
+    findById: () => ({
+      select: () => ({ lean: async () => (partnerLookup.userId ? { userId: partnerLookup.userId } : null) }),
+    }),
+  },
+}));
+
 import { cancelPrintJob, dispatchPrintJob, signWssBody } from '@/lib/wssClient';
 
 const SECRET = 'dispatch-secret';
 const PARTNER_ID = 'c'.repeat(24);
+const LEGACY_USER_ID = 'd'.repeat(24);
 
 function mockFetch(response: { status?: number; body?: unknown } = {}) {
   const fn = vi.fn(async () =>
@@ -28,6 +40,18 @@ describe('dispatchPrintJob / cancelPrintJob', () => {
   beforeEach(() => {
     vi.stubEnv('WSS_API_URL', 'https://wss.example.com/');
     vi.stubEnv('WSS_DISPATCH_SECRET', SECRET);
+    partnerLookup.userId = null;
+  });
+
+  it('also sends to the legacy User._id room and sums deliveries', async () => {
+    partnerLookup.userId = LEGACY_USER_ID;
+    const fetchMock = mockFetch({ body: { success: true, delivered: 1 } });
+
+    const result = await dispatchPrintJob(PARTNER_ID, { orderId: 'ORD1', fileURL: 'https://f/1.pdf' });
+
+    const rooms = fetchMock.mock.calls.map((c) => JSON.parse((c as unknown as [string, RequestInit])[1].body as string).partnerId);
+    expect(rooms).toEqual([PARTNER_ID, LEGACY_USER_ID]);
+    expect(result).toMatchObject({ ok: true, delivered: 2 });
   });
 
   it('signs exactly the body it sends and strips customer data', async () => {

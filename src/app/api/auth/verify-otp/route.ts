@@ -13,9 +13,9 @@ export async function POST(request: NextRequest) {
       );
     }
     // Rate limit verify attempts by IP and by email
-    const ipLimited = await checkRateLimit(otpVerifyRateLimit, `ip:${getClientIdentifier(request)}`);
+    const ipLimited = await checkRateLimit(otpVerifyRateLimit, `ip:${getClientIdentifier(request)}`, { failClosed: true });
     if (ipLimited) return ipLimited;
-    const emailLimited = await checkRateLimit(otpVerifyRateLimit, `email:${email}`);
+    const emailLimited = await checkRateLimit(otpVerifyRateLimit, `email:${email}`, { failClosed: true });
     if (emailLimited) return emailLimited;
     // Get stored OTP data
     const storedData = otpStore.get(email);
