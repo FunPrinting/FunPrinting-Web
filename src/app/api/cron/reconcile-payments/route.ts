@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/cronAuth';
 import { checkPendingOrdersFromRazorpay } from '@/lib/razorpayFallback';
 
 /**
@@ -11,17 +12,10 @@ import { checkPendingOrdersFromRazorpay } from '@/lib/razorpayFallback';
  * - Updates orders automatically if payment was successful but verification missed
  */
 export async function GET(request: NextRequest) {
+  const cronAuth = requireCronSecret(request);
+  if (cronAuth) return cronAuth;
+
   try {
-    // Verify this is a legitimate cron request
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
 
     console.log('🔄 Starting payment reconciliation cron job...');
     const startTime = Date.now();

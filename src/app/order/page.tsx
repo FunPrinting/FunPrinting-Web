@@ -1888,20 +1888,6 @@ function OrderPageContent() {
           modal: {
             ondismiss: function () {
               console.log('Payment modal dismissed');
-              // Clean up temporary order data
-              if (data.razorpayOrderId) {
-                fetch('/api/payment/cleanup', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    razorpay_order_id: data.razorpayOrderId,
-                  }),
-                }).catch(cleanupError => {
-                  console.error('Error cleaning up payment data:', cleanupError);
-                });
-              }
               setIsProcessingPayment(false);
             }
           },

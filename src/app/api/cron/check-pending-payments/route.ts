@@ -1,27 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/cronAuth';
 import { checkPendingOrdersFromRazorpay } from '@/lib/razorpayFallback';
 
 export async function GET(request: NextRequest) {
+  const cronAuth = requireCronSecret(request);
+  if (cronAuth) return cronAuth;
+
   try {
-    // Verify cron secret for security
-    const cronSecret = request.headers.get('x-cron-secret');
-    const expectedSecret = process.env.CRON_SECRET;
-    
-    if (!expectedSecret) {
-      console.error('❌ CRON_SECRET not configured');
-      return NextResponse.json(
-        { success: false, error: 'Cron secret not configured' },
-        { status: 500 }
-      );
-    }
-    
-    if (cronSecret !== expectedSecret) {
-      console.error('❌ Invalid cron secret');
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
 
     console.log('🕐 Cron job triggered: Checking pending payments from Razorpay');
     
@@ -44,6 +29,9 @@ export async function GET(request: NextRequest) {
 
 // Allow manual trigger for testing
 export async function POST(request: NextRequest) {
+  const cronAuth = requireCronSecret(request);
+  if (cronAuth) return cronAuth;
+
   try {
     console.log('🧪 Manual trigger: Checking pending payments from Razorpay');
     

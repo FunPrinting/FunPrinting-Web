@@ -270,7 +270,7 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
       // 🔄 FIRST: Check Razorpay for successful payments
       console.log('🔄 Admin: Checking Razorpay payments before refreshing orders...');
       try {
-        const paymentCheckResponse = await fetch('/api/manual-check-payments', {
+        const paymentCheckResponse = await fetch('/api/admin/check-pending-payments', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

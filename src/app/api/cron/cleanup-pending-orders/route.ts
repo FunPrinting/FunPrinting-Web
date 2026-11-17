@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/cronAuth';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { checkPendingOrdersFromRazorpay } from '@/lib/razorpayFallback';
 import { sendPaymentReminderToCustomer, sendPaymentReminderToAdmin } from '@/lib/notificationService';
 
 export async function GET(request: NextRequest) {
+  const cronAuth = requireCronSecret(request);
+  if (cronAuth) return cronAuth;
+
   try {
-    // Verify this is a legitimate cron request (you can add authentication here)
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
 
     await connectDB();
     
