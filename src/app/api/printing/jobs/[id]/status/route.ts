@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import PrintJob from '@/models/PrintJob';
 import Order from '@/models/Order';
@@ -7,6 +8,9 @@ export async function PUT(
     request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
 

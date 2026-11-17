@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { sendPrintJobFromOrder, generateDeliveryNumber } from '@/lib/printerClient';
@@ -8,6 +9,9 @@ import { sendPrintJobFromOrder, generateDeliveryNumber } from '@/lib/printerClie
  * Send print job to printer API
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
 
@@ -168,6 +172,9 @@ export async function POST(request: NextRequest) {
  * Get printer API status
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const printerIndex = parseInt(searchParams.get('printerIndex') || '1', 10);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import PrintJob from '@/models/PrintJob';
@@ -9,6 +10,9 @@ import { sendPrintJobFromOrder, generateDeliveryNumber } from '@/lib/printerClie
  * Process all orders with completed payment but no print job sent
  */
 export async function POST(_request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
 

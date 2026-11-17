@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUser } from '@/lib/authz';
 import { PDFDocument } from 'pdf-lib';
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUser } from '@/lib/authz';
 import { uploadFile } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { fileName, fileBuffer, contentType } = body;

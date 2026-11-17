@@ -390,6 +390,12 @@ const countPagesInFile = async (file: File): Promise<number> => {
           return data.verifiedPageCount;
         }
       }
+      // /api/upload/verify requires sign-in. Guests get a local count for the price preview.
+      if (response.status === 401) {
+        const { PDFDocument } = await import('pdf-lib');
+        const pdfDoc = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+        return pdfDoc.getPageCount();
+      }
       throw new Error('Server validation failed');
     } catch (error) {
       console.error('Error verifying PDF on server:', error);

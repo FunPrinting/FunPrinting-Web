@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUser } from '@/lib/authz';
 import { uploadFile } from '@/lib/storage';
 
 // Runtime configuration for Vercel
@@ -6,6 +7,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   console.log('🚀 Upload API called');
   
   try {

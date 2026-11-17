@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
+import { requireUser, canAccessOrder } from '@/lib/authz';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -20,6 +24,15 @@ export async function DELETE(
     
     if (!order) {
       console.log(`❌ Order not found with ID: ${orderId}`);
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
+    // Only the order owner or an admin may access this order.
+    // Respond 404 (not 403) so order IDs cannot be probed.
+    if (!canAccessOrder(auth, order)) {
       return NextResponse.json(
         { success: false, error: 'Order not found' },
         { status: 404 }
@@ -60,6 +73,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -71,6 +87,15 @@ export async function GET(
     const order = await Order.findOne(query);
     
     if (!order) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
+    // Only the order owner or an admin may access this order.
+    // Respond 404 (not 403) so order IDs cannot be probed.
+    if (!canAccessOrder(auth, order)) {
       return NextResponse.json(
         { success: false, error: 'Order not found' },
         { status: 404 }
