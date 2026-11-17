@@ -32,10 +32,6 @@ export async function sendNewOrderNotification(orderData: OrderNotificationData)
     
     // Debug logging
     console.log('📧 Sending new order notification...');
-    console.log('📧 Admin email:', adminEmail);
-    console.log('📧 Email host:', process.env.EMAIL_HOST);
-    console.log('📧 Email user:', process.env.EMAIL_HOST_USER);
-    console.log('📧 Email password configured:', !!process.env.EMAIL_HOST_PASSWORD);
     
     // Format order details for email
     const orderDetails = formatOrderDetails(orderData);
@@ -441,7 +437,6 @@ export async function sendPaymentReminderToAdmin(orderData: OrderNotificationDat
     const adminEmail = process.env.ADMIN_EMAIL ;
     
     console.log('📧 Sending payment reminder to admin...');
-    console.log('📧 Admin email:', adminEmail);
     
     const mailOptions = {
       from: process.env.EMAIL_USER || 'noreply@printservice.com',

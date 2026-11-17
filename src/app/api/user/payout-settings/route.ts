@@ -149,7 +149,7 @@ export async function PUT(request: NextRequest) {
 
     await user.save();
 
-    console.log(`✅ Payout settings updated for user: ${user.email}`);
+    console.log(`✅ Payout settings updated for user: ${user._id}`);
 
     return NextResponse.json({
       success: true,

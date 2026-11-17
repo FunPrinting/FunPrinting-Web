@@ -1,4 +1,6 @@
+import 'server-only';
 import nodemailer, { Transporter } from 'nodemailer';
+import { logger } from '@/lib/logger';
 
 /**
  * Shared SMTP transporter.
@@ -19,7 +21,7 @@ export function isMailConfigured(): boolean {
 export function getMailTransporter(): Transporter {
   if (!isMailConfigured()) {
     const message = 'Email is not configured: EMAIL_HOST_USER and EMAIL_HOST_PASSWORD must be set';
-    console.error(`❌ ${message}`);
+    logger.error(message);
     throw new Error(message);
   }
   if (!cachedTransporter) {

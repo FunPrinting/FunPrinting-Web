@@ -15,6 +15,7 @@ import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { authOptions } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 export interface SessionUser {
   id: string;
@@ -110,7 +111,7 @@ export function requirePartnerToken(
 ): PartnerTokenClaims | NextResponse {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) {
-    console.error('❌ NEXTAUTH_SECRET is not set; cannot verify partner tokens');
+    logger.error('NEXTAUTH_SECRET is not set; cannot verify partner tokens');
     return NextResponse.json(
       { success: false, error: 'Server misconfiguration' },
       { status: 500 }

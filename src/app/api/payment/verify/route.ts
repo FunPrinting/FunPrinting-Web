@@ -328,7 +328,7 @@ export async function POST(request: NextRequest) {
       const invoiceSent = await sendInvoiceEmail(updateResult, deliveryNumber);
 
       if (invoiceSent) {
-        console.log(`✅ Invoice email sent successfully to ${updateResult.customerInfo.email}`);
+        console.log(`✅ Invoice email sent for order ${updateResult.orderId}`);
       } else {
         console.warn(`⚠️ Failed to send invoice email, will retry later`);
         // Invoice email failure doesn't block the order

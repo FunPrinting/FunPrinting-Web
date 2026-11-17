@@ -1,5 +1,7 @@
+import 'server-only';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -17,7 +19,7 @@ function safeEqual(a: string, b: string): boolean {
 export function requireCronSecret(request: Request): NextResponse | null {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
-    console.error('❌ CRON_SECRET is not configured; rejecting cron request');
+    logger.error('CRON_SECRET is not configured; rejecting cron request');
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
   const authHeader = request.headers.get('authorization') || '';

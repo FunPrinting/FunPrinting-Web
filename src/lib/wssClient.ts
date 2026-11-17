@@ -12,7 +12,9 @@
  * - POST ${WSS_API_URL}/api/cancel-print-job    body { partnerId, orderId }
  * - response { success, delivered: number }
  */
+import 'server-only';
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 export interface WssResult {
   ok: boolean;
@@ -59,8 +61,9 @@ async function postSigned(path: string, payload: Record<string, unknown>): Promi
   const baseUrl = process.env.WSS_API_URL?.replace(/\/+$/, '');
   const secret = process.env.WSS_DISPATCH_SECRET;
   if (!baseUrl || !secret) {
-    console.error(
-      `❌ WSS call ${path} skipped: ${!baseUrl ? 'WSS_API_URL' : 'WSS_DISPATCH_SECRET'} is not set`
+    logger.error(
+      { path, missing: !baseUrl ? 'WSS_API_URL' : 'WSS_DISPATCH_SECRET' },
+      'WSS call skipped: not configured'
     );
     return { ok: false, delivered: 0, error: 'wss_not_configured' };
   }
@@ -86,14 +89,14 @@ async function postSigned(path: string, payload: Record<string, unknown>): Promi
       | { success?: boolean; delivered?: unknown; error?: string }
       | null;
     if (!res.ok || !data?.success) {
-      console.error(`❌ WSS ${path} failed: HTTP ${res.status} ${data?.error || res.statusText}`);
+      logger.error({ path, status: res.status, error: data?.error || res.statusText }, 'WSS call failed');
       return { ok: false, delivered: 0, status: res.status, error: data?.error || res.statusText };
     }
     const delivered = typeof data.delivered === 'number' ? data.delivered : 0;
     return { ok: true, delivered, status: res.status };
   } catch (error: any) {
     const reason = error?.name === 'AbortError' ? 'timeout' : error?.message || 'network_error';
-    console.error(`❌ WSS ${path} error: ${reason}`);
+    logger.error({ path, reason }, 'WSS call error');
     return { ok: false, delivered: 0, error: reason };
   } finally {
     clearTimeout(timer);

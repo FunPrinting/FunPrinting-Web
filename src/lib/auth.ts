@@ -104,7 +104,7 @@ export const authOptions: NextAuthOptions = {
             }
             
             await User.findByIdAndUpdate(existingUser._id, updateData);
-            console.log(`✅ User login successful for: ${user.email}`);
+            console.log(`✅ User login successful: ${existingUser._id}`);
             return true;
           }
 
@@ -121,7 +121,7 @@ export const authOptions: NextAuthOptions = {
             role: 'customer', // Regular customer by default
           });
 
-          console.log(`✅ New user created: ${user.email}`);
+          console.log(`✅ New user created: ${newUser._id}`);
           return true;
         } catch (error) {
           console.error('Google sign-in error:', error);

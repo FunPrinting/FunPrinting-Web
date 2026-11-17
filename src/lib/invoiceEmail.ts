@@ -187,10 +187,10 @@ export async function sendInvoiceEmail(order: IOrder, deliveryNumber: string): P
       ]
     };
 
-    console.log(`📧 Sending invoice email to ${order.customerInfo.email}...`);
+    console.log(`📧 Sending invoice email for order ${order.orderId}...`);
     const result = await getMailTransporter().sendMail(mailOptions);
     console.log(`✅ Invoice email sent successfully: ${result.messageId}`);
-    console.log(`✅ Invoice sent to customer: ${order.customerInfo.email}`);
+    console.log(`✅ Invoice sent for order ${order.orderId}`);
 
     return true;
   } catch (error) {

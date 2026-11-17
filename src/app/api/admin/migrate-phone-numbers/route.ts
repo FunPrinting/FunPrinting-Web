@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
       const validation = validatePhoneNumberLength(user.phone);
       if (!validation.valid) {
-        console.log(`   ⚠️  Invalid phone for user ${user.email}: ${validation.error}`);
+        console.log(`   ⚠️  Invalid phone for user ${user._id}: ${validation.error}`);
         await User.updateOne(
           { _id: user._id },
           { $set: { phone: null } }
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
       const validation = validatePhoneNumberLength(adminInfo.phone);
       if (!validation.valid) {
-        console.log(`   ⚠️  Invalid phone for admin info ${adminInfo.email}: ${validation.error}`);
+        console.log(`   ⚠️  Invalid phone for admin info ${adminInfo._id}: ${validation.error}`);
         await AdminInfo.updateOne(
           { _id: adminInfo._id },
           { $set: { phone: '' } }
