@@ -1,26 +1,19 @@
 import type { NextConfig } from "next";
 
+const securityHeaders = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-XSS-Protection', value: '1; mode=block' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+];
+
 const nextConfig: NextConfig = {
+  // Required by the Dockerfile (copies .next/standalone)
   output: 'standalone',
-  typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
-  // External packages for server components
-  serverExternalPackages: ['mongoose'],
-
-  // Turbopack configuration
-  turbopack: {
-    rules: {
-      '*.mjs': {
-        loaders: ['raw-loader'],
-        as: '*.js',
-      },
-    },
-  },
-
-  // Webpack configuration (fallback for non-Turbopack builds)
+  // Packages that must run as plain Node modules on the server
+  serverExternalPackages: ['mongoose', 'pino'],
+  // Non-Turbopack builds: keep Node built-ins out of client bundles
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Handle PDF.js worker files
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -30,71 +23,20 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
-
-  // Handle static files and security headers
   async headers() {
     return [
-      {
-        source: '/pdf.worker.min.mjs',
-        headers: [
-          {
-            key: 'Content-Type',
-            value: 'application/javascript',
-          },
-        ],
-      },
-      // Allow PDF viewer API to be embedded in iframes (same-origin only)
+      // The PDF viewer is embedded in same-origin iframes
       {
         source: '/api/admin/pdf-viewer',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
-          },
-        ],
+        headers: [...securityHeaders, { key: 'X-Frame-Options', value: 'SAMEORIGIN' }],
       },
-      // Security headers for SEO and security
+      // Everything else. The PDF viewer is excluded because, when two rules match,
+      // Next applies the later one, and DENY would override SAMEORIGIN above.
       {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
-          },
-        ],
+        source: '/((?!api/admin/pdf-viewer).*)',
+        headers: [...securityHeaders, { key: 'X-Frame-Options', value: 'DENY' }],
       },
     ];
-  },
-
-  // Redirects for SEO (www/non-www handling)
-  async redirects() {
-    // Note: In production, handle www/non-www redirects at the DNS/hosting level (Vercel handles this automatically)
-    // These redirects are here as a fallback
-    return [];
   },
 };
 
