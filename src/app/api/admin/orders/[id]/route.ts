@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/authz';
+import { cancelPrintJob } from '@/lib/wssClient';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { validateOrderStateTransition, logOrderEvent, OrderStatus } from '@/lib/orderUtils';
@@ -206,16 +207,11 @@ export async function DELETE(
     const targetPartnerId = order.deliveryOption?.partnerId || order.partnerId;
     if (targetPartnerId) {
       try {
-        const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
         console.log(`🛑 Sending cancel request to partner ${targetPartnerId} for order ${order.orderId}`);
-        await fetch(`${wssApiUrl}/api/cancel-print-job`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            partnerId: targetPartnerId,
-            orderId: order.orderId
-          })
-        });
+        const cancelResult = await cancelPrintJob(String(targetPartnerId), order.orderId);
+        if (!cancelResult.ok) {
+          console.warn(`⚠ cancel-print-job for order ${order.orderId} was not accepted by WSS`);
+        }
       } catch (err) {
         console.error('Failed to dispatch cancel-print-job webhook:', err);
       }

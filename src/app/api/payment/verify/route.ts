@@ -6,6 +6,7 @@ import CreatorEarning from '@/models/CreatorEarning';
 import { verifyPayment } from '@/lib/razorpay';
 import { sendPrintJobFromOrder, generateDeliveryNumber } from '@/lib/printerClient';
 import { sendInvoiceEmail } from '@/lib/invoiceEmail';
+import { dispatchPrintJob } from '@/lib/wssClient';
 
 export async function POST(request: NextRequest) {
   try {
@@ -274,26 +275,25 @@ export async function POST(request: NextRequest) {
       if (targetPartnerId) {
         // Send order to partner via WebSocket webhook
         try {
-          const wssApiUrl = process.env.WSS_API_URL || 'https://funprinting-wss.onrender.com';
           console.log(`🖨️ Dispatching partner print job via WSS for order: ${updateResult.orderId}`);
-          const dispatchRes = await fetch(`${wssApiUrl}/api/dispatch-print-job`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              partnerId: targetPartnerId,
-              order: updateResult
-            })
+          // targetPartnerId is the Partner._id stored on the order (WSS room partner_<Partner._id>)
+          const dispatchResult = await dispatchPrintJob(String(targetPartnerId), {
+            ...updateResult.toObject(),
+            deliveryNumber,
           });
-          
-          if (dispatchRes.ok) {
-            console.log(`✅ Partner print job dispatched to socket room`);
+
+          if (dispatchResult.ok && dispatchResult.delivered > 0) {
+            console.log(`✅ Partner print job delivered to ${dispatchResult.delivered} partner device(s)`);
             const updateFields: any = { orderStatus: 'printing', status: 'printing' };
             if (deliveryNumber) {
               updateFields.deliveryNumber = deliveryNumber;
             }
             await Order.findByIdAndUpdate(updateResult._id, { $set: updateFields });
+          } else if (dispatchResult.ok) {
+            // No partner device connected: leave the order paid/pending for re-dispatch
+            console.warn(`⚠️ Partner ${targetPartnerId} has no connected device; order ${updateResult.orderId} left as paid/pending`);
           } else {
-            console.error(`❌ Failed to dispatch partner print job via WSS: ${dispatchRes.statusText}`);
+            console.error(`❌ Failed to dispatch partner print job via WSS: ${dispatchResult.error || dispatchResult.status}`);
           }
         } catch (error) {
           console.error(`❌ Error dispatching partner print job via WSS:`, error);
