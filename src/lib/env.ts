@@ -44,6 +44,10 @@ const serverEnvSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().trim().min(1, 'is required'),
   RAZORPAY_WEBHOOK_SECRET: optionalString,
   RAZORPAYX_ACCOUNT_NUMBER: optionalString,
+  // '1' turns on the Razorpay Route partner split (only if Route is active on the account)
+  RAZORPAY_ROUTE_ENABLED: z.enum(['0', '1', '']).optional(),
+  // Public base URL for Razorpay callbacks; defaults to the request origin
+  APP_BASE_URL: optionalUrl,
 
   // Email (src/lib/mailer.ts)
   EMAIL_HOST: optionalString,

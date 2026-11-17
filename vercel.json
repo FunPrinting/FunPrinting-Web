@@ -6,16 +6,13 @@
     "src/app/api/templates/download-filled/route.ts": {
       "maxDuration": 30
     },
-    "src/app/api/orders/template/route.ts": {
-      "maxDuration": 30
-    },
     "src/app/api/upload-file/route.ts": {
       "maxDuration": 60
     }
   },
   "crons": [
     {
-      "path": "/api/cron/cleanup-pending-orders",
+      "path": "/api/cron/reconcile-payments",
       "schedule": "0 12 * * *"
     },
     {

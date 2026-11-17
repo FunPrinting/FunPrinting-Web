@@ -17,11 +17,9 @@
     "setup-cloudmersive": "node scripts/setup-cloudmersive.js",
     "test-https": "node scripts/test-https-api.js",
     "test-generate-document": "node scripts/test-generate-document.js",
-    "test-cloudmersive": "node scripts/test-cloudmersive-integration.js",
     "test-cloudmersive-simple": "node scripts/test-cloudmersive-simple.js",
     "test-libreoffice": "node scripts/test-libreoffice.js",
     "test-api-endpoint": "node scripts/test-api-endpoint.js",
-    "test-integration": "node scripts/test-integration-complete.js",
     "fix-filetypes": "ts-node scripts/fix-filetype-in-orders.ts"
   },
   "dependencies": {

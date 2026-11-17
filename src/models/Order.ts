@@ -53,10 +53,23 @@ export interface IOrder {
       };
     }>;
   };
-  paymentStatus: 'pending' | 'completed' | 'failed';
+  paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
   orderStatus: 'pending' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed';
   status: 'pending_payment' | 'paid' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
-  amount: number;
+  amount: number; // rupees, subtotal before the processing fee (what admin views show)
+  // Set by checkout: Payment.referenceId of the current payment attempt
+  paymentRef?: string;
+  // Price breakdown computed by the server at checkout (rupees)
+  pricing?: {
+    subtotal: number;
+    fee: number;
+    total: number;
+    delivery: number;
+    files: Array<{ name: string; pages: number; colorPages: number; bwPages: number; amount: number }>;
+    partnerPricing: boolean;
+  };
+  amountPaid?: number; // rupees actually captured
+  paidAt?: Date;
   deliveryOption: {
     type: 'pickup' | 'delivery';
     location?: {
@@ -77,6 +90,7 @@ export interface IOrder {
     pickupLocationId?: string;
     partnerId?: string;
     partnerDeliveryPoint?: string;
+    speed?: 'standard' | 'express' | 'sameday';
     pickupLocation?: {
       _id: string;
       name: string;
@@ -200,7 +214,7 @@ const orderSchema = new mongoose.Schema<IOrder>({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'completed', 'failed'],
+    enum: ['pending', 'completed', 'failed', 'refunded'],
     default: 'pending',
   },
   orderStatus: {
@@ -217,6 +231,17 @@ const orderSchema = new mongoose.Schema<IOrder>({
     type: Number,
     required: true,
   },
+  paymentRef: String,
+  pricing: {
+    subtotal: Number,
+    fee: Number,
+    total: Number,
+    delivery: Number,
+    files: [{ _id: false, name: String, pages: Number, colorPages: Number, bwPages: Number, amount: Number }],
+    partnerPricing: Boolean,
+  },
+  amountPaid: Number,
+  paidAt: Date,
   deliveryOption: {
     type: {
       type: String,
@@ -227,6 +252,7 @@ const orderSchema = new mongoose.Schema<IOrder>({
     pickupLocationId: String,
     partnerId: String,
     partnerDeliveryPoint: String,
+    speed: { type: String, enum: ['standard', 'express', 'sameday'] },
     pickupLocation: {
       _id: String,
       name: String,
@@ -328,6 +354,7 @@ orderSchema.index({ 'customerInfo.email': 1, createdAt: -1 });
 orderSchema.index({ partnerId: 1, status: 1 });
 orderSchema.index({ 'deliveryOption.partnerId': 1, status: 1 });
 orderSchema.index({ paymentStatus: 1, createdAt: 1 });
+orderSchema.index({ paymentRef: 1 }, { sparse: true });
 
 // Generate order ID before saving
 orderSchema.pre('save', async function () {
