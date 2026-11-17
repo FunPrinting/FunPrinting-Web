@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import Order from '@/models/Order';
 import AdminInfo from '@/models/AdminInfo';
 import PickupLocation from '@/models/PickupLocation';
 import { validatePhoneNumberLength } from '@/lib/phoneValidation';
-import { isAdminUser } from '@/lib/templateAuth';
 
 /**
  * API endpoint to validate and clean phone numbers
@@ -23,15 +23,10 @@ import { isAdminUser } from '@/lib/templateAuth';
  * Access: Admin only
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    // Check if user is admin
-    const isAdmin = await isAdminUser();
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized: Admin access required' },
-        { status: 403 }
-      );
-    }
 
     await connectDB();
     console.log('🔄 Starting phone number migration via API...');

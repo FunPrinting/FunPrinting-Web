@@ -1,36 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import User from '@/models/User';
+import { NextResponse } from 'next/server';
+import { getSessionUser, isAdminSession } from '@/lib/authz';
 
-export async function POST(request: NextRequest) {
+/**
+ * Returns whether the *current session* is an admin.
+ * Any email in the request body/query is ignored.
+ */
+async function handle() {
   try {
-    const { email } = await request.json();
-
-    if (!email) {
-      return NextResponse.json(
-        { error: 'Email is required', isAdmin: false },
-        { status: 400 }
-      );
-    }
-
-    await connectDB();
-
-    // Check if user exists and has admin role
-    const user = await User.findOne({ email: email.toLowerCase() });
-    
-    if (!user) {
-      return NextResponse.json({ isAdmin: false });
-    }
-
-    // Check if user has admin role OR is the specific admin email
-    const isAdmin = user.role === 'admin' || email.toLowerCase() === (process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL)?.toLowerCase();
-
-    return NextResponse.json({ isAdmin });
+    const user = await getSessionUser();
+    return NextResponse.json(
+      { isAdmin: isAdminSession(user) },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error) {
     console.error('Error checking admin role:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', isAdmin: false },
-      { status: 500 }
-    );
+    return NextResponse.json({ isAdmin: false }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return handle();
+}
+
+// POST kept for backward compatibility with older clients; body is ignored.
+export async function POST() {
+  return handle();
 }

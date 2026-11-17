@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
 import { extractPlaceholders, generateFormSchema } from '@/lib/docxProcessor';
@@ -7,6 +8,9 @@ import { getCurrentUser } from '@/lib/templateAuth';
 import User from '@/models/User';
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { 

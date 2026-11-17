@@ -963,6 +963,7 @@ export function OrderDetailView(props: OrderDetailViewProps) {
                             currentFileURL,
                           )}&orderId=${order.orderId}&filename=${currentFileName}`}
                           alt="Document preview"
+                          unoptimized
                           width={800}
                           height={384}
                           className="w-full h-96 object-contain"

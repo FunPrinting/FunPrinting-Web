@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { shipOrder, isShiprocketConfigured } from '@/lib/shiprocket';
@@ -13,6 +14,9 @@ export async function POST(
     request: NextRequest,
     context: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
     try {
         // Check Shiprocket configuration
         if (!isShiprocketConfigured()) {

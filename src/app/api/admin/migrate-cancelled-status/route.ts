@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import PrintJob from '@/models/PrintJob';
-import { isAdminUser } from '@/lib/templateAuth';
 
 /**
  * API endpoint to migrate cancelled status to pending
@@ -14,15 +14,10 @@ import { isAdminUser } from '@/lib/templateAuth';
  * Access: Admin only
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    // Check if user is admin
-    const isAdmin = await isAdminUser();
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized: Admin access required' },
-        { status: 403 }
-      );
-    }
 
     await connectDB();
     console.log('🔄 Starting cancelled status migration via API...');

@@ -108,7 +108,7 @@ interface Order {
   };
 }
 
-export function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string }) {
+function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string }) {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();

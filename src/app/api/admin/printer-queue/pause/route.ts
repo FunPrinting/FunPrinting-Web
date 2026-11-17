@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import axios from 'axios';
 
 /**
@@ -15,6 +16,9 @@ function joinUrl(baseUrl: string, path: string): string {
  * Pause printer queue processing
  */
 export async function POST(_request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const printerUrls: string[] = [];
     const urlsEnv = process.env.PRINTER_API_URLS;

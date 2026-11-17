@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import AdminInfo from '@/models/AdminInfo';
 
@@ -34,6 +35,9 @@ export async function GET() {
 
 // POST - Create or update admin information
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -77,6 +81,9 @@ export async function POST(request: NextRequest) {
 
 // PUT - Update admin information
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -119,6 +126,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE - Delete admin information
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     

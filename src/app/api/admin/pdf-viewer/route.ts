@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import Order from '@/models/Order';
+import Order, { IOrder } from '@/models/Order';
 import { getFileTypeFromFilename } from '@/lib/fileTypeDetection';
+import { requireUser, isAdminSession, canAccessOrder } from '@/lib/authz';
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const pdfUrl = searchParams.get('url');
@@ -12,6 +16,29 @@ export async function GET(request: NextRequest) {
 
     if (!pdfUrl) {
       return NextResponse.json({ error: 'File URL is required' }, { status: 400 });
+    }
+
+    // Admins may view any file. Customers (this route is also used by /orders/[id])
+    // may only view files that belong to one of their own orders.
+    if (!isAdminSession(auth)) {
+      if (!orderId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      await connectDB();
+      const ownedOrder = await Order.findOne({ orderId }).lean<IOrder>();
+      if (!ownedOrder || !canAccessOrder(auth, ownedOrder)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      const allowedUrls = [
+        ownedOrder.fileURL,
+        ...(ownedOrder.fileURLs || []),
+        ownedOrder.filledPdfUrl,
+        ownedOrder.filledDocxUrl,
+        ownedOrder.templateData?.generatedPDF,
+      ].filter(Boolean);
+      if (!allowedUrls.includes(pdfUrl)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
     }
 
     console.log('📄 File Viewer: Fetching from URL:', pdfUrl);
@@ -127,7 +154,7 @@ export async function GET(request: NextRequest) {
           'Content-Type': fileType,
           'Content-Disposition': `inline; filename="${originalFileName}"`,
           'Content-Length': fileBuffer.byteLength.toString(),
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'private, max-age=3600',
           'X-Frame-Options': 'SAMEORIGIN',
         },
       });
@@ -141,7 +168,7 @@ export async function GET(request: NextRequest) {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `inline; filename="${originalFileName}"`,
           'Content-Length': fileBuffer.byteLength.toString(),
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'private, max-age=3600',
           'X-Frame-Options': 'SAMEORIGIN',
         },
       });
@@ -155,7 +182,7 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': fileType,
           'Content-Disposition': `inline; filename="${originalFileName}"`,
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'private, max-age=3600',
           'X-Frame-Options': 'SAMEORIGIN',
         },
       });
@@ -169,7 +196,7 @@ export async function GET(request: NextRequest) {
         'Content-Type': fileType,
         'Content-Disposition': `inline; filename="${originalFileName}"`,
         'Content-Length': fileBuffer.byteLength.toString(),
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'private, max-age=3600',
         'X-Frame-Options': 'SAMEORIGIN',
       },
     });

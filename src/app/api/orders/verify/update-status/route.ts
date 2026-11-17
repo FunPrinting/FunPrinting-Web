@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { otpStore } from '@/lib/otp-store';
-import { getServerSession } from 'next-auth';
+import { getSessionUser, isAdminSession } from '@/lib/authz';
 
 /**
  * POST /api/orders/verify/update-status
@@ -41,10 +41,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Get session (may be null if not logged in)
-    const session = await getServerSession();
-    const userEmail = session?.user?.email || '';
-    const adminEmail = process.env.ADMIN_EMAIL ;
-    const isAdmin = userEmail.toLowerCase() === adminEmail.toLowerCase();
+    const sessionUser = await getSessionUser();
+    const userEmail = sessionUser?.email || '';
+    const isAdmin = isAdminSession(sessionUser);
     const isOrderOwner = userEmail.toLowerCase() === order.customerInfo.email.toLowerCase();
 
     // === DISPATCH ACTION (Admin only) ===
@@ -125,7 +124,7 @@ export async function POST(req: NextRequest) {
             orderStatus: 'delivered',
             status: 'delivered',
             deliveryVerifiedAt: new Date(),
-            deliveryVerifiedBy: isOrderOwner ? userEmail : (isAdmin ? adminEmail : order.customerInfo.email),
+            deliveryVerifiedBy: isOrderOwner ? userEmail : (isAdmin ? userEmail : order.customerInfo.email),
           }
         }
       );

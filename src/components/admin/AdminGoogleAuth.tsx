@@ -3,7 +3,6 @@
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { adminAuth } from '@/lib/adminAuth';
 
 interface AdminGoogleAuthProps {
   children: React.ReactNode;
@@ -11,6 +10,11 @@ interface AdminGoogleAuthProps {
   subtitle?: string;
 }
 
+/**
+ * Client-side gate for /admin pages.
+ * Uses only the NextAuth session plus a server check (/api/auth/check-admin).
+ * This is a UX gate; every /api/admin/* route enforces requireAdmin() server-side.
+ */
 export default function AdminGoogleAuth({ 
   children, 
   title = "Admin Access",
@@ -20,65 +24,27 @@ export default function AdminGoogleAuth({
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(false);
-  const [usePasswordAuth, setUsePasswordAuth] = useState(false);
-  const [passwordCredentials, setPasswordCredentials] = useState({ email: '', password: '' });
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-  const [passwordAuthenticated, setPasswordAuthenticated] = useState(false);
-  const [localStorageAuth, setLocalStorageAuth] = useState(false);
 
-  // Check if user is authenticated and has admin role (either via Google or password)
-  // Also check localStorage for persistent admin auth
-  const isAuthenticated = (session?.user && isAdmin === true) || passwordAuthenticated || localStorageAuth;
+  const isAuthenticated = Boolean(session?.user) && isAdmin === true;
 
-  // Check admin role when user is authenticated
+  // Ask the server whether the current session is an admin
   useEffect(() => {
-    if (status === 'loading') return; // Still loading
-    
-    if (session?.user?.email && isAdmin === null && !isCheckingAdmin) {
+    if (status === 'loading') return;
+    if (status === 'unauthenticated') {
+      setIsAdmin(null);
+      return;
+    }
+    if (session?.user && isAdmin === null && !isCheckingAdmin) {
       setIsCheckingAdmin(true);
-      checkAdminRole(session.user.email);
+      checkAdminRole();
     }
   }, [session, status, isAdmin, isCheckingAdmin]);
 
-  // Check localStorage for persistent admin auth on mount and periodically
-  useEffect(() => {
-    const checkLocalStorageAuth = () => {
-      const isAuth = adminAuth.isAuthenticated();
-      setLocalStorageAuth(isAuth);
-      if (isAuth) {
-        setPasswordAuthenticated(true);
-        setIsAdmin(true);
-      }
-    };
-
-    // Check immediately
-    checkLocalStorageAuth();
-
-    // Check every 30 seconds to catch changes from other tabs/windows
-    const interval = setInterval(checkLocalStorageAuth, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  const checkAdminRole = async (email: string) => {
+  const checkAdminRole = async () => {
     try {
-      const response = await fetch('/api/auth/check-admin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-      
+      const response = await fetch('/api/auth/check-admin', { method: 'GET', cache: 'no-store' });
       const data = await response.json();
-      setIsAdmin(data.isAdmin || false);
-      
-      if (data.isAdmin) {
-        console.log('✅ Admin authenticated:', email);
-      } else {
-        console.log('❌ User is not an admin:', email);
-      }
+      setIsAdmin(Boolean(data.isAdmin));
     } catch (error) {
       console.error('Error checking admin role:', error);
       setIsAdmin(false);
@@ -94,53 +60,16 @@ export default function AdminGoogleAuth({
     });
   };
 
+  // Email/password admins sign in through the regular NextAuth credentials page
+  const handleEmailSignIn = () => {
+    signIn(undefined, { callbackUrl: window.location.pathname });
+  };
+
   const handleSignOut = () => {
-    // Clear admin auth from localStorage
-    adminAuth.logout();
-    setLocalStorageAuth(false);
-    setPasswordAuthenticated(false);
-    setPasswordCredentials({ email: '', password: '' });
     signOut({ 
       callbackUrl: '/',
       redirect: true 
     });
-  };
-
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsPasswordLoading(true);
-    setPasswordError(null);
-
-    try {
-      const response = await fetch('/api/auth/admin-login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: passwordCredentials.email,
-          password: passwordCredentials.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Persist admin authentication in localStorage
-        adminAuth.setAuthenticated();
-        setLocalStorageAuth(true);
-        setPasswordAuthenticated(true);
-        setIsAdmin(true);
-        setPasswordError(null);
-      } else {
-        setPasswordError(data.error || 'Invalid email or password');
-      }
-    } catch (error) {
-      console.error('Password login error:', error);
-      setPasswordError('Failed to connect to server. Please try again.');
-    } finally {
-      setIsPasswordLoading(false);
-    }
   };
 
   // Show loading state
@@ -200,8 +129,6 @@ export default function AdminGoogleAuth({
           </div>
           
           <div className="mt-8 space-y-6">
-            {!usePasswordAuth ? (
-              <>
             <button
               onClick={handleGoogleSignIn}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
@@ -214,88 +141,21 @@ export default function AdminGoogleAuth({
               </svg>
               Sign in with Google
             </button>
-                
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-gray-100 text-gray-500">Or</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setUsePasswordAuth(true)}
-                  className="w-full flex justify-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
-                >
-                  Sign in with Password
-                </button>
-              </>
-            ) : (
-              <form onSubmit={handlePasswordLogin} className="space-y-4">
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    required
-                    value={passwordCredentials.email}
-                    onChange={(e) => setPasswordCredentials(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black"
-                    placeholder="admin@example.com"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    required
-                    value={passwordCredentials.password}
-                    onChange={(e) => setPasswordCredentials(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black"
-                    placeholder="Enter admin password"
-                  />
-                </div>
-                {passwordError && (
-                  <div className="rounded-md bg-red-50 p-4">
-                    <div className="flex">
-                      <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-red-800">{passwordError}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <button
-                  type="submit"
-                  disabled={isPasswordLoading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isPasswordLoading ? 'Signing in...' : 'Sign in'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUsePasswordAuth(false);
-                    setPasswordError(null);
-                    setPasswordCredentials({ email: '', password: '' });
-                  }}
-                  className="w-full text-sm text-gray-600 hover:text-gray-800 underline"
-                >
-                  ← Back to Google Sign In
-                </button>
-              </form>
+            <button
+              onClick={handleEmailSignIn}
+              className="w-full flex justify-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
+            >
+              Sign in with Email
+            </button>
+            {session?.user && (
+              <button
+                onClick={handleSignOut}
+                className="w-full text-sm text-gray-600 hover:text-gray-800 underline"
+              >
+                Sign out and use a different account
+              </button>
             )}
-            
+
             <div className="text-center">
               <button
                 onClick={() => router.push('/')}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import { uploadFile } from '@/lib/storage';
 import { ObjectId } from 'mongodb';
@@ -29,6 +30,9 @@ interface Template {
 
 // GET - Fetch all templates
 export async function GET() {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const db = await connectDB();
     const templates = await db.collection('templates').find({}).toArray();
@@ -48,6 +52,9 @@ export async function GET() {
 
 // POST - Create new template
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const formData = await request.formData();
     const name = formData.get('name') as string;
@@ -96,6 +103,9 @@ export async function POST(request: NextRequest) {
 
 // PUT - Update template
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { id, ...updates } = await request.json();
     
@@ -134,6 +144,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE - Delete template
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

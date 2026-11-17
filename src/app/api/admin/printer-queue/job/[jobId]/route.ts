@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import axios from 'axios';
 
 /**
@@ -18,6 +19,9 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ jobId: string }> }
 ) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { jobId } = await context.params;
 

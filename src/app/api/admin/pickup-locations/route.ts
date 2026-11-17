@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import PickupLocation from '@/models/PickupLocation';
 
 // GET - Fetch all pickup locations
 export async function GET() {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -24,6 +28,9 @@ export async function GET() {
 
 // POST - Create new pickup location
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -70,6 +77,9 @@ export async function POST(request: NextRequest) {
 
 // PUT - Update pickup location
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -112,6 +122,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE - Delete pickup location
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     

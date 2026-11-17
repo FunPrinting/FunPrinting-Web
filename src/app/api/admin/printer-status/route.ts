@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import { printerClient } from '@/lib/printerClient';
 import axios from 'axios';
 
@@ -16,6 +17,9 @@ function joinUrl(baseUrl: string, path: string): string {
  * Get printer API status and queue information
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const printerIndex = parseInt(searchParams.get('printerIndex') || '1', 10);
