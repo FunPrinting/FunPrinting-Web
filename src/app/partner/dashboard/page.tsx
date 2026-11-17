@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import PartnerDevices from '@/components/partner/PartnerDevices';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { PrinterIcon, DollarIcon, DocumentIcon } from '@/components/SocialIcons';
@@ -300,6 +301,8 @@ export default function PartnerDashboard() {
                 })}
               </div>
             </div>
+
+            {partnerData.isActive && <PartnerDevices />}
 
             {/* Hardware & Downloads */}
             <div className="grid grid-cols-1 gap-8 mt-8">

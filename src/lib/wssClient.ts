@@ -176,3 +176,8 @@ export function cancelPrintJob(partnerId: string, orderId: string): Promise<WssR
 export function notifyPartnerJobs(partnerId: string, reason: 'new' | 'updated' | 'cancelled'): Promise<WssResult> {
   return postToRooms('/api/notify-jobs', partnerId, (room) => ({ partnerId: room, reason }));
 }
+
+/** Disconnects a revoked device's sockets right away (its token would otherwise last up to 15 min). */
+export function disconnectDevice(partnerId: string, deviceId: string): Promise<WssResult> {
+  return postSigned('/api/disconnect-device', { partnerId: String(partnerId), deviceId: String(deviceId) });
+}

@@ -53,3 +53,19 @@ export function sendRefundEmail(opts: { to: string; name: string; orderId: strin
     )
   );
 }
+
+export async function sendPartnerApplicationEmail(opts: { businessName: string; partnerId: string; city?: string }) {
+  const { getAdminEmails } = await import('@/lib/authz');
+  const to = getAdminEmails();
+  if (!to.length) return false;
+  const site = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || 'https://www.funprinting.store').replace(/\/+$/, '');
+  return send(
+    to.join(','),
+    `New partner application: ${opts.businessName}`,
+    layout(
+      'New partner application',
+      `<p><b>${escape(opts.businessName)}</b>${opts.city ? ` (${escape(opts.city)})` : ''} applied to become a partner shop.</p>
+      <p><a href="${site}/admin" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Review in the admin dashboard</a></p>`
+    )
+  );
+}

@@ -39,6 +39,9 @@ const serverEnvSchema = z.object({
   ADMIN_EMAIL: optionalString,
   NEXT_PUBLIC_ADMIN_EMAIL: optionalString,
 
+  // Partner app access tokens (device sign-in); at least 32 characters
+  PARTNER_JWT_SECRET: z.string().trim().min(32, 'must be at least 32 characters').optional(),
+
   // Payments
   RAZORPAY_KEY_ID: z.string().trim().min(1, 'is required'),
   RAZORPAY_KEY_SECRET: z.string().trim().min(1, 'is required'),

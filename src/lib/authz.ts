@@ -28,6 +28,8 @@ export interface PartnerTokenClaims {
   userId: string;
   partnerId: string;
   role: 'partner' | 'admin';
+  /** Set for device sign-in access tokens; absent for legacy tokens */
+  deviceId?: string;
 }
 
 function unauthorized(message = 'Unauthorized') {
@@ -102,46 +104,48 @@ export async function requireAdmin(): Promise<SessionUser | NextResponse> {
 }
 
 /**
- * Verifies a partner device token from `Authorization: Bearer <jwt>`.
- * Token is signed by /api/partner/desktop-token with NEXTAUTH_SECRET.
- * Returns the claims or a 401 (500 if the server secret is not configured).
+ * Verifies a partner app token from `Authorization: Bearer <jwt>`.
+ *
+ * - Access tokens (typ "partner_access", PARTNER_JWT_SECRET, 15 min) from the
+ *   device sign-in (src/lib/partnerAuth): carry the device id (`did`).
+ * - Legacy device tokens (NEXTAUTH_SECRET, 30/365 days) from installed apps that
+ *   predate device sign-in: still accepted so they keep working; they have no device id.
+ * Signature and expiry are checked here; device revocation in resolvePartnerRequest.
  */
 export function requirePartnerToken(
   request: Request
 ): PartnerTokenClaims | NextResponse {
-  const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret) {
-    logger.error('NEXTAUTH_SECRET is not set; cannot verify partner tokens');
-    return NextResponse.json(
-      { success: false, error: 'Server misconfiguration' },
-      { status: 500 }
-    );
-  }
-
   const header = request.headers.get('authorization') || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) return unauthorized('Missing bearer token');
+  const token = match[1].trim();
+
+  let typ: unknown;
+  try {
+    typ = (jwt.decode(token) as { typ?: unknown } | null)?.typ;
+  } catch {
+    return unauthorized('Invalid token');
+  }
+  const isAccess = typ === 'partner_access';
+  const secret = isAccess ? process.env.PARTNER_JWT_SECRET : process.env.NEXTAUTH_SECRET;
+  if (!secret) {
+    logger.error(`${isAccess ? 'PARTNER_JWT_SECRET' : 'NEXTAUTH_SECRET'} is not set; cannot verify partner tokens`);
+    return NextResponse.json({ success: false, error: 'Server misconfiguration' }, { status: 500 });
+  }
 
   try {
     // jwt.verify enforces signature and `exp`
-    const decoded = jwt.verify(match[1].trim(), secret, {
-      algorithms: ['HS256'],
-    });
-    if (typeof decoded !== 'object' || decoded === null) {
-      return unauthorized('Invalid token');
-    }
-    const claims = decoded as jwt.JwtPayload & {
-      partnerId?: unknown;
-      role?: unknown;
-    };
+    const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] });
+    if (typeof decoded !== 'object' || decoded === null) return unauthorized('Invalid token');
+    const claims = decoded as jwt.JwtPayload & { partnerId?: unknown; role?: unknown; did?: unknown; typ?: unknown };
     if (typeof claims.exp !== 'number') return unauthorized('Token has no expiry');
     const role = claims.role;
     if (role !== 'partner' && role !== 'admin') return unauthorized('Invalid token role');
     if (typeof claims.sub !== 'string' || !claims.sub) return unauthorized('Invalid token subject');
-    if (typeof claims.partnerId !== 'string' || !claims.partnerId) {
-      return unauthorized('Invalid token partner');
-    }
-    return { userId: claims.sub, partnerId: claims.partnerId, role };
+    if (typeof claims.partnerId !== 'string' || !claims.partnerId) return unauthorized('Invalid token partner');
+    if (isAccess && claims.typ !== 'partner_access') return unauthorized('Invalid token type');
+    if (isAccess && (typeof claims.did !== 'string' || !claims.did)) return unauthorized('Invalid token device');
+    return { userId: claims.sub, partnerId: claims.partnerId, role, deviceId: isAccess ? (claims.did as string) : undefined };
   } catch {
     return unauthorized('Invalid or expired token');
   }
@@ -177,7 +181,7 @@ export async function resolvePartnerRequest(
   request: Request,
   { allowMissing = false, allowInactive = false }: { allowMissing?: boolean; allowInactive?: boolean } = {}
 ): Promise<
-  | { partner: any; userId: string }
+  | { partner: any; userId: string; deviceId?: string }
   | NextResponse
 > {
   // Lazy imports keep this module light for routes that only need session helpers
@@ -186,12 +190,18 @@ export async function resolvePartnerRequest(
 
   let userId: string;
   let tokenPartnerId: string | null = null;
+  let deviceId: string | undefined;
 
   if (request.headers.get('authorization')) {
     const claims = requirePartnerToken(request);
     if (claims instanceof NextResponse) return claims;
     userId = claims.userId;
     tokenPartnerId = claims.partnerId;
+    deviceId = claims.deviceId;
+    if (deviceId) {
+      const { isDeviceActive } = await import('@/lib/partnerAuth/service');
+      if (!(await isDeviceActive(deviceId))) return unauthorized('This device has been signed out');
+    }
   } else {
     const user = await getSessionUser();
     if (!user || !user.id) return unauthorized('Authentication required');
@@ -220,5 +230,5 @@ export async function resolvePartnerRequest(
   if (partner && !partner.isActive && !allowInactive) {
     return forbidden('Partner account is not active');
   }
-  return { partner, userId };
+  return { partner, userId, deviceId };
 }

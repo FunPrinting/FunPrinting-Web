@@ -61,6 +61,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!partner) {
       return NextResponse.json({ success: false, error: 'Partner not found' }, { status: 404 });
     }
+    if (parsed.data.isActive === false) {
+      const { revokeAllDevices } = await import('@/lib/partnerAuth/service');
+      const revoked = await revokeAllDevices(id, `partner deactivated by ${admin.email}`);
+      log.info({ partnerId: id, revoked }, 'partner devices signed out');
+    }
     log.info({ partnerId: id, changes: Object.keys(update) }, 'partner updated by admin');
     return NextResponse.json({ success: true, partner });
   } catch (error) {

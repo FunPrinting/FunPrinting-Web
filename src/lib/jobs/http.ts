@@ -6,13 +6,14 @@ import type { IPrintJob } from '@/models/PrintJob';
 import type { Logger } from 'pino';
 
 /**
- * Partner job API helpers. Devices identify themselves with `x-device-id`
- * (a stable random id the app generates once, 8–64 chars); Phase 4 ties it to a
- * per-device token.
+ * Partner job API helpers. The device is the `did` in its access token (device
+ * sign-in); apps still on a legacy token send `x-device-id` instead.
  */
 export async function partnerContext(request: Request): Promise<{ partnerId: string; deviceId?: string } | NextResponse> {
   const resolved = await resolvePartnerRequest(request);
   if (resolved instanceof NextResponse) return resolved;
+  // Device sign-in tokens carry the device id; legacy tokens send x-device-id
+  if (resolved.deviceId) return { partnerId: String(resolved.partner._id), deviceId: resolved.deviceId };
   const raw = request.headers.get('x-device-id')?.trim();
   const deviceId = raw && /^[A-Za-z0-9_.:-]{8,64}$/.test(raw) ? raw : undefined;
   return { partnerId: String(resolved.partner._id), deviceId };

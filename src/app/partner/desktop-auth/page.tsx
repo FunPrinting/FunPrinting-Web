@@ -3,21 +3,7 @@
 import { useSession, signIn } from 'next-auth/react';
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-
-/**
- * Only these callbacks may receive a partner device token.
- * - Desktop app: local loopback server on port 4321
- * - Mobile app: funprintingpartner:// deep link (Linking.createURL('callback'))
- * - Expo Go (development only): exp://
- */
-function isAllowedCallback(callback: string): boolean {
-  if (callback === 'http://localhost:4321/callback' || callback === 'http://127.0.0.1:4321/callback') {
-    return true;
-  }
-  if (callback.startsWith('funprintingpartner://')) return true;
-  if (process.env.NODE_ENV !== 'production' && callback.startsWith('exp://')) return true;
-  return false;
-}
+import { isAllowedCallback } from '@/lib/partnerAuth/callbacks';
 
 function DesktopAuthContent() {
   const { data: session, status } = useSession();
@@ -37,16 +23,42 @@ function DesktopAuthContent() {
       return;
     }
 
+    const codeChallenge = searchParams?.get('code_challenge');
+    const state = searchParams?.get('state') || '';
     if (status === 'unauthenticated') {
-      // Not logged in, redirect to signin and return here afterwards
-      signIn('google', { callbackUrl: `/partner/desktop-auth?callback=${encodeURIComponent(callback)}` });
+      // Not logged in, redirect to signin and return here afterwards (keeping all parameters)
+      signIn('google', { callbackUrl: `/partner/desktop-auth?${searchParams?.toString() ?? ''}` });
+    } else if (status === 'authenticated' && codeChallenge) {
+      // Current apps: one-time code + PKCE; no token in the URL
+      fetch('/api/partner/device-auth/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codeChallenge, callback }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error === 'not_a_partner') return setError('This account is not a Fun Printing partner yet. Apply at funprinting.store/partner, then sign in again.');
+          if (data.error === 'partner_pending_approval') return setError('Your partner application is still under review. You can sign in to the app once it is approved.');
+          if (!data.success) return setError(data.error || 'Sign-in failed.');
+          const redirectUrl = new URL(callback);
+          redirectUrl.searchParams.set('code', data.code);
+          if (state) redirectUrl.searchParams.set('state', state);
+          window.location.href = redirectUrl.toString();
+        })
+        .catch(() => setError('Network error during sign-in.'));
     } else if (status === 'authenticated') {
+      // Installed apps from before device sign-in (no code_challenge): legacy token
+      // in the redirect. Remove once all partners have updated their apps.
       // Fetch the partner device token (only issued to existing partners)
       fetch('/api/partner/desktop-token')
         .then(res => res.json())
         .then(data => {
           if (data.error === 'not_a_partner') {
             setError('This account is not a Fun Printing partner yet. Apply to become a partner at funprinting.store/partner, then sign in again.');
+            return;
+          }
+          if (data.error === 'partner_pending_approval') {
+            setError('Your partner application is still under review. You can sign in to the app once it is approved.');
             return;
           }
           if (data.success) {
@@ -87,7 +99,7 @@ function DesktopAuthContent() {
         <div className="w-16 h-16 bg-indigo-100 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
         </div>
-        <h2 className="text-2xl font-bold mb-2">Connecting to Desktop App...</h2>
+        <h2 className="text-2xl font-bold mb-2">Signing in to the Partner app…</h2>
         <p className="text-gray-600">Please wait while we securely authenticate your hardware.</p>
       </div>
     </div>

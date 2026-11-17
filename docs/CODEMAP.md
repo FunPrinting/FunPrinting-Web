@@ -28,8 +28,8 @@ Rules for new code:
 | `requireUser()` | Any signed-in NextAuth session | 401 |
 | `requireAdmin()` | Session with `role: admin`, or email in `ADMIN_EMAILS` / `ADMIN_EMAIL` | 401 / 403 |
 | `canAccessOrder(user, order)` | Admin, or `order.customerInfo.email` matches the session | caller returns 404 |
-| `requirePartnerToken(req)` | `Authorization: Bearer` JWT from `/api/partner/desktop-token`, HS256 with `NEXTAUTH_SECRET`, expiry enforced | 401 |
-| `resolvePartnerRequest(req)` | Partner token, or the web session; loads the `Partner` document and requires `isActive` unless `allowInactive` | 401 / 403 / 404 |
+| `requirePartnerToken(req)` | `Authorization: Bearer`: device access token (`PARTNER_JWT_SECRET`, 15 min, has `did`) or legacy app token (`NEXTAUTH_SECRET`) | 401 |
+| `resolvePartnerRequest(req)` | Partner token (device must not be signed out), or the web session; loads the `Partner` and requires `isActive` unless `allowInactive` | 401 / 403 / 404 |
 | `requireCronSecret(req)` | `Authorization: Bearer $CRON_SECRET` (Vercel Cron) or `x-cron-secret` | 401, also when unset |
 | `templateAuth` (`src/lib/templateAuth.ts`) | Session-based template ownership checks | 401 / 403 |
 
@@ -71,7 +71,10 @@ Rules for new code:
 ### Partners
 | Route | Methods | Guard | Notes | Changes in |
 |---|---|---|---|---|
-| `/api/partner/desktop-token` | GET | session | Issues a 30-day device JWT; requires an approved (`isActive`) Partner | Phase 4: one-time code + refresh tokens |
+| `/api/partner/device-auth/code` | POST | session (approved partner) | One-time sign-in code for an app (PKCE), see docs/PARTNER_AUTH.md | |
+| `/api/partner/device-auth/token` | POST | code + verifier, or refresh token | 15-min access token + rotating 30-day refresh token | |
+| `/api/partner/devices` | GET, DELETE | partner | Signed-in apps; sign one out | |
+| `/api/partner/desktop-token` | GET | session | Legacy 30-day token for apps installed before device sign-in | Remove after Phases 5–6 |
 | `/api/partner/orders` | GET | partner | Orders assigned to the partner | Phase 3: Partner API v1 (jobs, claim) |
 | `/api/partner/orders/[orderId]` | PATCH | partner | Forward-only status moves (`src/lib/partnerOrderTransitions.ts`), conditional update | Phase 3: order state machine |
 | `/api/partner/profile` | GET, POST | partner (inactive allowed) | Apply / edit shop. New partners start `isActive: false`; partners can't set `isActive`, and can't change `razorpayAccountId` after approval | Phase 4 |
@@ -117,7 +120,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 
 ## Models (`src/models`)
 
-`PrintJob` (one per paid order; collection `print_jobs`), `Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
+`PartnerDevice` (signed-in partner apps), `DeviceAuthCode` (one-time sign-in codes), `PrintJob` (one per paid order; collection `print_jobs`), `Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
 
 Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Phase 3 replaces this with one status field plus a separate payment status, and adds an `OrderEvent` log.
 

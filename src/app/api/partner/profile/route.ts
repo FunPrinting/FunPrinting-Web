@@ -88,6 +88,8 @@ export async function POST(request: NextRequest) {
       });
 
       await partner.save();
+      const { sendPartnerApplicationEmail } = await import('@/lib/jobs/emails');
+      await sendPartnerApplicationEmail({ businessName: partner.businessName, partnerId: String(partner._id), city: data.address?.city }).catch(() => undefined);
     }
 
     return NextResponse.json({ success: true, partner });
