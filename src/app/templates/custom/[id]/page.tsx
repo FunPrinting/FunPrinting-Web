@@ -125,6 +125,13 @@ export default function CustomTemplatePage() {
       return;
     }
 
+    // Paid templates: pay first; the document is generated after payment from the
+    // form data stored with the purchase (see /payment/status)
+    if (template?.isPaid && (template.price ?? 0) > 0) {
+      setStep('payment');
+      return;
+    }
+
     setIsGenerating(true);
     setError(null);
 

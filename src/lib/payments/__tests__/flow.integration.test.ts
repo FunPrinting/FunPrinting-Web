@@ -379,6 +379,110 @@ describe('reconcile, retries and refunds', () => {
   });
 });
 
+describe('review fixes', () => {
+  async function paidCheckout() {
+    const r = await createPrintCheckout(user, checkoutInput(), 'http://x');
+    const linkId = (await Payment.findOne({ referenceId: r.referenceId }).lean<any>()).razorpay.paymentLinkId;
+    const { paymentId } = payLink(linkId);
+    const settled = await settlePaid({ paymentLinkId: linkId, razorpayPaymentId: paymentId, amountPaid: rz.links.get(linkId).amount_paid, source: 'webhook' });
+    expect(settled.outcome).toBe('paid');
+    return { r, linkId, paymentId };
+  }
+
+  it('concurrent fulfilment runs dispatch and email exactly once', async () => {
+    const { r } = await paidCheckout();
+    const runs = await Promise.all([runFulfilment(r.referenceId), runFulfilment(r.referenceId), runFulfilment(r.referenceId), runFulfilment(r.referenceId)]);
+    expect(runs.filter((x) => x.busy).length).toBeGreaterThanOrEqual(1);
+    await runFulfilment(r.referenceId);
+    expect(side.dispatched).toEqual([r.orderId]);
+    expect(side.invoices).toEqual([r.orderId]);
+    expect(side.adminNotices).toBe(1);
+  });
+
+  it('a second attempt paid for an already-paid order is flagged and never printed', async () => {
+    const { r } = await paidCheckout();
+    await runFulfilment(r.referenceId);
+    // A second attempt for the same order (e.g. an old open link) gets paid too
+    const second = await Payment.create({
+      referenceId: `${r.orderId}_9`, purpose: 'print_order', status: 'created', userEmail: user.email, orderId: r.orderId,
+      amounts: { subtotal: 5500, fee: 165, total: 5665 }, razorpay: {}, expiresAt: new Date(Date.now() + 60_000), fulfilment: { attempts: 0 }, events: [],
+    });
+    await settlePaid({ referenceId: second.referenceId, razorpayPaymentId: 'pay_second', amountPaid: 5665, source: 'webhook' });
+    await runFulfilment(second.referenceId);
+    expect(side.dispatched).toHaveLength(1);
+    expect(side.invoices).toHaveLength(1);
+    const p2 = await Payment.findOne({ referenceId: second.referenceId }).lean<any>();
+    expect(p2.needsReview).toMatch(/needs a refund/);
+    expect(p2.fulfilment.skipped).toBeTruthy();
+  });
+
+  it('paying the order closes its other open links', async () => {
+    const r = await createPrintCheckout(user, checkoutInput(), 'http://x');
+    const other = await Payment.create({
+      referenceId: `${r.orderId}_8`, purpose: 'print_order', status: 'created', userEmail: user.email, orderId: r.orderId,
+      amounts: { subtotal: 5500, fee: 165, total: 5665 }, razorpay: { paymentLinkId: 'plink_other' }, expiresAt: new Date(Date.now() + 600_000), fulfilment: { attempts: 0 }, events: [],
+    });
+    rz.links.set('plink_other', { id: 'plink_other', status: 'created', amount: 5665, amount_paid: 0, reference_id: other.referenceId });
+    const linkId = (await Payment.findOne({ referenceId: r.referenceId }).lean<any>()).razorpay.paymentLinkId;
+    payLink(linkId);
+    await syncPaymentFromRazorpay(r.referenceId, 'webhook');
+    expect((await Payment.findOne({ referenceId: other.referenceId }).lean<any>()).status).toBe('cancelled');
+  });
+
+  it('refund marks a template creator earning cancelled and blocks transfer release', async () => {
+    await DynamicTemplate.collection.insertOne({ id: 'tplR', name: 'R', isPaid: true, price: 100, createdByType: 'user', createdByEmail: 'c2@example.com' });
+    await User.collection.insertOne({ name: 'C2', email: 'c2@example.com', role: 'customer' });
+    const r = await createTemplateCheckout(user, { idempotencyKey: 'refund-tpl-1', templateId: 'tplR', formData: {} }, 'http://x');
+    const linkId = (await Payment.findOne({ referenceId: r.referenceId }).lean<any>()).razorpay.paymentLinkId;
+    const { paymentId } = payLink(linkId);
+    await syncPaymentFromRazorpay(r.referenceId, 'reconcile');
+    const { refundId, amount } = await startRefund(r.referenceId, { reason: 'test', actor: 'a' });
+    // Two confirmations of the same refund arriving together are applied once
+    const { applyRefundProcessed } = await import('@/lib/payments/refunds');
+    await Promise.all([applyRefundProcessed({ id: refundId, payment_id: paymentId, amount }), applyRefundProcessed({ id: refundId, payment_id: paymentId, amount })]);
+    const p = await Payment.findOne({ referenceId: r.referenceId }).lean<any>();
+    expect(p).toMatchObject({ status: 'refunded', amountRefunded: amount });
+    expect((await CreatorEarning.findOne({ razorpayPaymentId: paymentId }).lean<any>()).status).toBe('cancelled');
+    expect(await releasePartnerTransfer(r.referenceId)).toBe('none');
+  });
+
+  it('rejects receipts whose page count was only estimated', async () => {
+    const est = signUploadReceipt({ url: 'https://res.cloudinary.com/demo/e.docx', name: 'e.docx', mime: 'application/msword', size: 1, pages: 2, estimated: true, uid: user.email });
+    await expect(createPrintCheckout(user, checkoutInput({ files: [{ receipt: est, pageSize: 'A4', color: 'bw', sided: 'single', copies: 1 }] }), 'http://x')).rejects.toThrow(/save it as a PDF/);
+  });
+
+  it('two simultaneous checkouts with one key create one order', async () => {
+    const input = checkoutInput();
+    const results = await Promise.allSettled([createPrintCheckout(user, input, 'http://x'), createPrintCheckout(user, input, 'http://x')]);
+    expect(await Order.countDocuments()).toBe(1);
+    const ok = results.filter((x) => x.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+    expect(ok.length).toBeGreaterThanOrEqual(1);
+    for (const x of results) if (x.status === 'rejected') expect(String(x.reason.message)).toMatch(/being prepared/);
+  });
+
+  it('paid template generation needs this user\'s paid purchase and uses its stored form data', async () => {
+    const { getServerSession } = await import('next-auth');
+    vi.mocked(getServerSession).mockResolvedValue({ user: { email: user.email } } as never);
+    const { checkTemplateAccess } = await import('@/lib/payments/templateAccess');
+    await DynamicTemplate.collection.insertOne({ id: 'tplG', name: 'G', isPaid: true, price: 10 });
+    expect((await checkTemplateAccess('tplG', { a: 1 }, undefined)) as any).toHaveProperty('status', 402);
+
+    const r = await createTemplateCheckout(user, { idempotencyKey: 'gen-tpl-123', templateId: 'tplG', formData: { name: 'Stored' } }, 'http://x');
+    const linkId = (await Payment.findOne({ referenceId: r.referenceId }).lean<any>()).razorpay.paymentLinkId;
+    payLink(linkId);
+    await syncPaymentFromRazorpay(r.referenceId, 'reconcile');
+    const access = (await checkTemplateAccess('tplG', { name: 'Other' }, r.referenceId)) as any;
+    expect(access).toMatchObject({ paid: true, formData: { name: 'Stored' } });
+    for (let i = 0; i < 4; i++) await checkTemplateAccess('tplG', {}, r.referenceId);
+    expect(((await checkTemplateAccess('tplG', {}, r.referenceId)) as any).status).toBe(402); // 5 used
+
+    vi.mocked(getServerSession).mockResolvedValue({ user: { email: 'someone@else.com' } } as never);
+    expect(((await checkTemplateAccess('tplG', {}, r.referenceId)) as any).status).toBe(402);
+    await DynamicTemplate.collection.insertOne({ id: 'tplFree', name: 'F', isPaid: false });
+    expect(await checkTemplateAccess('tplFree', { x: 1 }, undefined)).toEqual({ paid: false, formData: { x: 1 } });
+  });
+});
+
 describe('template purchase', () => {
   it('prices from the template, stores form data and creates the creator earning once', async () => {
     const { insertedId } = await User.collection.insertOne({ name: 'C', email: 'creator@example.com', role: 'customer' });

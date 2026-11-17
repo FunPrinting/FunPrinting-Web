@@ -98,6 +98,10 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   const receipts: UploadReceipt[] = input.files.map((f, i) => {
     const check = verifyUploadReceipt(f.receipt, user.email);
     if (!check.ok) throw new CheckoutError(`File ${i + 1}: ${check.error}`);
+    if (check.receipt.estimated) {
+      // The price must be based on a real page count
+      throw new CheckoutError(`We could not count the pages of "${check.receipt.name}". Please save it as a PDF and upload it again.`);
+    }
     return check.receipt;
   });
   const quoteFiles: QuoteFile[] = input.files.map((f, i) => ({
@@ -161,7 +165,8 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   const anyMixed = fileOptions.some((o) => o.color === 'mixed' && (o.pageColors?.colorPages.length ?? 0) > 0);
 
   const expectedDate = input.expectedDate ? new Date(input.expectedDate) : undefined;
-  const order = await new Order({
+  const orderDoc = new Order({
+    checkoutKey: input.idempotencyKey,
     customerInfo: { ...input.customerInfo, email: input.customerInfo.email.toLowerCase() },
     orderType: 'file',
     fileURL: urls[0],
@@ -200,7 +205,19 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     paymentStatus: 'pending',
     orderStatus: 'pending',
     status: 'pending_payment',
-  }).save();
+  });
+  // Saving claims the idempotency key: a concurrent duplicate request fails here
+  let order;
+  try {
+    order = await orderDoc.save();
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000 && String((error as Error).message).includes('checkoutKey')) {
+      const again = await newPaymentAttempt.findReusable(user.email, input.idempotencyKey);
+      if (again) return again;
+      throw new CheckoutError('Your payment is being prepared. Please try again in a moment.', 409);
+    }
+    throw error;
+  }
 
   // 6. Payment + link
   const payment = await newPaymentAttempt.create({

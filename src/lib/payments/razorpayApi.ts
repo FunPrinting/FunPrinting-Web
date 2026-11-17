@@ -154,3 +154,12 @@ export function refundPayment(paymentId: string, amountPaise: number, { notes, r
   if (reverseAll) params.reverse_all = 1;
   return call('Refund payment', () => getRazorpay().payments.refund(paymentId, params as never) as unknown as Promise<RefundEntity>);
 }
+
+export async function fetchOrderPayments(razorpayOrderId: string): Promise<PaymentEntity[]> {
+  const result = await call('Fetch order payments', () => getRazorpay().orders.fetchPayments(razorpayOrderId) as unknown as Promise<{ items?: PaymentEntity[] }>);
+  return result?.items ?? [];
+}
+
+export function fetchRefund(refundId: string): Promise<RefundEntity & { payment_id: string }> {
+  return call('Fetch refund', () => getRazorpay().refunds.fetch(refundId) as unknown as Promise<RefundEntity & { payment_id: string }>);
+}

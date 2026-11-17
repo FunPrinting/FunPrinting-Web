@@ -59,6 +59,10 @@ export interface IOrder {
   amount: number; // rupees, subtotal before the processing fee (what admin views show)
   // Set by checkout: Payment.referenceId of the current payment attempt
   paymentRef?: string;
+  // Idempotency key of the checkout request that created this order
+  checkoutKey?: string;
+  // Short lock while /api/orders/[id]/pay creates a link
+  payLockUntil?: Date;
   // Price breakdown computed by the server at checkout (rupees)
   pricing?: {
     subtotal: number;
@@ -232,6 +236,8 @@ const orderSchema = new mongoose.Schema<IOrder>({
     required: true,
   },
   paymentRef: String,
+  checkoutKey: String,
+  payLockUntil: Date,
   pricing: {
     subtotal: Number,
     fee: Number,
@@ -355,6 +361,11 @@ orderSchema.index({ partnerId: 1, status: 1 });
 orderSchema.index({ 'deliveryOption.partnerId': 1, status: 1 });
 orderSchema.index({ paymentStatus: 1, createdAt: 1 });
 orderSchema.index({ paymentRef: 1 }, { sparse: true });
+// One order per checkout request (double clicks and retries return the same order)
+orderSchema.index(
+  { 'customerInfo.email': 1, checkoutKey: 1 },
+  { unique: true, partialFilterExpression: { checkoutKey: { $type: 'string' } } }
+);
 
 // Generate order ID before saving
 orderSchema.pre('save', async function () {

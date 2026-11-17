@@ -1,6 +1,7 @@
 import 'server-only';
 import crypto from 'crypto';
 import Payment, { type IPayment, type PaymentPurpose } from '@/models/Payment';
+import Order from '@/models/Order';
 import { createPaymentLink, type RouteTransfer } from '@/lib/payments/razorpayApi';
 import { callbackUrl, isRouteEnabled, LINK_TTL_MINUTES } from '@/lib/payments/config';
 import { PARTNER_SHARE_PERCENT, percentOf, type Totals } from '@/lib/payments/money';
@@ -38,18 +39,34 @@ async function nextReferenceId(purpose: PaymentPurpose, orderId?: string): Promi
 }
 
 export const newPaymentAttempt = {
-  /** An unexpired link created earlier with the same idempotency key. */
+  /**
+   * An earlier attempt with the same idempotency key:
+   * - open link → return it;
+   * - still being created (no link yet, under 2 minutes old) → 409, try again;
+   * - paid → 409;
+   * - expired / failed → release the key (and its order) so a new attempt can start.
+   */
   async findReusable(userEmail: string, idempotencyKey: string): Promise<CheckoutResult | null> {
-    const p = await Payment.findOne({ userEmail: userEmail.toLowerCase(), idempotencyKey }).lean<IPayment | null>();
-    if (!p) return null;
+    const email = userEmail.toLowerCase();
+    const p = await Payment.findOne({ userEmail: email, idempotencyKey }).lean<IPayment | null>();
+    if (!p) {
+      // The order may exist while its Payment is still being created
+      const pending = await Order.exists({ 'customerInfo.email': email, checkoutKey: idempotencyKey, createdAt: { $gt: new Date(Date.now() - 2 * 60_000) } });
+      if (pending) throw Object.assign(new Error('Your payment is being prepared. Please try again in a moment.'), { status: 409 });
+      return null;
+    }
     if (p.status === 'created' && p.razorpay.shortUrl && new Date(p.expiresAt).getTime() > Date.now() + 60_000) {
       return toCheckoutResult(p);
     }
-    if (p.status === 'paid') {
+    if (p.status === 'created' && !p.razorpay.shortUrl && Date.now() - new Date(p.createdAt).getTime() < 2 * 60_000) {
+      throw Object.assign(new Error('Your payment is being prepared. Please try again in a moment.'), { status: 409 });
+    }
+    if (p.status === 'paid' || p.status === 'partially_refunded' || p.status === 'refunded') {
       throw Object.assign(new Error('This order has already been paid.'), { status: 409 });
     }
     // Expired or failed attempt: free the key so a fresh attempt can use it
     await Payment.updateOne({ _id: p._id }, { $unset: { idempotencyKey: '' } });
+    if (p.orderId) await Order.updateOne({ orderId: p.orderId, checkoutKey: idempotencyKey }, { $unset: { checkoutKey: '' } });
     return null;
   },
 

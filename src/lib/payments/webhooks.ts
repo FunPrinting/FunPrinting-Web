@@ -1,10 +1,10 @@
 import 'server-only';
 import connectDB from '@/lib/mongodb';
 import Payment from '@/models/Payment';
-import Order from '@/models/Order';
 import { flagForReview, runFulfilment, settlePaid } from '@/lib/payments/fulfil';
 import { markLinkClosed } from '@/lib/payments/reconcile';
 import { applyRefundProcessed } from '@/lib/payments/refunds';
+import { settleLegacyCapture } from '@/lib/payments/legacy';
 import { logger } from '@/lib/logger';
 
 /**
@@ -83,52 +83,14 @@ export async function handleRazorpayEvent(body: RazorpayWebhook): Promise<{ fulf
       return { fulfil: [], note: 'transfer recorded' };
     }
 
-    case 'payment.captured':
-      return handleLegacyCapture(payload.payment?.entity);
+    case 'payment.captured': {
+      const result = await settleLegacyCapture(payload.payment?.entity);
+      return { fulfil: result.referenceId ? [result.referenceId] : [], note: result.note };
+    }
 
     default:
       return { fulfil: [], note: `ignored ${event}` };
   }
-}
-
-/**
- * Standard Checkout payments started before the switch to Payment Links: the order
- * has razorpayOrderId and no Payment record. Create one so the same fulfilment runs.
- * Payment Link payments also emit payment.captured; those are skipped here because
- * payment_link.paid settles them.
- */
-async function handleLegacyCapture(payment?: { id: string; amount: number; method?: string; order_id?: string }) {
-  if (!payment?.order_id) return { fulfil: [], note: 'not a legacy capture' };
-  if (await Payment.exists({ 'razorpay.paymentId': payment.id })) return { fulfil: [], note: 'already known' };
-
-  const order = await Order.findOne({ razorpayOrderId: payment.order_id }).lean<{ orderId: string; amount: number; customerInfo?: { email?: string } } | null>();
-  if (!order) return { fulfil: [], note: 'no legacy order' }; // a Payment Link payment; handled by payment_link.paid
-
-  const referenceId = `LEGACY_${order.orderId}`.slice(0, 40);
-  const subtotal = Math.round(order.amount * 100);
-  await Payment.updateOne(
-    { referenceId },
-    {
-      $setOnInsert: {
-        referenceId,
-        purpose: 'print_order',
-        status: 'created',
-        userEmail: (order.customerInfo?.email || 'unknown@legacy').toLowerCase(),
-        orderId: order.orderId,
-        amounts: { subtotal, fee: Math.max(0, payment.amount - subtotal), total: payment.amount },
-        currency: 'INR',
-        razorpay: {},
-        expiresAt: new Date(),
-        fulfilment: { attempts: 0 },
-        events: [{ at: new Date(), type: 'legacy_checkout', source: 'webhook', detail: payment.order_id }],
-      },
-    },
-    { upsert: true }
-  );
-  const result = await settlePaid({ referenceId, razorpayPaymentId: payment.id, amountPaid: payment.amount, method: payment.method, source: 'webhook' });
-  return result.outcome === 'paid' || result.outcome === 'alreadyPaid'
-    ? { fulfil: [referenceId], note: 'legacy capture settled' }
-    : { fulfil: [], note: `legacy ${result.outcome}` };
 }
 
 export { runFulfilment };

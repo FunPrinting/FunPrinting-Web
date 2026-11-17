@@ -53,9 +53,15 @@ export async function POST(request: NextRequest) {
     ).lean<{ status: string; receivedAt: Date } | null>();
     if (seen) {
       const stale = Date.now() - new Date(seen.receivedAt).getTime() > STALE_PROCESSING_MS;
-      if (seen.status === 'processed' || (seen.status === 'processing' && !stale)) {
-        elog.info({ previous: seen.status }, 'duplicate webhook skipped');
+      if (seen.status === 'processed') {
+        elog.info('duplicate webhook skipped');
         return NextResponse.json({ status: 'duplicate' });
+      }
+      if (seen.status === 'processing' && !stale) {
+        // Another delivery is being handled right now. Ask Razorpay to retry later
+        // instead of acknowledging: if that attempt fails, the retry still arrives.
+        elog.info('webhook already in progress');
+        return NextResponse.json({ status: 'in_progress' }, { status: 409 });
       }
       // A failed or abandoned attempt: process again
       await WebhookEvent.updateOne({ eventId }, { $set: { status: 'processing', receivedAt: new Date() } });

@@ -193,7 +193,7 @@ export default function MyOrdersPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert(`✅ Order #${order.orderId} has been deleted successfully.`);
+        alert(`Order #${order.orderId} has been cancelled.`);
         await loadOrders(); // Refresh orders
       } else {
         alert(`Failed to delete order: ${data.error}`);

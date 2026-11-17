@@ -1690,6 +1690,9 @@ function OrderPageContent() {
       });
       const data = await response.json().catch(() => ({ success: false, error: 'Unexpected response from the server' }));
       if (!response.ok || !data.success || !data.paymentUrl) {
+        // A definite rejection: the next attempt (maybe with changed options) gets a new key.
+        // 409 means the same attempt is still being prepared, so keep its key.
+        if (response.status !== 409) checkoutKeyRef.current = crypto.randomUUID();
         throw new Error(data.error || 'Could not start the payment. Please try again.');
       }
 

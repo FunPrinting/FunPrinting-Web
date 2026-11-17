@@ -2,6 +2,7 @@ import 'server-only';
 import connectDB from '@/lib/mongodb';
 import Payment, { type IPayment } from '@/models/Payment';
 import Order from '@/models/Order';
+import CreatorEarning from '@/models/CreatorEarning';
 import { refundPayment, releaseTransfer, fetchPaymentTransfers } from '@/lib/payments/razorpayApi';
 import { logger } from '@/lib/logger';
 
@@ -46,23 +47,35 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
   return { refundId: refund.id, amount };
 }
 
-/** Webhook: refund.processed. Idempotent per refund id. */
+/**
+ * refund.processed (webhook or reconcile). Idempotent per refund id, and safe when
+ * two refunds are confirmed at the same time: the amount is added atomically.
+ */
 export async function applyRefundProcessed(refund: { id: string; payment_id: string; amount: number }): Promise<boolean> {
   await connectDB();
-  const p = await Payment.findOne({ 'razorpay.paymentId': refund.payment_id });
-  if (!p) return false;
-  if (p.events.some((e) => e.type === 'refund_processed' && e.detail?.startsWith(refund.id))) return true;
+  const updated = await Payment.findOneAndUpdate(
+    { 'razorpay.paymentId': refund.payment_id, 'razorpay.processedRefundIds': { $ne: refund.id } },
+    {
+      $inc: { amountRefunded: refund.amount },
+      $addToSet: { 'razorpay.processedRefundIds': refund.id, 'razorpay.refundIds': refund.id },
+      $push: { events: { at: new Date(), type: 'refund_processed', source: 'webhook', detail: `${refund.id} ${refund.amount}` } },
+    },
+    { new: true }
+  );
+  if (!updated) return Boolean(await Payment.exists({ 'razorpay.paymentId': refund.payment_id }));
 
-  const refunded = (p.amountRefunded ?? 0) + refund.amount;
-  const paid = p.amountPaid ?? p.amounts.total;
-  p.amountRefunded = refunded;
-  p.status = refunded >= paid ? 'refunded' : 'partially_refunded';
-  if (!p.razorpay.refundIds?.includes(refund.id)) p.razorpay.refundIds = [...(p.razorpay.refundIds ?? []), refund.id];
-  p.events.push({ at: new Date(), type: 'refund_processed', source: 'webhook', detail: `${refund.id} ${refund.amount}` });
-  await p.save();
+  const paid = updated.amountPaid ?? updated.amounts.total;
+  const status = (updated.amountRefunded ?? 0) >= paid ? 'refunded' : 'partially_refunded';
+  await Payment.updateOne({ _id: updated._id }, { $set: { status } });
 
-  if (p.orderId && p.status === 'refunded') {
-    await Order.updateOne({ orderId: p.orderId, paymentRef: p.referenceId }, { $set: { paymentStatus: 'refunded', status: 'refunded' } });
+  if (status === 'refunded') {
+    if (updated.orderId) {
+      await Order.updateOne({ orderId: updated.orderId, paymentRef: updated.referenceId }, { $set: { paymentStatus: 'refunded', status: 'refunded' } });
+    }
+    if (updated.purpose === 'template') {
+      // The creator is not paid for a refunded sale
+      await CreatorEarning.updateMany({ razorpayPaymentId: refund.payment_id, status: 'pending' }, { $set: { status: 'cancelled', notes: `Refunded (${refund.id})` } });
+    }
   }
   return true;
 }
@@ -74,7 +87,8 @@ export async function applyRefundProcessed(refund: { id: string; payment_id: str
 export async function releasePartnerTransfer(referenceId: string): Promise<'released' | 'none' | 'already'> {
   await connectDB();
   const p = await Payment.findOne({ referenceId });
-  if (!p || !p.partnerAccountId || !p.razorpay.paymentId) return 'none';
+  // Never release the partner share of a refunded payment (the refund reverses it)
+  if (!p || p.status !== 'paid' || !p.partnerAccountId || !p.razorpay.paymentId) return 'none';
   if (p.razorpay.transferReleased) return 'already';
 
   let transferId = p.razorpay.transferId;

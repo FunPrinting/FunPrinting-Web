@@ -71,6 +71,7 @@ export interface IPayment {
     transferId?: string;
     transferReleased?: boolean;
     refundIds?: string[];
+    processedRefundIds?: string[];
   };
 
   expiresAt: Date;
@@ -87,6 +88,8 @@ export interface IPayment {
     invoice?: Date;
     adminNotice?: Date;
     completedAt?: Date;
+    lockedUntil?: Date; // lease: only one fulfilment run at a time
+    skipped?: string; // why the remaining steps were not run
     attempts: number;
     lastError?: string;
   };
@@ -135,6 +138,7 @@ const paymentSchema = new Schema<IPayment>(
       transferId: String,
       transferReleased: Boolean,
       refundIds: [String],
+      processedRefundIds: [String],
     },
 
     expiresAt: { type: Date, required: true },
@@ -151,6 +155,8 @@ const paymentSchema = new Schema<IPayment>(
       invoice: Date,
       adminNotice: Date,
       completedAt: Date,
+      lockedUntil: Date,
+      skipped: String,
       attempts: { type: Number, default: 0 },
       lastError: String,
     },

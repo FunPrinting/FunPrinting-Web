@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { getSessionUser, isAdminSession } from '@/lib/authz';
 import { withRequestLogger } from '@/lib/logger';
 import connectDB from '@/lib/mongodb';
 import Payment, { type IPayment } from '@/models/Payment';
 import { syncPaymentFromRazorpay } from '@/lib/payments/reconcile';
+import { runFulfilment } from '@/lib/payments/fulfil';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +43,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     } catch (error) {
       log.warn({ err: error }, 'status sync with Razorpay failed');
     }
+  }
+
+  // Paid but side effects unfinished (e.g. dropped background work): try again now
+  // rather than waiting for the daily reconcile. The lease prevents double runs.
+  if (p.status === 'paid' && !p.fulfilment?.completedAt && now - new Date(p.paidAt ?? p.createdAt).getTime() > 30_000) {
+    const referenceId = p.referenceId;
+    after(() => runFulfilment(referenceId).then(() => undefined).catch((error) => log.error({ err: error }, 'fulfilment retry failed')));
   }
 
   const linkUsable = p.status === 'created' && Boolean(p.razorpay.shortUrl) && new Date(p.expiresAt).getTime() > now;

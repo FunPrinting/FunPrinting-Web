@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkTemplateAccess } from '@/lib/payments/templateAccess';
 import { fillDocxTemplate } from '@/lib/docxProcessor';
 import { uploadFile } from '@/lib/storage';
 
@@ -6,7 +7,12 @@ export async function POST(request: NextRequest) {
   try {
     console.log('📝 Template fill request received');
     
-    const { templateId, formData } = await request.json();
+    const body = await request.json();
+    const { templateId } = body;
+    // Paid templates need a purchase; its stored form data is used
+    const access = await checkTemplateAccess(templateId, body.formData, body.paymentRef);
+    if (access instanceof NextResponse) return access;
+    const formData = body.formData === undefined ? undefined : access.formData;
 
     console.log('📝 Template fill - Request data:', {
       templateId: templateId ? 'Present' : 'Missing',

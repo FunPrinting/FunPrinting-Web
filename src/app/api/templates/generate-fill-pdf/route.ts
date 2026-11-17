@@ -13,6 +13,7 @@ import { jobStore } from '@/lib/jobStore';
 import { generationRateLimit, getClientIdentifier, checkRateLimit } from '@/lib/ratelimit';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { checkTemplateAccess } from '@/lib/payments/templateAccess';
 
 /**
  * Background PDF conversion — runs after the API response is sent
@@ -116,9 +117,6 @@ async function convertToPdfInBackground(
  * Generate filled Word document and kick off async PDF conversion
  * Returns immediately with jobId — client polls generation-status for updates
  */
-/** Retries allowed per paid template purchase (e.g. after a failed conversion). */
-const MAX_GENERATIONS_PER_PURCHASE = 5;
-
 export async function POST(request: NextRequest) {
   // Rate limit check
   const clientId = getClientIdentifier(request);
@@ -139,40 +137,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { templateId, paymentRef } = body;
-    let { formData } = body;
-
-    // Paid templates: generation needs a paid purchase by this user, and uses the
-    // form data stored with it (so one purchase can't be reused for other content)
-    if (templateId) {
-      const { default: connectDB } = await import('@/lib/mongodb');
-      const { default: DynamicTemplate } = await import('@/models/DynamicTemplate');
-      await connectDB();
-      const meta = await DynamicTemplate.findOne({ id: templateId }).select('isPaid price').lean<{ isPaid?: boolean; price?: number } | null>();
-      if (meta?.isPaid && (meta.price ?? 0) > 0) {
-        const { default: Payment } = await import('@/models/Payment');
-        const purchase = typeof paymentRef === 'string'
-          ? await Payment.findOneAndUpdate(
-              {
-                referenceId: paymentRef,
-                purpose: 'template',
-                templateId,
-                userEmail: String(session.user.email || '').toLowerCase(),
-                status: 'paid',
-                'template.generationCount': { $lt: MAX_GENERATIONS_PER_PURCHASE },
-              },
-              { $inc: { 'template.generationCount': 1 } },
-              { new: true }
-            ).lean<{ template?: { formData?: Record<string, unknown> } } | null>()
-          : null;
-        if (!purchase) {
-          return NextResponse.json(
-            { success: false, error: 'Payment is required for this template.', code: 'payment_required' },
-            { status: 402 }
-          );
-        }
-        formData = purchase.template?.formData ?? formData;
-      }
-    }
+    const access = await checkTemplateAccess(templateId, body.formData, paymentRef);
+    if (access instanceof NextResponse) return access;
+    const formData = access.formData;
 
     console.log('[GENERATE-FILL] Received formData keys:', Object.keys(formData || {}));
 

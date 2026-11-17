@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkTemplateAccess } from '@/lib/payments/templateAccess';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
 import { uploadFile } from '@/lib/storage';
@@ -6,7 +7,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
-    const { templateId, formData } = await request.json();
+    const body = await request.json();
+    const { templateId } = body;
+    // Paid templates need a purchase; its stored form data is used
+    const access = await checkTemplateAccess(templateId, body.formData, body.paymentRef);
+    if (access instanceof NextResponse) return access;
+    const formData = body.formData === undefined ? undefined : access.formData;
 
     if (!templateId || !formData) {
       return NextResponse.json(

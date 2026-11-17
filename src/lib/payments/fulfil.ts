@@ -90,7 +90,16 @@ export async function flagForReview(paymentId: unknown, reason: string): Promise
   );
 }
 
-type Step = keyof Omit<IPayment['fulfilment'], 'completedAt' | 'attempts' | 'lastError'>;
+type Step = keyof Omit<IPayment['fulfilment'], 'completedAt' | 'attempts' | 'lastError' | 'lockedUntil' | 'skipped'>;
+
+/** Thrown by a step to end fulfilment without error: there is nothing (more) to do. */
+class StopFulfilment extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+  }
+}
+
+const LEASE_MS = 90_000;
 
 async function markStep(paymentId: unknown, step: Step) {
   await Payment.updateOne({ _id: paymentId as IPayment['_id'], [`fulfilment.${step}`]: { $exists: false } }, { $set: { [`fulfilment.${step}`]: new Date() } });
@@ -102,7 +111,10 @@ async function markStep(paymentId: unknown, step: Step) {
 
 async function markOrderPaid(p: IPayment) {
   const order = await Order.findOneAndUpdate(
-    { orderId: p.orderId, paymentStatus: { $ne: 'completed' }, status: { $in: ['pending_payment', 'cancelled'] } },
+    // An unpaid order cancelled earlier (24 h timeout, or by the customer while its
+    // link could not be closed) is revived: the customer has paid for it. Refunded
+    // or already-paid orders never match and are flagged below.
+    { orderId: p.orderId, paymentStatus: { $in: ['pending', 'failed'] }, status: { $in: ['pending_payment', 'cancelled'] } },
     {
       $set: {
         paymentStatus: 'completed',
@@ -119,8 +131,33 @@ async function markOrderPaid(p: IPayment) {
   if (!order) {
     const current = await Order.findOne({ orderId: p.orderId }).select('status paymentStatus paymentRef').lean<{ status: string; paymentStatus: string; paymentRef?: string } | null>();
     if (!current) throw new Error(`Order ${p.orderId} not found`);
-    if (current.paymentStatus === 'completed' && current.paymentRef && current.paymentRef !== p.referenceId) {
-      await flagForReview(p._id, `Order ${p.orderId} was already paid by ${current.paymentRef}; this payment needs a refund`);
+    const ownedByThis = current.paymentStatus === 'completed' && (current.paymentRef === p.referenceId || !current.paymentRef);
+    if (!ownedByThis) {
+      // Paid by another attempt (or refunded/cancelled by an admin): never print or email again
+      await flagForReview(p._id, `Order ${p.orderId} is ${current.status}/${current.paymentStatus} under ${current.paymentRef ?? 'no payment'}; this payment (${p.razorpay.paymentId}) needs a refund`);
+      throw new StopFulfilment('order paid by another payment');
+    }
+  }
+  await closeOtherOpenLinks(p);
+}
+
+/** Once an order is paid, close its other open links so the customer can't pay twice. */
+async function closeOtherOpenLinks(p: IPayment) {
+  const others = await Payment.find({ orderId: p.orderId, status: 'created', referenceId: { $ne: p.referenceId } })
+    .select('referenceId razorpay.paymentLinkId')
+    .lean<Array<{ _id: unknown; referenceId: string; razorpay: { paymentLinkId?: string } }>>();
+  for (const other of others) {
+    try {
+      if (other.razorpay.paymentLinkId) {
+        const { cancelPaymentLink } = await import('@/lib/payments/razorpayApi');
+        await cancelPaymentLink(other.razorpay.paymentLinkId);
+      }
+      await Payment.updateOne({ _id: other._id as IPayment['_id'], status: 'created' }, { $set: { status: 'cancelled' }, $push: { events: event('link_cancelled', 'system', `order paid by ${p.referenceId}`) } });
+    } catch (error) {
+      // Razorpay refuses to cancel a link that was just paid; settle it so it is flagged
+      logger.warn({ err: error, referenceId: other.referenceId }, 'could not cancel other open link');
+      const { syncPaymentFromRazorpay } = await import('@/lib/payments/reconcile');
+      await syncPaymentFromRazorpay(other.referenceId, 'system').catch(() => undefined);
     }
   }
 }
@@ -128,6 +165,7 @@ async function markOrderPaid(p: IPayment) {
 async function dispatchOrder(p: IPayment) {
   const order = await Order.findOne({ orderId: p.orderId });
   if (!order || order.paymentStatus !== 'completed') return;
+  if (order.paymentRef && order.paymentRef !== p.referenceId) throw new StopFulfilment('order paid by another payment');
   const { generateDeliveryNumber, sendPrintJobFromOrder } = await import('@/lib/printerClient');
   if (!order.deliveryNumber) {
     order.deliveryNumber = generateDeliveryNumber(1);
@@ -142,12 +180,17 @@ async function dispatchOrder(p: IPayment) {
     const result = await dispatchPrintJob(String(partnerId), order.toObject());
     if (!result.ok) throw new Error(`WSS dispatch failed: ${result.error ?? result.status}`);
     sent = result.delivered > 0;
-    if (!sent) logger.warn({ orderId: order.orderId, partnerId }, 'partner has no connected device; order stays paid until it is picked up');
+    if (!sent) {
+      // The partner sees the order in their order list; Phase 3 adds pull-based delivery
+      logger.warn({ orderId: order.orderId, partnerId }, 'partner has no connected device; order stays paid until it is picked up');
+      await Payment.updateOne({ _id: p._id }, { $push: { events: event('dispatch_no_device', 'system', String(partnerId)) } });
+    }
   } else {
     // Central printer (removed in Phase 3, when every order goes to a partner)
     const result = await sendPrintJobFromOrder(order, 1);
     sent = Boolean(result.success);
-    if (!sent) logger.warn({ orderId: order.orderId, message: result.message }, 'central printer did not accept the job');
+    // Retried by the reconcile job; flagged for review after repeated failures
+    if (!sent) throw new Error(`Central printer did not accept the job: ${result.message ?? 'no details'}`);
   }
   if (sent) {
     await Order.updateOne({ _id: order._id, status: 'paid' }, { $set: { status: 'printing', orderStatus: 'printing' } });
@@ -246,15 +289,33 @@ const PLANS: Record<IPayment['purpose'], Array<[Step, (p: IPayment) => Promise<v
   template: [['creatorEarning', createCreatorEarning]],
 };
 
-/** Runs the remaining side effects for a paid payment. Safe to call repeatedly. */
-export async function runFulfilment(referenceId: string): Promise<{ done: boolean; failed: Step[] }> {
+/**
+ * Runs the remaining side effects for a paid payment. Safe to call repeatedly and
+ * concurrently: a lease (fulfilment.lockedUntil) lets only one run proceed, so the
+ * callback, webhook and reconcile job can't dispatch the same job twice.
+ */
+export async function runFulfilment(referenceId: string): Promise<{ done: boolean; failed: Step[]; busy?: boolean }> {
   await connectDB();
-  const p = await Payment.findOne({ referenceId }).lean<IPayment | null>();
-  if (!p || p.status !== 'paid' && p.status !== 'partially_refunded') return { done: false, failed: [] };
-  if (p.fulfilment?.completedAt) return { done: true, failed: [] };
+  const now = new Date();
+  const p = await Payment.findOneAndUpdate(
+    {
+      referenceId,
+      status: { $in: ['paid', 'partially_refunded'] },
+      'fulfilment.completedAt': { $exists: false },
+      $or: [{ 'fulfilment.lockedUntil': { $exists: false } }, { 'fulfilment.lockedUntil': null }, { 'fulfilment.lockedUntil': { $lt: now } }],
+    },
+    { $set: { 'fulfilment.lockedUntil': new Date(now.getTime() + LEASE_MS) } },
+    { new: true }
+  ).lean<IPayment | null>();
+  if (!p) {
+    const current = await Payment.findOne({ referenceId }).select('status fulfilment').lean<IPayment | null>();
+    if (current?.fulfilment?.completedAt) return { done: true, failed: [] };
+    return { done: false, failed: [], busy: Boolean(current && ['paid', 'partially_refunded'].includes(current.status)) };
+  }
 
   const failed: Step[] = [];
   const errors: string[] = [];
+  let skipped: string | undefined;
   for (const [step, run] of PLANS[p.purpose]) {
     if (p.fulfilment?.[step]) continue;
     // The order must be marked paid before anything else happens for it
@@ -266,6 +327,10 @@ export async function runFulfilment(referenceId: string): Promise<{ done: boolea
       await run(p);
       await markStep(p._id, step);
     } catch (error) {
+      if (error instanceof StopFulfilment) {
+        skipped = error.reason;
+        break;
+      }
       failed.push(step);
       errors.push(`${step}: ${error instanceof Error ? error.message : String(error)}`);
       logger.error({ err: error, referenceId, step }, 'fulfilment step failed');
@@ -273,10 +338,14 @@ export async function runFulfilment(referenceId: string): Promise<{ done: boolea
   }
 
   const attempts = (p.fulfilment?.attempts ?? 0) + 1;
-  const set: Record<string, unknown> = { 'fulfilment.attempts': attempts };
+  const set: Record<string, unknown> = { 'fulfilment.attempts': attempts, 'fulfilment.lockedUntil': null };
   if (failed.length === 0) set['fulfilment.completedAt'] = new Date();
   else set['fulfilment.lastError'] = errors.join('; ').slice(0, 1000);
-  await Payment.updateOne({ _id: p._id }, { $set: set, $push: { events: event(failed.length ? 'fulfilment_partial' : 'fulfilled', 'system', failed.join(',') || undefined) } });
+  if (skipped) set['fulfilment.skipped'] = skipped;
+  await Payment.updateOne(
+    { _id: p._id },
+    { $set: set, $push: { events: event(skipped ? 'fulfilment_skipped' : failed.length ? 'fulfilment_partial' : 'fulfilled', 'system', skipped ?? (failed.join(',') || undefined)) } }
+  );
 
   if (failed.length && attempts >= MAX_FULFILMENT_ATTEMPTS) {
     await flagForReview(p._id, `Fulfilment still failing after ${attempts} attempts: ${errors.join('; ')}`);
