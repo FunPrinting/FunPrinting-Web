@@ -7,7 +7,7 @@ require('dotenv').config({ path: '.env.local' });
 
 const adminInfoData = {
   name: 'Fun Printing Service',
-  email: 'adityapandey.dev.in@gmail.com',
+  email: process.env.ADMIN_INFO_EMAIL || process.env.ADMIN_EMAIL || '',
   phone: '7060179070',
   website: 'https://adityapandey-dev.github.io',
   address: 'Laldath',

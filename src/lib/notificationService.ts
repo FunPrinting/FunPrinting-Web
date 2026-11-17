@@ -1,18 +1,5 @@
-import nodemailer from 'nodemailer';
+import { getMailTransporter } from '@/lib/mailer';
 
-// Configure email transporter using existing environment variables
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT || '587'),
-  secure: false, // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_HOST_USER ,
-    pass: process.env.EMAIL_HOST_PASSWORD || 'hagbaiwzqltgfflz',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
 
 export interface OrderNotificationData {
   orderId: string;
@@ -148,7 +135,7 @@ export async function sendNewOrderNotification(orderData: OrderNotificationData)
     };
 
     console.log('📧 Attempting to send email...');
-    const result = await transporter.sendMail(mailOptions);
+    const result = await getMailTransporter().sendMail(mailOptions);
     console.log('📧 Email sent successfully:', result.messageId);
     console.log(`✅ New order notification sent to admin: ${adminEmail}`);
     return true;
@@ -225,7 +212,7 @@ function getStatusColor(status: string): string {
 export async function testEmailConnection(): Promise<boolean> {
   try {
     console.log('🧪 Testing email transporter connection...');
-    await transporter.verify();
+    await getMailTransporter().verify();
     console.log('✅ Email transporter connection successful');
     return true;
   } catch (error) {
@@ -342,7 +329,7 @@ export async function sendCustomerOrderConfirmation(orderData: OrderNotification
     };
 
     console.log('📧 Attempting to send customer confirmation email...');
-    const result = await transporter.sendMail(mailOptions);
+    const result = await getMailTransporter().sendMail(mailOptions);
     console.log('📧 Customer confirmation email sent successfully:', result.messageId);
     console.log(`✅ Order confirmation sent to customer: ${orderData.customerEmail}`);
     return true;
@@ -439,7 +426,7 @@ export async function sendPaymentReminderToCustomer(orderData: OrderNotification
     };
 
     console.log('📧 Attempting to send payment reminder to customer...');
-    const result = await transporter.sendMail(mailOptions);
+    const result = await getMailTransporter().sendMail(mailOptions);
     console.log('📧 Payment reminder sent successfully:', result.messageId);
     console.log(`✅ Payment reminder sent to customer: ${orderData.customerEmail}`);
     return true;
@@ -535,7 +522,7 @@ export async function sendPaymentReminderToAdmin(orderData: OrderNotificationDat
     };
 
     console.log('📧 Attempting to send payment reminder to admin...');
-    const result = await transporter.sendMail(mailOptions);
+    const result = await getMailTransporter().sendMail(mailOptions);
     console.log('📧 Admin payment reminder sent successfully:', result.messageId);
     console.log(`✅ Payment reminder sent to admin: ${adminEmail}`);
     return true;
@@ -584,7 +571,7 @@ export async function sendPaymentNotification(orderData: OrderNotificationData, 
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await getMailTransporter().sendMail(mailOptions);
     console.log(`✅ Payment ${paymentStatus} notification sent to admin: ${adminEmail}`);
     return true;
   } catch (error) {

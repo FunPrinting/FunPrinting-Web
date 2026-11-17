@@ -2,7 +2,11 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/print-service';
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI is not set');
+  process.exit(1);
+}
 
 async function setupAdmin() {
   try {
@@ -37,7 +41,13 @@ async function setupAdmin() {
     const Admin = mongoose.models.Admin || mongoose.model('Admin', adminSchema);
 
     // Check if admin already exists
-    const existingAdmin = await Admin.findOne({ email: 'admin@printservice.com' });
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      console.error('❌ ADMIN_EMAIL and ADMIN_PASSWORD must be set to run this script');
+      return;
+    }
+    const existingAdmin = await Admin.findOne({ email: adminEmail.toLowerCase() });
     
     if (existingAdmin) {
       console.log('Admin user already exists');
@@ -45,10 +55,10 @@ async function setupAdmin() {
     }
 
     // Create admin user
-    const hashedPassword = await bcrypt.hash('admin123', 10);
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
     
     const admin = new Admin({
-      email: 'admin@printservice.com',
+      email: adminEmail.toLowerCase(),
       password: hashedPassword,
       name: 'System Administrator',
       role: 'super-admin',
@@ -56,8 +66,7 @@ async function setupAdmin() {
 
     await admin.save();
     console.log('Admin user created successfully');
-    console.log('Email: admin@printservice.com');
-    console.log('Password: admin123');
+    console.log(`Email: ${adminEmail}`);
 
   } catch (error) {
     console.error('Error setting up admin:', error);

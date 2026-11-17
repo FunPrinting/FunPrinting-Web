@@ -4,7 +4,10 @@
 interface OTPData {
   otp: string;
   timestamp: number;
+  attempts: number;
 }
+// Max wrong attempts before an OTP is invalidated
+export const MAX_OTP_ATTEMPTS = 5;
 
 // Global variable to persist across API calls
 declare global {
@@ -33,7 +36,8 @@ class OTPStore {
   set(email: string, otp: string): void {
     this.store.set(email, {
       otp,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      attempts: 0
     });
   }
 
@@ -42,6 +46,13 @@ class OTPStore {
     return this.store.get(email);
   }
 
+  // Record a failed attempt; returns the updated attempt count
+  recordFailedAttempt(email: string): number {
+    const data = this.store.get(email);
+    if (!data) return 0;
+    data.attempts += 1;
+    return data.attempts;
+  }
   // Remove OTP after successful verification
   delete(email: string): boolean {
     return this.store.delete(email);

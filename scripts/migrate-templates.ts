@@ -44,9 +44,10 @@ async function migrateTemplates() {
           updates.isPublic = false; // Default to private
           
           // Try to find admin user
+          const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
           const adminUser = await User.findOne({ 
             $or: [
-              { email: 'adityapandey.dev.in@gmail.com' },
+              ...(adminEmail ? [{ email: adminEmail }] : []),
               { role: 'admin' }
             ]
           });

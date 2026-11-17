@@ -51,6 +51,26 @@ export const webhookRateLimit = new Ratelimit({
 });
 
 /**
+ * Rate limiter for sending email OTPs
+ * Allows 5 requests per 10 minutes per key (applied to both email and IP)
+ */
+export const otpSendRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(5, '10 m'),
+    prefix: 'ratelimit:otp-send',
+    analytics: true,
+});
+/**
+ * Rate limiter for verifying email OTPs
+ * Allows 10 attempts per 10 minutes per key (applied to both email and IP)
+ */
+export const otpVerifyRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, '10 m'),
+    prefix: 'ratelimit:otp-verify',
+    analytics: true,
+});
+/**
  * Get client identifier from request (IP address or fallback)
  */
 export function getClientIdentifier(request: NextRequest): string {

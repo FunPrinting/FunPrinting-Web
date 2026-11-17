@@ -1,6 +1,14 @@
 const { MongoClient } = require('mongodb');
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/print-service';
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+
+  console.error('❌ MONGODB_URI is not set');
+
+  process.exit(1);
+
+}
 
 async function setupPickupLocations() {
   const client = new MongoClient(MONGODB_URI);

@@ -1,20 +1,7 @@
-import nodemailer from 'nodemailer';
+import { getMailTransporter } from '@/lib/mailer';
 import { generateInvoicePDF, InvoiceData } from './invoiceGenerator';
 import { IOrder } from '@/models/Order';
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_HOST_USER ,
-    pass: process.env.EMAIL_HOST_PASSWORD || 'hagbaiwzqltgfflz',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
 
 /**
  * Generate HTML email body for invoice
@@ -201,7 +188,7 @@ export async function sendInvoiceEmail(order: IOrder, deliveryNumber: string): P
     };
 
     console.log(`📧 Sending invoice email to ${order.customerInfo.email}...`);
-    const result = await transporter.sendMail(mailOptions);
+    const result = await getMailTransporter().sendMail(mailOptions);
     console.log(`✅ Invoice email sent successfully: ${result.messageId}`);
     console.log(`✅ Invoice sent to customer: ${order.customerInfo.email}`);
 
