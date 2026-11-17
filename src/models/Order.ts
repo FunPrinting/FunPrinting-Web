@@ -320,6 +320,16 @@ const orderSchema = new mongoose.Schema<IOrder>({
   timestamps: true,
 });
 
+// Query indexes. Payment paths look orders up by Razorpay ids; dashboards list by
+// customer and by partner. Not unique yet: existing data may contain duplicates
+// (Phase 2 migration checks and then makes the payment ids unique).
+orderSchema.index({ razorpayOrderId: 1 }, { sparse: true });
+orderSchema.index({ razorpayPaymentId: 1 }, { sparse: true });
+orderSchema.index({ 'customerInfo.email': 1, createdAt: -1 });
+orderSchema.index({ partnerId: 1, status: 1 });
+orderSchema.index({ 'deliveryOption.partnerId': 1, status: 1 });
+orderSchema.index({ paymentStatus: 1, createdAt: 1 });
+
 // Generate order ID before saving
 orderSchema.pre('save', async function () {
   if (this.isNew && !this.orderId) {
