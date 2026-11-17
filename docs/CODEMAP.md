@@ -19,6 +19,7 @@ Rules for new code:
 - Read config through `getServerEnv()` (`src/lib/env.ts`). It lists every missing variable in one error.
 - Log with `withRequestLogger(req)` (`src/lib/logger.ts`). Log ids, never whole orders, request bodies, emails or phone numbers.
 - Every handler checks auth first, using one of the guards below.
+- Errors and warnings are stored automatically (console, logger, uncaught, browser). See `docs/ERROR_TRACKING.md`; review them at `/admin/errors`.
 
 ## Auth guards (`src/lib/authz.ts`, `src/lib/cronAuth.ts`)
 
@@ -68,6 +69,13 @@ Rules for new code:
 `/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (GET public: template fill pages read it), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
 Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/printer/process-pending` and `/api/printing/jobs/[id]/status` (the old central Printer-API path).
 
+### Error tracking
+| Route | Methods | Guard | Notes |
+|---|---|---|---|
+| `/api/errors` | POST | public, rate-limited; partner token or WSS signature sets the source | Browser, WSS and partner app reports |
+| `/api/admin/errors` | GET | admin | List issues with filters and status counts |
+| `/api/admin/errors/[id]` | GET, PATCH | admin | Detail with samples; resolve / ignore / reopen, note |
+
 ### Auth and users
 `/api/auth/[...nextauth]` (NextAuth), `register`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`, `setup-password`, `send-otp` / `verify-otp` (rate-limited by email and IP), `check-admin` (session only). `/api/user/*` all use the session.
 
@@ -82,6 +90,7 @@ Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/print
 | Area | Modules | Notes |
 |---|---|---|
 | Platform | `env`, `logger`, `mongodb`, `ratelimit`, `jobStore` (Upstash Redis) | |
+| Error tracking | `errorTracking/server` (capture, grouping, throttling), `errorTracking/scrub` (privacy, fingerprint), `errorTracking/consoleHook`, `errorTracking/client` | Installed from `src/instrumentation.ts`; browser side via `components/ErrorReporter` |
 | Auth | `auth` (NextAuth config), `authz`, `cronAuth`, `templateAuth`, `otp-store`, `password-reset-store`, `email-verification` | `otp-store` is in-memory: Phase 4 moves it to Redis |
 | Payments | `razorpay`, `razorpayFallback`, `paymentUtils` (client), `razorpayPayouts`, `pricing`, `orderUtils`, `orderStatePersistence` | Phase 2 replaces with `services/payments` and `services/pricing` |
 | Fulfilment | `printerClient`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | `printerClient`'s Printer-API path goes in Phase 3 |
@@ -92,7 +101,7 @@ Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/print
 
 ## Models (`src/models`)
 
-`Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
+`ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
 
 Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Phase 3 replaces this with one status field plus a separate payment status, and adds an `OrderEvent` log.
 

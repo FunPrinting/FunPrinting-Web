@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import SessionProvider from '@/components/SessionProvider';
 import ConditionalLayout from '@/components/ConditionalLayout';
+import ErrorReporter from '@/components/ErrorReporter';
 import { generateMetadata as generateSEOMetadata } from '@/lib/seo';
 import connectDB from '@/lib/mongodb';
 import AdminInfo from '@/models/AdminInfo';
@@ -96,6 +97,7 @@ export default function RootLayout({
         ></script>
       </head>
       <body className={inter.className}>
+        <ErrorReporter />
         <SessionProvider>
           <ConditionalLayout>
             {children}

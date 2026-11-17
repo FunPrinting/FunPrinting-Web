@@ -11,7 +11,7 @@ vi.mock('@/models/Partner', () => ({
   },
 }));
 
-import { cancelPrintJob, dispatchPrintJob, signWssBody } from '@/lib/wssClient';
+import { cancelPrintJob, dispatchPrintJob, signWssBody, verifyWssSignature } from '@/lib/wssClient';
 
 const SECRET = 'dispatch-secret';
 const PARTNER_ID = 'c'.repeat(24);
@@ -33,6 +33,30 @@ describe('signWssBody', () => {
     const expected = crypto.createHmac('sha256', SECRET).update('123.{"a":1}').digest('hex');
     expect(signWssBody(SECRET, '123', '{"a":1}')).toBe(expected);
     expect(expected).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('verifyWssSignature (WSS → web error reports)', () => {
+  const body = '{"source":"wss","message":"boom"}';
+  const headers = (ts: string, sig: string) => new Headers({ 'x-fp-timestamp': ts, 'x-fp-signature': sig });
+
+  it('accepts a correctly signed, fresh request', () => {
+    vi.stubEnv('WSS_DISPATCH_SECRET', SECRET);
+    const ts = String(Date.now());
+    expect(verifyWssSignature(headers(ts, signWssBody(SECRET, ts, body)), body)).toBe(true);
+  });
+
+  it('rejects wrong secret, tampered body, stale timestamp, bad length and unset secret', () => {
+    vi.stubEnv('WSS_DISPATCH_SECRET', SECRET);
+    const ts = String(Date.now());
+    const good = signWssBody(SECRET, ts, body);
+    expect(verifyWssSignature(headers(ts, signWssBody('other', ts, body)), body)).toBe(false);
+    expect(verifyWssSignature(headers(ts, good), body + ' ')).toBe(false);
+    const old = String(Date.now() - 6 * 60 * 1000);
+    expect(verifyWssSignature(headers(old, signWssBody(SECRET, old, body)), body)).toBe(false);
+    expect(verifyWssSignature(headers(ts, 'abc'), body)).toBe(false);
+    vi.stubEnv('WSS_DISPATCH_SECRET', '');
+    expect(verifyWssSignature(headers(ts, good), body)).toBe(false);
   });
 });
 

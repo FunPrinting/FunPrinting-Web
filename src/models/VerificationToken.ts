@@ -11,9 +11,11 @@ export interface IVerificationToken {
 
 const verificationTokenSchema = new mongoose.Schema<IVerificationToken>(
   {
-    token: { type: String, required: true, unique: true, index: true },
+    token: { type: String, required: true, unique: true },
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
-    expiresAt: { type: Date, required: true, index: true },
+    // Indexed by the TTL index below; a second plain index on the same key would
+    // conflict and could stop expired tokens from being deleted
+    expiresAt: { type: Date, required: true },
   },
   {
     timestamps: true,

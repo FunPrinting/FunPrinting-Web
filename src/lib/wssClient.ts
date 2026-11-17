@@ -42,6 +42,21 @@ export function signWssBody(secret: string, timestamp: string, body: string): st
   return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
 }
 
+/**
+ * Verifies a request signed by the WSS server with the same contract it verifies
+ * (used for WSS → web error reports). Timestamp must be within 5 minutes.
+ */
+export function verifyWssSignature(headers: Headers, rawBody: string, now = Date.now()): boolean {
+  const secret = process.env.WSS_DISPATCH_SECRET;
+  const timestamp = headers.get('x-fp-timestamp') || '';
+  const signature = headers.get('x-fp-signature') || '';
+  if (!secret || !/^\d{1,16}$/.test(timestamp) || !signature) return false;
+  if (Math.abs(now - Number(timestamp)) > 5 * 60 * 1000) return false;
+  const expected = Buffer.from(signWssBody(secret, timestamp, rawBody));
+  const given = Buffer.from(signature);
+  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+}
+
 function toDispatchOrder(order: any): DispatchOrder {
   const o = order && typeof order.toObject === 'function' ? order.toObject() : order || {};
   return {

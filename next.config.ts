@@ -9,6 +9,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Required by the Dockerfile (copies .next/standalone)
   output: 'standalone',
+  // Release tag on client error reports (src/lib/errorTracking/client.ts)
+  env: {
+    NEXT_PUBLIC_APP_RELEASE: (process.env.VERCEL_GIT_COMMIT_SHA || process.env.APP_RELEASE || '').slice(0, 12),
+  },
   // Packages that must run as plain Node modules on the server
   serverExternalPackages: ['mongoose', 'pino'],
   // Non-Turbopack builds: keep Node built-ins out of client bundles

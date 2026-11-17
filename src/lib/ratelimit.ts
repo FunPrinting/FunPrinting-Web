@@ -71,6 +71,17 @@ export const otpVerifyRateLimit = new Ratelimit({
     analytics: true,
 });
 /**
+ * Rate limiter for client error reports (POST /api/errors)
+ * Allows 30 reports per 60 seconds per IP
+ */
+export const errorReportRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(30, '60 s'),
+    analytics: false,
+    prefix: 'ratelimit:error-report',
+});
+
+/**
  * Get client identifier from request (IP address or fallback)
  */
 export function getClientIdentifier(request: NextRequest): string {

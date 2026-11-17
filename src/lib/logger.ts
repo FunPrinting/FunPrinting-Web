@@ -38,11 +38,55 @@ export const REDACT_PATHS = [
   'req.headers.cookie',
 ];
 
+const PINO_WARN = 40;
+const PINO_ERROR = 50;
+
+/** Pulls message, error and ids out of pino's (obj?, msg?, ...args) call form. */
+function toCapture(args: unknown[], level: number, bindings: Record<string, unknown>) {
+  const [first, second] = args;
+  const obj = first && typeof first === 'object' && !(first instanceof Error) ? (first as Record<string, unknown>) : undefined;
+  const err = first instanceof Error ? first : obj?.err instanceof Error ? (obj.err as Error) : undefined;
+  const msg = typeof first === 'string' ? first : typeof second === 'string' ? second : undefined;
+  const pick = (k: string) => {
+    const v = obj?.[k] ?? bindings[k];
+    return typeof v === 'string' ? v : undefined;
+  };
+  const { err: _err, ...rest } = obj ?? {};
+  return {
+    source: 'server' as const,
+    level: level >= PINO_ERROR ? ('error' as const) : ('warning' as const),
+    name: err?.name || (level >= PINO_ERROR ? 'LoggedError' : 'LoggedWarning'),
+    message: [msg, err?.message].filter(Boolean).join(': ') || 'logged error',
+    stack: err?.stack,
+    route: pick('route'),
+    method: pick('method'),
+    requestId: pick('requestId'),
+    partnerId: pick('partnerId'),
+    context: rest,
+  };
+}
+
 export const logger: Logger = pino({
   level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
   base: { service: 'funprinting-web' },
   redact: { paths: REDACT_PATHS, censor: '[redacted]' },
   transport: devTransport(),
+  hooks: {
+    // Warnings and errors are also stored by error tracking (src/lib/errorTracking)
+    logMethod(args, method, level) {
+      method.apply(this, args);
+      if (level < PINO_WARN) return;
+      try {
+        const bindings = (this as Logger).bindings?.() ?? {};
+        const input = toCapture(args as unknown[], level, bindings);
+        void import('@/lib/errorTracking/server')
+          .then(({ captureInBackground, isCapturing }) => (isCapturing() ? undefined : captureInBackground(input)))
+          .catch(() => undefined);
+      } catch {
+        // never let tracking break logging
+      }
+    },
+  },
 });
 
 /** Returns the incoming x-request-id, or a new UUID. */

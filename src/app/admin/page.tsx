@@ -11,7 +11,7 @@ import NotificationProvider from '@/components/admin/NotificationProvider';
 import AdminPartnersView from '@/components/admin/AdminPartnersView';
 import { showSuccess, showError, showInfo, showWarning } from '@/lib/adminNotifications';
 import { getOrderStatusColor, getOrderPaymentStatusColor, formatDate, getDefaultExpectedDate } from '@/lib/adminUtils';
-import { PrinterIcon, DocumentIcon, FolderIcon, LocationIcon, MoneyIcon, DollarIcon, InfoIcon, ClockIcon, RefreshIcon, BuildingIcon, TruckIcon, CalendarIcon, CheckIcon, PaperclipIcon } from '@/components/SocialIcons';
+import { PrinterIcon, DocumentIcon, FolderIcon, LocationIcon, MoneyIcon, DollarIcon, InfoIcon, ClockIcon, RefreshIcon, BuildingIcon, TruckIcon, CalendarIcon, CheckIcon, PaperclipIcon, ErrorIcon } from '@/components/SocialIcons';
 
 interface Order {
   _id: string;
@@ -557,6 +557,12 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
               title="Admin Info"
               description="Manage business information"
               href="/admin/info"
+            />
+            <AdminCard
+              icon={<ErrorIcon size={32} className="w-8 h-8" />}
+              title="Errors"
+              description="Errors and warnings users ran into"
+              href="/admin/errors"
             />
             <AdminCard
               icon={<PrinterIcon size={32} className="w-8 h-8" />}
