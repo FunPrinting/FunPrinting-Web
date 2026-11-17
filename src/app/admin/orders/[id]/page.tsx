@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import AdminJobPanel from '@/components/admin/AdminJobPanel';
 import AdminNavigation from '@/components/admin/AdminNavigation';
 import LoadingSpinner from '@/components/admin/LoadingSpinner';
 import AdminGoogleAuth from '@/components/admin/AdminGoogleAuth';
@@ -422,6 +423,7 @@ function OrderDetailPageContent() {
           onShipOrder={shipOrder}
           onMarkAsPrinted={markAsPrinted}
         />
+        <AdminJobPanel orderId={order.orderId} />
       </div>
     </div>
   );

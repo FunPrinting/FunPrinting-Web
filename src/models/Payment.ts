@@ -79,6 +79,8 @@ export interface IPayment {
   amountPaid?: number; // paise, as reported by Razorpay
   amountRefunded?: number; // paise
   needsReview?: string; // set when something is off (e.g. amount mismatch); shown to admins
+  // A refund the system decided on; kept until Razorpay accepts it, so it is retried
+  refundRequest?: { reason: string; actor: string; at: Date; attempts: number; lastError?: string; refundId?: string };
 
   fulfilment: {
     order?: Date;
@@ -146,6 +148,7 @@ const paymentSchema = new Schema<IPayment>(
     amountPaid: Number,
     amountRefunded: Number,
     needsReview: String,
+    refundRequest: { reason: String, actor: String, at: Date, attempts: { type: Number, default: 0 }, lastError: String, refundId: String },
 
     fulfilment: {
       order: Date,

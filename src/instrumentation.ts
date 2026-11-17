@@ -20,6 +20,10 @@ export async function register() {
   ]);
   installConsoleHook();
 
+  if (process.env.NODE_ENV === 'production' && (!process.env.QSTASH_TOKEN || !process.env.APP_BASE_URL)) {
+    logger.warn('QStash is not configured: print job deadlines (10-minute notice, 24-hour refund) only run when partners or customers load their order lists, and on the daily cron');
+  }
+
   try {
     getServerEnv();
     logger.info('server environment OK');

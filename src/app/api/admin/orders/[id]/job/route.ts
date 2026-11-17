@@ -29,7 +29,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 const actionSchema = z.discriminatedUnion('action', [
   // Put the job back in its shop's queue (creates it for orders paid before jobs existed)
-  z.object({ action: z.literal('resend') }),
+  z.object({ action: z.literal('resend'), force: z.boolean().default(false) }),
   // Cancel; refund in full unless refund is false. force: even if printing started
   z.object({ action: z.literal('cancel'), reason: z.string().trim().min(3).max(200), refund: z.boolean().default(true), force: z.boolean().default(false) }),
 ]);
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     if (body.action === 'resend') {
-      const job = await resendJob(orderId, admin.email);
+      const job = await resendJob(orderId, admin.email, body.force);
       return NextResponse.json({ success: true, job });
     }
 

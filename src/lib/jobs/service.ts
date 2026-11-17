@@ -114,7 +114,16 @@ export function assignmentFields(partner: { _id: string; acceptanceMode: 'auto' 
 export async function createJobForOrder(orderId: string, opts: { paymentRef?: string; paidAt?: Date; legacy?: boolean; actor?: string } = {}): Promise<IPrintJob> {
   await connectDB();
   const existing = await PrintJob.findOne({ orderId }).lean<IPrintJob | null>();
-  if (existing) return existing;
+  if (existing) {
+    // A crash after creation may have skipped scheduling or the notice; both are safe to repeat
+    if (existing.acceptBy) await scheduleDeadline(existing.jobId, 'accept', existing.acceptBy, existing.version);
+    if (existing.refundBy) await scheduleDeadline(existing.jobId, 'refund', existing.refundBy, existing.version);
+    if (existing.partnerId && ['pending_acceptance', 'queued'].includes(existing.status)) {
+      const { notifyPartnerJobs } = await import('@/lib/wssClient');
+      await notifyPartnerJobs(existing.partnerId, 'new').catch(() => undefined);
+    }
+    return existing;
+  }
 
   const order = await Order.findOne({ orderId }).lean<Record<string, any> | null>();
   if (!order) throw new JobError(`Order ${orderId} not found`, 404);
@@ -125,8 +134,16 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
   const partnerId = String(order.deliveryOption?.partnerId || order.partnerId || '');
   const partner = partnerId ? await getActivePartner(partnerId) : null;
   const now = new Date();
-  const paidAt = opts.paidAt ?? order.paidAt ?? now;
+  const paidAt = new Date(opts.paidAt ?? order.paidAt ?? now);
   const deliveryNumber = order.deliveryNumber || generateDeliveryNumber(now);
+  const actor = opts.actor ?? 'system';
+
+  // How far the order already got (e.g. printed by hand, or by the installed app
+  // before jobs existed). Such orders are never given deadlines or auto-refunds.
+  const orderRank = STATUS_RANK[order.status] ?? -1;
+  const progressed = orderRank >= STATUS_RANK.processing;
+  const refundBy = new Date(paidAt.getTime() + REFUND_WINDOW_MS);
+  const deadlinesApply = !opts.legacy && !progressed && refundBy.getTime() > now.getTime() + ACCEPT_WINDOW_MS;
 
   const base = {
     jobId: `J${orderId}`,
@@ -136,23 +153,39 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
     files,
     service: order.printingOptions?.serviceOptions,
     deliveryNumber,
-    refundBy: opts.legacy ? undefined : new Date(new Date(paidAt).getTime() + REFUND_WINDOW_MS),
     rejections: [],
     version: 0,
   };
-  if (!partner) {
-    // Checkout only accepts approved shops; if the shop was deactivated since, refund
-    const created = await PrintJob.create({ ...base, partnerId: partnerId || undefined, status: 'pending_acceptance', history: [event('created', opts.actor ?? 'system', `shop ${partnerId || 'none'} is not active`)] }).catch(async (error) => {
-      if ((error as { code?: number }).code === 11000) return PrintJob.findOne({ orderId });
-      throw error;
-    });
-    const { cancelJob } = await import('@/lib/jobs/deadlines');
-    await cancelJob(orderId, { reason: 'Your print shop is no longer taking orders.', actor: 'system', refund: true }).catch((error) =>
-      logger.error({ err: error, orderId }, 'refund for inactive shop failed')
-    );
-    return (created?.toObject?.() ?? created) as IPrintJob;
+
+  let doc: Record<string, unknown>;
+  if (progressed) {
+    const status: JobStatus = orderRank >= STATUS_RANK.printed ? 'printed' : orderRank >= STATUS_RANK.printing ? 'printing' : 'claimed';
+    doc = {
+      ...base,
+      partnerId: partnerId || undefined,
+      acceptanceMode: partner?.acceptanceMode,
+      status,
+      assignedAt: now,
+      firstClaimedAt: now,
+      ...(status === 'printed' ? { printedAt: order.printedAt ?? now } : {}),
+      history: [event('created', actor, `order already ${order.status}; no deadlines`)],
+    };
+  } else if (!partner) {
+    doc = {
+      ...base,
+      partnerId: partnerId || undefined,
+      status: 'pending_acceptance',
+      needsAttention: `Shop ${partnerId || '(none)'} is not active; cancel and refund, or reactivate the shop`,
+      history: [event('created', actor, `shop ${partnerId || 'none'} is not active`)],
+    };
+  } else {
+    doc = {
+      ...base,
+      ...assignmentFields(partner, now),
+      ...(deadlinesApply ? { refundBy } : { acceptBy: undefined }),
+      history: [event('created', actor, `assigned to ${partner._id} (${partner.acceptanceMode})${deadlinesApply ? '' : '; no deadlines'}`)],
+    };
   }
-  const doc = { ...base, ...assignmentFields(partner, now), history: [event('created', opts.actor ?? 'system', `assigned to ${partner._id} (${partner.acceptanceMode})`)] };
 
   let job: IPrintJob;
   try {
@@ -163,9 +196,24 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
   }
   await Order.updateOne({ orderId, deliveryNumber: { $exists: false } }, { $set: { deliveryNumber } });
 
+  if (!progressed && !partner) {
+    // Checkout only accepts approved shops; the shop was deactivated since. Refund a
+    // fresh order automatically; anything older is left for an admin.
+    if (deadlinesApply) {
+      const { cancelJob } = await import('@/lib/jobs/deadlines');
+      await cancelJob(orderId, { reason: 'Your print shop is no longer taking orders.', actor: 'system', refund: true }).catch((error) =>
+        logger.error({ err: error, orderId }, 'refund for inactive shop failed')
+      );
+    } else {
+      logger.error({ orderId, partnerId }, 'paid order has no active shop; needs an admin');
+    }
+    return (await PrintJob.findById(job._id).lean<IPrintJob>())!;
+  }
+  if (progressed) return job;
+
   if (job.acceptBy) await scheduleDeadline(job.jobId, 'accept', job.acceptBy, job.version);
   if (job.refundBy) await scheduleDeadline(job.jobId, 'refund', job.refundBy, job.version);
-  await announce(job, partner._id, 'new');
+  await announce(job, partner!._id, 'new');
   logger.info({ jobId: job.jobId, orderId, partnerId: job.partnerId, status: job.status }, 'print job created');
   return job;
 }
@@ -200,7 +248,7 @@ export async function announce(job: IPrintJob, partnerId: string, reason: 'new' 
         },
         { new: true }
       );
-      if (claimed) await syncOrderFromJob(job.orderId, 'printing');
+      if (claimed) await syncOrderFromJob(job.orderId, 'printing', { shopDelayNotifiedAt: null });
     }
   } catch (error) {
     logger.warn({ err: error, jobId: job.jobId }, 'legacy push to partner failed');
@@ -250,6 +298,7 @@ export async function acceptJob(jobId: string, actor: PartnerActor): Promise<IPr
     { new: true }
   ).lean<IPrintJob | null>();
   if (!updated) throw new JobError('Job changed meanwhile; reload and try again', 409);
+  await Order.updateOne({ orderId: updated.orderId }, { $unset: { shopDelayNotifiedAt: '' } });
   await announce(updated, actor.partnerId, 'updated');
   return updated;
 }
@@ -278,8 +327,10 @@ export async function claimJob(actor: Required<PartnerActor>, jobId?: string): P
     partnerId: actor.partnerId,
     $or: [
       { status: 'queued' },
-      // lease expired, or the same device asking again
-      { status: { $in: ['claimed', 'printing', 'failed'] }, 'claim.leaseUntil': { $lt: now } },
+      // lease expired before printing started (a job already printing is never taken
+      // over, so it can't be printed twice; the sweep flags it instead), or the same
+      // device asking again
+      { status: { $in: ['claimed', 'failed'] }, 'claim.leaseUntil': { $lt: now } },
       { status: { $in: ['claimed', 'printing'] }, 'claim.deviceId': actor.deviceId },
       { status: 'failed', claim: { $exists: false } },
     ],
@@ -307,7 +358,7 @@ export async function claimJob(actor: Required<PartnerActor>, jobId?: string): P
     }
     return null;
   }
-  await syncOrderFromJob(job.orderId, 'claimed');
+  await syncOrderFromJob(job.orderId, 'claimed', { shopDelayNotifiedAt: null });
   return job;
 }
 
@@ -367,8 +418,20 @@ export async function onPrinted(job: IPrintJob): Promise<void> {
 export async function syncJobFromOrderStatus(orderId: string, orderStatus: string, actor: string): Promise<void> {
   await connectDB();
   const job = await PrintJob.findOne({ orderId }).lean<IPrintJob | null>();
-  if (!job || ['printed', 'cancelled'].includes(job.status)) return;
   const rank = STATUS_RANK[orderStatus] ?? -1;
+  if (!job) {
+    // Orders paid before print jobs existed: release the held share directly
+    if (rank >= STATUS_RANK.printed) {
+      const order = await Order.findOne({ orderId }).select('paymentRef').lean<{ paymentRef?: string } | null>();
+      if (order?.paymentRef) {
+        const { releasePartnerTransfer } = await import('@/lib/payments/refunds');
+        await releasePartnerTransfer(order.paymentRef).catch(() => undefined);
+      }
+    }
+    return;
+  }
+  if (['printed', 'cancelled'].includes(job.status)) return;
+  await Order.updateOne({ orderId }, { $unset: { shopDelayNotifiedAt: '' } });
   const now = new Date();
   if (rank >= STATUS_RANK.printed) {
     const updated = await PrintJob.findOneAndUpdate(
@@ -392,20 +455,36 @@ export async function syncJobFromOrderStatus(orderId: string, orderStatus: strin
 // Admin
 // ---------------------------------------------------------------------------
 
-/** Puts a job back in its shop's queue (admin "Resend to shop"). Creates it for older orders. */
-export async function resendJob(orderId: string, adminEmail: string): Promise<IPrintJob> {
+/**
+ * Puts a job back in its shop's queue (admin "Send to shop"). Creates a job (without
+ * deadlines) for orders paid before jobs existed. A job a device has taken or
+ * printed is only re-queued with `force`, since that prints it again.
+ */
+export async function resendJob(orderId: string, adminEmail: string, force = false): Promise<IPrintJob> {
   await connectDB();
   let job = await PrintJob.findOne({ orderId }).lean<IPrintJob | null>();
-  if (!job) return createJobForOrder(orderId, { legacy: true, actor: `admin:${adminEmail}` });
+  if (!job) {
+    const created = await createJobForOrder(orderId, { legacy: true, actor: `admin:${adminEmail}` });
+    if (created.status !== 'queued' && created.status !== 'pending_acceptance') {
+      throw new JobError(`Recorded the order's print job as ${created.status}; use force to print it again`, 409);
+    }
+    return created;
+  }
   if (job.status === 'cancelled') throw new JobError('This job was cancelled', 409);
-  if (!job.partnerId) throw new JobError('This job has no shop; assign one first', 409);
+  if (!job.partnerId || !(await getActivePartner(job.partnerId))) throw new JobError("This order's shop is not active", 409);
+  const now = new Date();
+  const takenAndLive = ['claimed', 'printing'].includes(job.status) && job.claim?.leaseUntil && new Date(job.claim.leaseUntil) > now;
+  if (!force && (job.status === 'printed' || takenAndLive || job.status === 'printing')) {
+    throw new JobError(`Job is ${job.status}; resending would print it again. Use force to do that.`, 409);
+  }
   job = await PrintJob.findOneAndUpdate(
-    { _id: job._id },
-    { $set: { status: 'queued' }, $unset: { claim: '', needsAttention: '' }, $inc: { version: 1 }, $push: { history: event('resent', `admin:${adminEmail}`) } },
+    { _id: job._id, version: job.version },
+    { $set: { status: 'queued' }, $unset: { claim: '', needsAttention: '' }, $inc: { version: 1 }, $push: { history: event(force ? 'resent_forced' : 'resent', `admin:${adminEmail}`) } },
     { new: true }
-  ).lean<IPrintJob>();
-  await announce(job!, job!.partnerId!, 'updated');
-  return job!;
+  ).lean<IPrintJob | null>();
+  if (!job) throw new JobError('Job changed meanwhile; try again', 409);
+  await announce(job, job.partnerId!, 'updated');
+  return job;
 }
 
 /** Hashes a customer-choice token for storage (the raw token only goes in the email). */

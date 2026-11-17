@@ -25,6 +25,11 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
   if (!p.razorpay.paymentId || !['paid', 'partially_refunded'].includes(p.status)) {
     throw new RefundError(`Payment is ${p.status}; only paid payments can be refunded`);
   }
+  const pending = (p.razorpay.refundIds ?? []).filter((id) => !(p.razorpay.processedRefundIds ?? []).includes(id));
+  if (pending.length) {
+    // Not yet confirmed by Razorpay; starting another could refund twice
+    throw new RefundError(`A refund is already in progress (${pending.join(', ')})`, 409);
+  }
   const paid = p.amountPaid ?? p.amounts.total;
   const remaining = paid - (p.amountRefunded ?? 0);
   const amount = opts.amountPaise ?? remaining;
@@ -45,6 +50,37 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
   );
   logger.info({ referenceId, refundId: refund.id, amount }, 'refund started');
   return { refundId: refund.id, amount };
+}
+
+/**
+ * Refund decided by the system (customer choice, deadline, shop declined). The
+ * request is saved first; if Razorpay fails, the reconcile job retries it, so a
+ * refund is never silently dropped. Returns the refund id, or null if it will retry.
+ */
+export async function requestRefund(referenceId: string, opts: { reason: string; actor: string }): Promise<string | null> {
+  await connectDB();
+  await Payment.updateOne(
+    { referenceId, refundRequest: { $exists: false } },
+    { $set: { refundRequest: { reason: opts.reason.slice(0, 200), actor: opts.actor.slice(0, 100), at: new Date(), attempts: 0 } } }
+  );
+  return processRefundRequest(referenceId);
+}
+
+export async function processRefundRequest(referenceId: string): Promise<string | null> {
+  const p = await Payment.findOne({ referenceId }).lean<IPayment | null>();
+  if (!p?.refundRequest || p.refundRequest.refundId) return p?.refundRequest?.refundId ?? null;
+  if (p.status === 'refunded' || p.status === 'partially_refunded') return null;
+  try {
+    const { refundId } = await startRefund(referenceId, { reason: p.refundRequest.reason, actor: p.refundRequest.actor });
+    await Payment.updateOne({ _id: p._id }, { $set: { 'refundRequest.refundId': refundId }, $inc: { 'refundRequest.attempts': 1 } });
+    return refundId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await Payment.updateOne({ _id: p._id }, { $set: { 'refundRequest.lastError': message.slice(0, 300) }, $inc: { 'refundRequest.attempts': 1 } });
+    // Shown in /admin/errors; the reconcile job retries
+    logger.error({ err: error, referenceId }, 'refund request failed; will retry');
+    return null;
+  }
 }
 
 /**
@@ -71,6 +107,11 @@ export async function applyRefundProcessed(refund: { id: string; payment_id: str
   if (status === 'refunded') {
     if (updated.orderId) {
       await Order.updateOne({ orderId: updated.orderId, paymentRef: updated.referenceId }, { $set: { paymentStatus: 'refunded', status: 'refunded' } });
+    }
+    if (updated.orderId) {
+      // A refunded order must not be printed
+      const { cancelJobAfterRefund } = await import('@/lib/jobs/deadlines');
+      await cancelJobAfterRefund(updated.orderId).catch((error) => logger.error({ err: error, orderId: updated.orderId }, 'could not cancel job after refund'));
     }
     if (updated.purpose === 'template') {
       // The creator is not paid for a refunded sale

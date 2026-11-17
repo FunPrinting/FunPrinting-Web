@@ -162,6 +162,21 @@ export async function reconcilePayments({ limit = 50 } = {}): Promise<ReconcileR
     }
   }
 
+  // System refunds that Razorpay hasn't accepted yet (e.g. it was down)
+  const { processRefundRequest } = await import('@/lib/payments/refunds');
+  const requested = await Payment.find({
+    'refundRequest.at': { $exists: true },
+    'refundRequest.refundId': { $exists: false },
+    'refundRequest.attempts': { $lt: 10 },
+    status: 'paid',
+  })
+    .limit(limit)
+    .select('referenceId')
+    .lean<Array<{ referenceId: string }>>();
+  for (const { referenceId } of requested) {
+    if (await processRefundRequest(referenceId)) report.refundsApplied += 1;
+  }
+
   // Partner shares still on hold for orders that are printed (or later)
   const held = await Payment.find({
     status: 'paid',

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { requireUser, isAdminSession } from '@/lib/authz';
@@ -11,6 +12,8 @@ import { requireUser, isAdminSession } from '@/lib/authz';
  *
  * (The unused POST handler that created NewOrder documents was removed.)
  */
+let lastSweep = 0;
+
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
   if (auth instanceof NextResponse) return auth;
@@ -27,6 +30,15 @@ export async function GET(request: NextRequest) {
     const orders = await Order.find({
       'customerInfo.email': { $regex: `^${escaped}$`, $options: 'i' },
     }).sort({ createdAt: -1 });
+
+    // Print job deadlines also run on customer traffic (throttled), not only on cron
+    if (Date.now() - lastSweep > 60_000) {
+      lastSweep = Date.now();
+      after(async () => {
+        const { sweepDeadlines } = await import('@/lib/jobs/deadlines');
+        await sweepDeadlines(20).catch(() => undefined);
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -14,16 +14,24 @@ vi.mock('@/lib/jobs/emails', () => ({
   sendShopDelayEmail: vi.fn(async (o: any) => { mail.delay.push(o); return true; }),
   sendRefundEmail: vi.fn(async (o: any) => { mail.refunds.push(o); return true; }),
 }));
-const money = vi.hoisted(() => ({ refunds: [] as any[], released: [] as string[] }));
+const money = vi.hoisted(() => ({ refunds: [] as any[], released: [] as string[], failNext: false }));
 vi.mock('@/lib/payments/refunds', () => ({
-  startRefund: vi.fn(async (ref: string, opts: any) => { money.refunds.push({ ref, ...opts }); return { refundId: `rfnd_${money.refunds.length}`, amount: 100 }; }),
+  requestRefund: vi.fn(async (ref: string, opts: any) => {
+    if (money.failNext) { money.failNext = false; return null; }
+    money.refunds.push({ ref, ...opts });
+    return `rfnd_${money.refunds.length}`;
+  }),
   releasePartnerTransfer: vi.fn(async (ref: string) => { money.released.push(ref); return 'released'; }),
 }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn() }));
+const partnerAuth = vi.hoisted(() => ({ id: '' }));
+vi.mock('@/lib/authz', () => ({ resolvePartnerRequest: vi.fn(async () => ({ partner: { _id: partnerAuth.id }, userId: 'u' })) }));
+vi.mock('next/server', async (orig) => ({ ...(await orig<typeof import('next/server')>()), after: () => undefined }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 import { acceptJob, claimJob, createJobForOrder, rejectJob, reportJob, syncJobFromOrderStatus, CLAIM_LEASE_MS } from '@/lib/jobs/service';
-import { answerCustomerChoice, cancelJob, handleAcceptDeadline, sweepDeadlines } from '@/lib/jobs/deadlines';
+import { answerCustomerChoice, cancelJob, cancelJobAfterRefund, handleAcceptDeadline, sweepDeadlines } from '@/lib/jobs/deadlines';
+import { resendJob } from '@/lib/jobs/service';
 import PrintJob from '@/models/PrintJob';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
@@ -75,7 +83,7 @@ beforeEach(async () => {
   await Promise.all(Object.values(mongoose.connection.collections).map((c) => c.deleteMany({})));
   ws.notified.length = 0; ws.pushed.length = 0; ws.cancelled.length = 0; ws.pushDelivered = 0;
   mail.delay.length = 0; mail.refunds.length = 0;
-  money.refunds.length = 0; money.released.length = 0;
+  money.refunds.length = 0; money.released.length = 0; money.failNext = false;
   vi.useRealTimers();
   autoShop = String((await Partner.create({ userId: 'a', businessName: 'Auto Shop', isActive: true, acceptanceMode: 'auto', location: { type: 'Point', coordinates: [77, 28] } }))._id);
   manualShop = String((await Partner.create({ userId: 'm', businessName: 'Manual Shop', isActive: true, acceptanceMode: 'manual', location: { type: 'Point', coordinates: [77, 28] } }))._id);
@@ -118,7 +126,7 @@ describe('creating jobs', () => {
     expect(accepted.refundBy).toBeUndefined();
   });
 
-  it('shop deactivated since checkout: customer refunded straight away', async () => {
+  it('shop deactivated since checkout (fresh order): customer refunded straight away', async () => {
     const orderId = await paidOrder(autoShop);
     await Partner.updateOne({ _id: autoShop }, { isActive: false });
     await createJobForOrder(orderId);
@@ -274,5 +282,131 @@ describe('cancellation and status sync', () => {
 
   it('lease length is sensible', () => {
     expect(CLAIM_LEASE_MS).toBe(5 * 60_000);
+  });
+});
+
+describe('review fixes', () => {
+  it('an order already printing (by hand or the old app) gets a job with no deadlines and no refund', async () => {
+    const orderId = await paidOrder(autoShop, { status: 'printing', orderStatus: 'printing' });
+    const job = await createJobForOrder(orderId);
+    expect(job).toMatchObject({ status: 'printing' });
+    expect(job.acceptBy).toBeUndefined();
+    expect(job.refundBy).toBeUndefined();
+    expect(ws.notified).toEqual([]);
+    expect(await sweepDeadlines()).toMatchObject({ refund: 0 });
+  });
+
+  it('a payment older than the refund window gets no deadlines (never refunded on creation)', async () => {
+    const orderId = await paidOrder(manualShop, { paidAt: new Date(Date.now() - 3 * 24 * 3600_000) });
+    const job = await createJobForOrder(orderId);
+    expect(job).toMatchObject({ status: 'pending_acceptance' });
+    expect(job.refundBy).toBeUndefined();
+    expect(job.acceptBy).toBeUndefined();
+    expect(money.refunds).toHaveLength(0);
+  });
+
+  it('old order whose shop is inactive: flagged for an admin, not refunded', async () => {
+    const orderId = await paidOrder(autoShop, { paidAt: new Date(Date.now() - 3 * 24 * 3600_000) });
+    await Partner.updateOne({ _id: autoShop }, { isActive: false });
+    const job = await createJobForOrder(orderId, { legacy: true });
+    expect(job.needsAttention).toMatch(/not active/);
+    expect(money.refunds).toHaveLength(0);
+  });
+
+  it('admin resend refuses to reprint a printed or in-progress job without force', async () => {
+    const orderId = await paidOrder(autoShop);
+    const { jobId } = await createJobForOrder(orderId);
+    const d = { partnerId: autoShop, deviceId: 'dev-rsnd1' };
+    await claimJob(d, jobId);
+    await expect(resendJob(orderId, 'admin@x.com')).rejects.toThrow(/print it again/);
+    await reportJob(jobId, d, 'printed');
+    await expect(resendJob(orderId, 'admin@x.com')).rejects.toThrow(/print it again/);
+    expect((await resendJob(orderId, 'admin@x.com', true)).status).toBe('queued');
+  });
+
+  it('resend for an old order that was already printed records it instead of printing again', async () => {
+    const orderId = await paidOrder(autoShop, { status: 'printed', orderStatus: 'printed' });
+    await expect(resendJob(orderId, 'admin@x.com')).rejects.toThrow(/use force/);
+    expect((await jobOf(orderId)).status).toBe('printed');
+  });
+
+  it('shop accepting at the same moment as a customer refund: the accept wins, no refund', async () => {
+    const orderId = await paidOrder(manualShop);
+    const { jobId } = await createJobForOrder(orderId);
+    // Customer's refund check passed, then the shop accepts before the cancel update
+    await PrintJob.updateOne({ jobId }, { $set: { acceptedAt: new Date(), status: 'queued' } });
+    await expect(cancelJob(orderId, { reason: 'x', actor: 'customer', refund: true, untakenOnly: true })).rejects.toThrow(/just taken/);
+    expect(money.refunds).toHaveLength(0);
+    expect((await jobOf(orderId)).status).toBe('queued');
+  });
+
+  it('refund refused when the shop moved the order to printing from its order list', async () => {
+    const orderId = await paidOrder(autoShop);
+    await createJobForOrder(orderId);
+    await Order.updateOne({ orderId }, { $set: { status: 'printing' } }); // job sync not run yet
+    await expect(cancelJob(orderId, { reason: 'x', actor: 'system', refund: true, untakenOnly: true })).rejects.toThrow(/already printing/);
+    expect(money.refunds).toHaveLength(0);
+  });
+
+  it('a failed refund still cancels and reports refundPending (reconcile retries)', async () => {
+    const orderId = await paidOrder(manualShop);
+    await createJobForOrder(orderId);
+    money.failNext = true;
+    const r = await cancelJob(orderId, { reason: 'x', actor: 'admin:a', refund: true });
+    expect(r).toMatchObject({ cancelled: true, refundPending: true });
+  });
+
+  it('a payment refunded elsewhere stops the job', async () => {
+    const orderId = await paidOrder(autoShop);
+    await createJobForOrder(orderId);
+    await cancelJobAfterRefund(orderId);
+    expect((await jobOf(orderId)).status).toBe('cancelled');
+    expect(ws.cancelled).toEqual([orderId]);
+  });
+
+  it('a job printing on a device whose lease ran out is not handed to another device, and is flagged', async () => {
+    const orderId = await paidOrder(autoShop);
+    const { jobId } = await createJobForOrder(orderId);
+    const d = { partnerId: autoShop, deviceId: 'dev-prt01' };
+    await claimJob(d, jobId);
+    await reportJob(jobId, d, 'printing');
+    await PrintJob.updateOne({ jobId }, { $set: { 'claim.leaseUntil': new Date(Date.now() - 1000) } });
+    expect(await claimJob({ partnerId: autoShop, deviceId: 'dev-prt02' }, jobId).catch((e) => e.status)).toBe(409);
+    expect(await sweepDeadlines()).toMatchObject({ stuck: 1 });
+    expect((await jobOf(orderId)).needsAttention).toMatch(/No "printed" report/);
+  });
+
+  it('accepting clears the customer banner', async () => {
+    const orderId = await paidOrder(manualShop);
+    const { jobId } = await createJobForOrder(orderId);
+    await PrintJob.updateOne({ jobId }, { $set: { acceptBy: new Date(Date.now() - 1000) } });
+    await handleAcceptDeadline(jobId);
+    expect((await orderOf(orderId)).shopDelayNotifiedAt).toBeInstanceOf(Date);
+    await acceptJob(jobId, { partnerId: manualShop });
+    expect((await orderOf(orderId)).shopDelayNotifiedAt).toBeUndefined();
+  });
+});
+
+describe('installed desktop app (GET /api/partner/orders)', () => {
+  it('its fetch claims queued jobs and hides orders waiting for acceptance', async () => {
+    const { GET } = await import('@/app/api/partner/orders/route');
+    const { NextRequest } = await import('next/server');
+    const queuedOrder = await paidOrder(autoShop);
+    await createJobForOrder(queuedOrder);
+    partnerAuth.id = autoShop;
+    const req = new NextRequest('http://x/api/partner/orders', { headers: { authorization: 'Bearer t', 'user-agent': 'FunPrinting Electron/44' } });
+    const body = await (await GET(req)).json();
+    expect(body.orders.map((o: any) => o.orderId)).toContain(queuedOrder);
+    expect((await jobOf(queuedOrder))).toMatchObject({ status: 'claimed', claim: { deviceId: 'legacy-pull' } });
+    expect((await jobOf(queuedOrder)).refundBy).toBeUndefined();
+
+    const manualOrder = await paidOrder(manualShop);
+    await createJobForOrder(manualOrder);
+    partnerAuth.id = manualShop;
+    const body2 = await (await GET(req)).json();
+    expect(body2.orders.map((o: any) => o.orderId)).not.toContain(manualOrder);
+    // The web dashboard (session, no bearer) sees it, with its job
+    const web = await (await GET(new NextRequest('http://x/api/partner/orders'))).json();
+    expect(web.orders.find((o: any) => o.orderId === manualOrder).job.status).toBe('pending_acceptance');
   });
 });

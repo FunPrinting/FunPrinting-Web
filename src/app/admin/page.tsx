@@ -94,6 +94,7 @@ interface Order {
   };
   paymentStatus: 'pending' | 'completed' | 'failed';
   orderStatus: 'pending' | 'printing' | 'dispatched' | 'delivered';
+  status?: string;
   amount: number;
   expectedDate?: string | Date;
   createdAt: string;
@@ -914,7 +915,7 @@ function AdminDashboardContent({ initialPartnerId }: { initialPartnerId?: string
                           )}
 
                           {/* Print Button - Send to Print Queue */}
-                          {order.paymentStatus === 'completed' && ((order.fileURLs && order.fileURLs.length > 0) || order.fileURL) && (
+                          {order.paymentStatus === 'completed' && ['paid', 'processing'].includes(order.status ?? '') && ((order.fileURLs && order.fileURLs.length > 0) || order.fileURL) && (
                             <button
                               onClick={async (e) => {
                                 e.stopPropagation();

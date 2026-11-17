@@ -65,12 +65,27 @@ Auth: the partner device token (`Authorization: Bearer`), plus `x-device-id` (a 
 
 Devices fetch the job list on start-up, on every socket reconnect, and when the socket server sends `jobs:available`. The socket carries no job data, so a device that was offline misses nothing. Two devices can't print the same job: a claim is atomic, and a device that stops reporting loses its lease after 5 minutes.
 
-**Compatibility:** until the desktop app pulls jobs (Phase 5), automatic-mode shops also receive the old `new_print_job` push. A device receiving it counts as a claim, so the job won't be refunded while that app prints it.
+**Compatibility with the installed apps** (until Phase 5):
+- Automatic-mode shops also receive the old `new_print_job` push; a device receiving it counts as a claim (`legacy-push`).
+- When the installed desktop app fetches `GET /api/partner/orders`, the shop's queued jobs are claimed (`legacy-pull`), because that app prints every paid order it sees.
+- Orders waiting for a manual shop to accept are hidden from the apps; the shop accepts or declines on the web dashboard.
+- Claims by the old apps never report "printed"; if the order isn't moved to printed within 24 hours, the job is flagged for an admin (it shows in `/admin/errors`).
+
+## Orders from before print jobs
+
+Orders paid before this system have no job and are left alone. If an admin uses **Send to shop**, a job is created **without deadlines or automatic refunds**; if the order is already processing or printed, the job just records that (re-printing needs **Print again**, i.e. `force`).
+
+## Safety rules
+
+- A refund is never issued once the shop has accepted, a device has claimed, or the order has moved to processing or later. The check is part of the cancel update, so a shop accepting at the same moment wins.
+- System refunds are saved on the payment before Razorpay is called and retried by the reconcile job if Razorpay fails.
+- A payment refunded by any route cancels its job (unless already printed).
+- A job that a device is printing is never handed to another device, even after its lease runs out; it is flagged instead.
 
 ## Admin
 
-`POST /api/admin/orders/<id>/job`:
-- `{ action: 'resend' }`: put the job back in its shop's queue; creates a job for orders paid before this system existed (no automatic refund for those).
+`POST /api/admin/orders/<id>/job` (also on the admin order page, "Print job" panel):
+- `{ action: 'resend', force? }`: put a waiting or failed job back in its shop's queue; `force` re-queues a job that was taken or printed (prints again).
 - `{ action: 'cancel', reason, refund = true, force = false }`.
 
 `GET /api/admin/orders/<id>/job` returns the job with its full history.

@@ -475,7 +475,44 @@ export default function PartnerDashboard() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm">
-                            {order.status !== 'completed' && (
+                            {order.job?.status === 'pending_acceptance' ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const res = await fetch(`/api/partner/v1/jobs/${encodeURIComponent(order.job.jobId)}`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'accept' }),
+                                    });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (res.ok) setPartnerOrders(partnerOrders.map((o) => (o.orderId === order.orderId ? { ...o, job: { ...o.job, status: 'queued' } } : o)));
+                                    else alert(data.error || 'Could not accept the order');
+                                  }}
+                                  className="rounded bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!window.confirm('Decline this order? The customer will be refunded.')) return;
+                                    const reason = window.prompt('Reason (optional):') || undefined;
+                                    const res = await fetch(`/api/partner/v1/jobs/${encodeURIComponent(order.job.jobId)}`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'reject', reason }),
+                                    });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (res.ok) setPartnerOrders(partnerOrders.map((o) => (o.orderId === order.orderId ? { ...o, status: 'cancelled', job: { ...o.job, status: 'cancelled' } } : o)));
+                                    else alert(data.error || 'Could not decline the order');
+                                  }}
+                                  className="rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            ) : !['completed', 'cancelled', 'refunded'].includes(order.status) && (
                               <select 
                                 className="bg-white border border-gray-300 rounded px-2 py-1 text-sm focus:ring-indigo-500 focus:border-indigo-500"
                                 value={order.status}

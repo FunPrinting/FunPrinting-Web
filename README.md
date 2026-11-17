@@ -194,15 +194,6 @@ npm install
 npm start   # Starts on PORT (default 3001)
 ```
 
-### Printer API (Local Machine)
-```bash
-cd Printer-API
-npm install
-npm run build
-npm start   # Runs on localhost:3001
-```
-> ⚠️ Requires [ngrok](https://ngrok.com/) or Cloudflare Tunnel to expose to the cloud web app. See [`SETUP_NETWORK.md`](./Printer-API/SETUP_NETWORK.md).
-
 ### Partner Desktop (.exe / .dmg)
 ```bash
 cd partner-desktop
@@ -231,7 +222,7 @@ Copy `env.template` to `.env` and configure:
 | **Storage** | `STORAGE_PROVIDER` (oracle/cloudinary), `OCI_*` or `CLOUDINARY_*` credentials |
 | **Shipping** | `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD`, `SHIPROCKET_PICKUP_PINCODE` |
 | **Doc Conversion** | `CLOUDMERSIVE_API_KEY` |
-| **Printer** | `PRINTER_API_URLS` (JSON array), `PRINTER_API_KEY` |
+| **Print jobs** | `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `APP_BASE_URL` (see `docs/PRINT_JOBS.md`) |
 | **Email** | `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` |
 | **Rate Limiting** | Upstash Redis credentials (configured in `@upstash/redis`) |
 
