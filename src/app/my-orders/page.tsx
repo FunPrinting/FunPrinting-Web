@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import { useRazorpay } from '@/hooks/useRazorpay';
-import { validatePendingOrderPayment, createPaymentOptions, handlePaymentSuccess, handlePaymentFailure, logPaymentEvent, checkPendingPaymentVerification } from '@/lib/paymentUtils';
+import { startOrderPayment } from '@/lib/payments/client';
 import { MoneyIcon, EyeIcon, TrashIcon } from '@/components/SocialIcons';
 
 interface Order {
@@ -61,6 +60,7 @@ interface Order {
   status?: 'pending_payment' | 'paid' | 'processing' | 'completed';
   amount: number;
   razorpayOrderId?: string;
+  paymentRef?: string;
   razorpayPaymentId?: string;
   createdAt: string;
   shiprocket?: {
@@ -81,7 +81,6 @@ export default function MyOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const [deletingOrder, setDeletingOrder] = useState<string | null>(null);
-  const { isLoaded: isRazorpayLoaded, error: razorpayError, openRazorpay } = useRazorpay();
 
   // Redirect to sign in if not authenticated
   useEffect(() => {
@@ -94,14 +93,6 @@ export default function MyOrdersPage() {
   useEffect(() => {
     if (isAuthenticated && user?.email) {
       loadOrders();
-
-      // Check for pending payment verification (iPhone Safari recovery)
-      checkPendingPaymentVerification().then((result) => {
-        if (result && result.success) {
-          console.log('🔄 Payment verification recovered, refreshing orders...');
-          loadOrders(); // Refresh orders to show updated status
-        }
-      });
     }
   }, [isAuthenticated, user?.email]);
 
@@ -164,110 +155,13 @@ export default function MyOrdersPage() {
     });
   };
 
-  // Handle payment for pending orders
+  // Pay for a pending order: the server reuses the open Payment Link or creates a new one
   const handlePayment = async (order: Order) => {
-    // Validate order before processing payment
-    const validation = validatePendingOrderPayment(order);
-    if (!validation.isValid) {
-      alert(`❌ ${validation.error}`);
-      return;
-    }
-
-    if (!isRazorpayLoaded) {
-      alert('Payment gateway is still loading. Please wait a moment and try again.');
-      return;
-    }
-
-    if (razorpayError) {
-      alert(`Payment gateway error: ${razorpayError}`);
-      return;
-    }
-
     setProcessingPayment(order._id);
-    logPaymentEvent('payment_initiated', { orderId: order.orderId, amount: order.amount }, 'info');
-
     try {
-      // Get Razorpay key from environment
-      const response = await fetch('/api/payment/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          razorpayOrderId: order.razorpayOrderId,
-          amount: order.amount
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Create payment options using utility function
-        const options = createPaymentOptions(order, data.key);
-
-        // Add success handler
-        options.handler = async function (paymentResponse: any) {
-          console.log('🎉 Payment response received:', paymentResponse);
-          try {
-            const result = await handlePaymentSuccess(paymentResponse, order.orderId);
-            console.log('🔍 Payment verification result:', result);
-
-            if (result.success) {
-              alert(`Payment successful! Order #${order.orderId} is now confirmed.`);
-              await loadOrders(); // Refresh orders
-            } else {
-              console.error('❌ Payment verification failed:', result.error);
-              alert(`Payment verification failed: ${result.error}`);
-            }
-          } catch (error) {
-            console.error('❌ Payment success handler error:', error);
-            const failureResult = handlePaymentFailure(error, order.orderId);
-            alert(`${failureResult.error}`);
-          } finally {
-            setProcessingPayment(null);
-          }
-        };
-
-        // Add modal dismiss handler
-        options.modal.ondismiss = function () {
-          console.log('Payment modal dismissed');
-          setProcessingPayment(null);
-        };
-
-        // Add error handler
-        options.handler = options.handler || function () { };
-        options.modal.ondismiss = options.modal.ondismiss || function () { };
-
-        try {
-          const razorpay = openRazorpay(options);
-          razorpay.open();
-
-          // Add timeout to detect stuck payments (extended for slow networks)
-          // Default: 10 minutes, can be up to 15 minutes for very slow connections
-          const timeoutDuration = 600000; // 10 minutes (600 seconds)
-          setTimeout(() => {
-            if (processingPayment === order.orderId) {
-              console.log('⚠️ Payment timeout detected for order:', order.orderId);
-              alert('Payment is taking longer than expected. The payment may still be processing. Please check your payment status in a few minutes.');
-              setProcessingPayment(null);
-            }
-          }, timeoutDuration);
-
-        } catch (razorpayError) {
-          logPaymentEvent('razorpay_error', { orderId: order.orderId, error: razorpayError }, 'error');
-          alert('Failed to open payment gateway. Please try again.');
-          setProcessingPayment(null);
-        }
-      } else {
-        logPaymentEvent('payment_initiation_failed', { orderId: order.orderId, error: data.error }, 'error');
-        alert(`Failed to initiate payment: ${data.error}`);
-        setProcessingPayment(null);
-      }
+      await startOrderPayment(order.orderId); // redirects to Razorpay
     } catch (error) {
-      logPaymentEvent('payment_processing_error', { orderId: order.orderId, error: error instanceof Error ? error.message : 'Unknown error' }, 'error');
-      alert('Failed to process payment. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to start the payment. Please try again.');
       setProcessingPayment(null);
     }
   };
@@ -285,7 +179,6 @@ export default function MyOrdersPage() {
     }
 
     setDeletingOrder(order._id);
-    logPaymentEvent('order_deletion_initiated', { orderId: order.orderId }, 'info');
 
     try {
       const response = await fetch(`/api/orders/${order._id}`, {
@@ -300,15 +193,12 @@ export default function MyOrdersPage() {
       const data = await response.json();
 
       if (data.success) {
-        logPaymentEvent('order_deleted', { orderId: order.orderId }, 'info');
         alert(`✅ Order #${order.orderId} has been deleted successfully.`);
         await loadOrders(); // Refresh orders
       } else {
-        logPaymentEvent('order_deletion_failed', { orderId: order.orderId, error: data.error }, 'error');
         alert(`Failed to delete order: ${data.error}`);
       }
     } catch (error) {
-      logPaymentEvent('order_cancellation_error', { orderId: order.orderId, error: error instanceof Error ? error.message : 'Unknown error' }, 'error');
       console.error('Error deleting order:', error);
       alert('Failed to cancel order. Please try again.');
     } finally {
@@ -569,7 +459,7 @@ export default function MyOrdersPage() {
                           <>
                             <button
                               onClick={() => handlePayment(order)}
-                              disabled={processingPayment === order._id || !isRazorpayLoaded}
+                              disabled={processingPayment === order._id}
                               className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {processingPayment === order._id ? (
@@ -581,39 +471,16 @@ export default function MyOrdersPage() {
                                 </span>
                               )}
                             </button>
-                            {order.razorpayOrderId && (
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const response = await fetch('/api/payment/check-status', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        razorpay_order_id: order.razorpayOrderId,
-                                      }),
-                                    });
-                                    const data = await response.json();
-                                    if (data.success && data.payment_status === 'completed') {
-                                      alert(`✅ Payment successful! Your order #${data.order.orderId} has been confirmed.`);
-                                      // Reload orders to show updated status
-                                      window.location.reload();
-                                    } else if (data.payment_status === 'failed') {
-                                      alert(`Payment failed: ${data.message}`);
-                                    } else {
-                                      alert(`Payment status: ${data.message}`);
-                                    }
-                                  } catch (error) {
-                                    console.error('Error checking payment status:', error);
-                                    alert('Failed to check payment status. Please try again later.');
-                                  }
-                                }}
+                            {order.paymentRef && (
+                              <a
+                                href={`/payment/status/${encodeURIComponent(order.paymentRef)}`}
                                 className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                               >
                                 <span className="flex items-center gap-2">
                                   <EyeIcon size={16} className="w-4 h-4" />
                                   Check Payment Status
                                 </span>
-                              </button>
+                              </a>
                             )}
                             <button
                               onClick={() => handleDeleteOrder(order)}

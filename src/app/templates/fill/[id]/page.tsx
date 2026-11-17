@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useRazorpay } from '@/hooks/useRazorpay';
+import { startTemplateCheckout } from '@/lib/payments/client';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import { WarningIcon, DocumentIcon, MemoIcon, LockIcon } from '@/components/SocialIcons';
 
@@ -43,7 +43,6 @@ export default function TemplateFillPage({ params }: { params: Promise<{ id: str
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
   const isAuthenticated = !!session?.user;
-  const { isLoaded: isRazorpayLoaded, error: razorpayError, openRazorpay } = useRazorpay();
   const [template, setTemplate] = useState<Template | null>(null);
   const [formData, setFormData] = useState<FormData>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -219,231 +218,14 @@ export default function TemplateFillPage({ params }: { params: Promise<{ id: str
 
   const handlePayment = async () => {
     if (!template) return;
-    
-    if (!isRazorpayLoaded) {
-      setError('Payment gateway is loading. Please wait a moment and try again.');
-      return;
-    }
-
-    if (razorpayError) {
-      setError(`Payment gateway error: ${razorpayError}. Please refresh the page and try again.`);
-      return;
-    }
-
     setIsProcessingPayment(true);
     setError(null);
-
     try {
-      console.log('💳 Creating template payment order...');
-      console.log('📋 Payment data:', {
-        templateId,
-        amount: template.price,
-        hasFormData: !!formData
-      });
-
-      // Create template payment order
-      // Note: pdfUrl is not required for payment-first flow (document will be generated after payment)
-      const response = await fetch('/api/templates/pay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          templateId: templateId,
-          pdfUrl: '', // Empty for payment-first flow, document will be generated after payment
-          formData: formData,
-          amount: template.price
-        })
-      });
-
-      // Try to parse error response with detailed error handling
-      if (!response.ok) {
-        let errorMessage = 'Failed to create payment order';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-          console.error('❌ Payment error response:', errorData);
-        } catch (parseError) {
-          // If JSON parsing fails, try to get text
-          try {
-            const errText = await response.text();
-            console.error('❌ Payment error response (text):', errText);
-            // Try to extract error message from text if it's JSON-like
-            if (errText.includes('error')) {
-              try {
-                const parsed = JSON.parse(errText);
-                errorMessage = parsed.error || errorMessage;
-              } catch {
-                // If it's not JSON, use a user-friendly message based on status
-                if (response.status === 400) {
-                  errorMessage = 'Invalid payment request. Please check the template details.';
-                } else if (response.status === 404) {
-                  errorMessage = 'Template not found. Please go back and try again.';
-                } else if (response.status === 500 || response.status === 503) {
-                  errorMessage = 'Payment service error. Please try again later or contact support.';
-                } else {
-                  errorMessage = 'Failed to create payment order. Please try again.';
-                }
-              }
-            }
-          } catch (textError) {
-            console.error('❌ Could not parse payment error response:', textError);
-            // Use status-based error message
-            if (response.status === 400) {
-              errorMessage = 'Invalid payment request. Please check the template details.';
-            } else if (response.status === 404) {
-              errorMessage = 'Template not found. Please go back and try again.';
-            } else if (response.status === 500 || response.status === 503) {
-              errorMessage = 'Payment service error. Please try again later or contact support.';
-            } else {
-              errorMessage = 'Failed to create payment order. Please try again.';
-            }
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-      
-      if (data.success) {
-        // Validate that we have all required data
-        if (!data.key || !data.razorpayOrderId || !data.amount) {
-          console.error('❌ Missing payment data:', { hasKey: !!data.key, hasOrderId: !!data.razorpayOrderId, hasAmount: !!data.amount });
-          throw new Error('Payment gateway configuration error. Please contact support.');
-        }
-        
-        console.log('✅ Payment order created:', data.razorpayOrderId);
-        
-        // Initialize Razorpay payment
-        const options = {
-          key: data.key,
-          amount: data.amount * 100, // Razorpay expects amount in paise
-          currency: 'INR',
-          name: 'Fun Printing',
-          description: `Template Payment - ${template.name}`,
-          order_id: data.razorpayOrderId,
-          // Configure payment methods - enable all available methods as fallback
-          // This ensures users can use cards, UPI, netbanking, wallets if GPay doesn't work
-          method: {
-            upi: true,
-            card: true,
-            netbanking: true,
-            wallet: true,
-            emi: false,
-            paylater: false,
-          },
-          handler: async function (response: any) {
-            try {
-              console.log('💳 Payment response received:', response);
-              
-              // Verify payment with all necessary data
-              const verifyResponse = await fetch('/api/templates/pay/verify', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                  templateId: data.templateId,
-                  pdfUrl: '', // Empty for payment-first flow
-                  formData: formData,
-                  templateCommissionPercent: data.templateCommissionPercent,
-                  creatorShareAmount: data.creatorShareAmount,
-                  platformShareAmount: data.platformShareAmount,
-                  templateCreatorUserId: data.templateCreatorUserId,
-                  amount: data.amount
-                })
-              });
-
-              if (!verifyResponse.ok) {
-                let verifyError = 'Payment verification failed';
-                try {
-                  const verifyErrorData = await verifyResponse.json();
-                  verifyError = verifyErrorData.error || verifyError;
-                } catch {
-                  verifyError = 'Payment verification failed. Please contact support if payment was deducted.';
-                }
-                throw new Error(verifyError);
-              }
-
-              const verifyData = await verifyResponse.json();
-              
-              if (verifyData.success) {
-                console.log('✅ Payment verified successfully, redirecting to loading page for document generation...');
-                // Store form data in sessionStorage for loading page
-                // Loading page will generate the document after payment
-                if (typeof window !== 'undefined' && templateId) {
-                  sessionStorage.setItem('pendingTemplateFormData', JSON.stringify({
-                    templateId: templateId,
-                    formData: formData,
-                    paymentCompleted: true // Flag to indicate payment was completed
-                  }));
-                }
-                // Redirect to loading page to generate document
-                router.push(`/templates/fill/${templateId}/loading`);
-              } else {
-                throw new Error(verifyData.error || 'Payment verification failed');
-              }
-            } catch (error) {
-              console.error('❌ Payment verification error:', error);
-              const verifyErrorMessage = error instanceof Error ? error.message : 'Payment verification failed. Please contact support if payment was deducted.';
-              setError(verifyErrorMessage);
-            } finally {
-              setIsProcessingPayment(false);
-            }
-          },
-          prefill: {
-            name: formData.name || '',
-            email: formData.email || '',
-            contact: formData.phone || formData.contact || '',
-          },
-          theme: {
-            color: '#2563eb'
-          },
-          modal: {
-            ondismiss: function() {
-              console.log('Payment modal dismissed');
-              setIsProcessingPayment(false);
-            }
-          }
-        };
-
-        try {
-          const razorpay = openRazorpay(options);
-          razorpay.open();
-          console.log('✅ Razorpay payment UI opened');
-        } catch (razorpayError) {
-          console.error('❌ Error opening Razorpay:', razorpayError);
-          throw new Error('Failed to open payment gateway. Please try again.');
-        }
-      } else {
-        throw new Error(data.error || 'Failed to create payment order');
-      }
-      
+      // Redirects to Razorpay; the status page continues to document generation
+      if (!templateId) throw new Error('Template not found');
+      await startTemplateCheckout(templateId, formData as Record<string, unknown>);
     } catch (error) {
-      console.error('❌ Payment error:', error);
-      let errorMessage = 'Payment failed. Please try again.';
-      
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      // Provide user-friendly error messages for common scenarios
-      if (errorMessage.includes('Payment gateway configuration') || errorMessage.includes('RAZORPAY')) {
-        errorMessage = 'Payment gateway configuration error. Please contact support.';
-      } else if (errorMessage.includes('Template not found') || errorMessage.includes('template')) {
-        errorMessage = 'Template not found. Please go back and try again.';
-      } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Network')) {
-        errorMessage = 'Network error. Please check your connection and try again.';
-      } else if (errorMessage.includes('Database') || errorMessage.includes('connection')) {
-        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
-      } else if (errorMessage.includes('Payment service error') || errorMessage.includes('503')) {
-        errorMessage = 'Payment service is temporarily unavailable. Please try again later.';
-      }
-      
-      setError(errorMessage);
+      setError(error instanceof Error ? error.message : 'Payment failed. Please try again.');
       setIsProcessingPayment(false);
     }
   };
@@ -674,7 +456,7 @@ export default function TemplateFillPage({ params }: { params: Promise<{ id: str
                   }
                   handlePayment();
                 }}
-                disabled={isProcessingPayment || (!isAuthenticated ? false : !isRazorpayLoaded)}
+                disabled={isProcessingPayment}
                 className="bg-blue-600 text-white px-8 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
                 {!isAuthenticated ? (

@@ -2,8 +2,6 @@
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useRazorpay } from '@/hooks/useRazorpay';
-import { checkPendingPaymentVerification, handlePaymentSuccess, handlePaymentFailure, startPaymentStatusPolling } from '@/lib/paymentUtils';
 import { useAuth } from '@/hooks/useAuth';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import InlinePhoneModal from '@/components/InlinePhoneModal';
@@ -469,7 +467,6 @@ function extractCustomerInfo(customerData: Record<string, any>): CustomerInfo {
 function OrderPageContent() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { isLoaded: isRazorpayLoaded, error: razorpayError, openRazorpay } = useRazorpay();
   const { user, isAuthenticated } = useAuth();
 
   // Removed step management - single page now
@@ -882,15 +879,6 @@ function OrderPageContent() {
     }
   }, [selectedFiles.length]);
 
-  // Check for pending payment verification on page load (iPhone Safari recovery)
-  useEffect(() => {
-    checkPendingPaymentVerification().then((result) => {
-      if (result && result.success) {
-        console.log('🔄 Payment verification recovered, redirecting to my orders...');
-        router.push('/my-orders');
-      }
-    });
-  }, [router]);
 
 
   // General state
@@ -906,21 +894,10 @@ function OrderPageContent() {
 
   // Payment state
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  // One key per checkout attempt: a double click or retried request returns the same payment
+  const checkoutKeyRef = useRef<string>(typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
   const [isSavingPhone, setIsSavingPhone] = useState(false);
   const [phoneSaveStatus, setPhoneSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [paymentVerificationStatus, setPaymentVerificationStatus] = useState<{
-    verifying: boolean;
-    orderId: string | null;
-    razorpayOrderId: string | null;
-    startTime: number | null;
-    polling: boolean;
-  }>({
-    verifying: false,
-    orderId: null,
-    razorpayOrderId: null,
-    startTime: null,
-    polling: false,
-  });
   const [uploadProgress, setUploadProgress] = useState<{
     uploading: boolean;
     currentFile: number;
@@ -941,50 +918,6 @@ function OrderPageContent() {
     isSlowNetwork: false,
   });
 
-  // Handle visibility change for mobile recovery (when user switches apps/tabs)
-  useEffect(() => {
-    let lastHiddenTime: number | null = null;
-    const VISIBILITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Page became hidden - store the time
-        lastHiddenTime = Date.now();
-        console.log('📱 Page hidden - storing timestamp for recovery');
-      } else {
-        // Page became visible - check if we were hidden for too long
-        if (lastHiddenTime && isProcessingPayment) {
-          const hiddenDuration = Date.now() - lastHiddenTime;
-          if (hiddenDuration > VISIBILITY_TIMEOUT) {
-            console.log('⚠️ Page was hidden for too long during payment - resetting processing state');
-            setIsProcessingPayment(false);
-            // Check if payment was actually completed via polling/recovery
-            if (paymentVerificationStatus.razorpayOrderId) {
-              console.log('🔄 Attempting to recover payment status...');
-              // The polling mechanism should handle this, but we reset the UI state
-            }
-          }
-          lastHiddenTime = null;
-        }
-      }
-    };
-
-    // Handle page unload (browser closed, tab closed)
-    const handleBeforeUnload = () => {
-      if (isProcessingPayment) {
-        console.log('⚠️ Page unloading during payment - storing state for recovery');
-        // State is already stored in localStorage by paymentUtils
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [isProcessingPayment, paymentVerificationStatus.razorpayOrderId]);
 
   // Pickup locations
   const [defaultPickupLocation, setDefaultPickupLocation] = useState<{
@@ -1522,16 +1455,6 @@ function OrderPageContent() {
       return;
     }
 
-    // Check if Razorpay is loaded
-    if (!isRazorpayLoaded) {
-      alert('Payment gateway is still loading. Please wait a moment and try again.');
-      return;
-    }
-
-    if (razorpayError) {
-      alert(`Payment gateway error: ${razorpayError}`);
-      return;
-    }
 
     // Validate required fields (expected date and location info)
     const fieldValidation = validateRequiredFields();
@@ -1602,6 +1525,7 @@ function OrderPageContent() {
       const fileURLs: string[] = [];
       const originalFileNames: string[] = [];
       const fileTypes: string[] = [];
+      const uploadReceipts: string[] = [];
       if (selectedFiles.length > 0 && orderType === 'file') {
         try {
           // Initialize upload progress
@@ -1686,6 +1610,11 @@ function OrderPageContent() {
               fileURLs.push(uploadData.fileURL);
               originalFileNames.push(uploadData.originalFileName);
               fileTypes.push(file.type); // Collect file type (MIME type)
+              uploadReceipts.push(uploadData.receipt);
+              if (uploadData.pageCount && uploadData.pageCount !== (filePageCounts[i] || 1)) {
+                // The server's count is the one that is charged
+                console.info(`Page count for ${file.name}: ${uploadData.pageCount} (was ${filePageCounts[i] || 1})`);
+              }
               console.log(`✅ File uploaded successfully: ${uploadData.fileURL}, type: ${file.type} (${Math.round(uploadDuration / 1000)}s)`);
 
               // Update progress for next file
@@ -1729,338 +1658,64 @@ function OrderPageContent() {
         }
       }
 
-      // Prepare order data for payment initiation
-      const orderData = {
-        customerInfo,
-        orderType,
-        fileURLs: orderType === 'file' && fileURLs.length > 0 ? fileURLs : undefined,
-        fileURL: orderType === 'file' && fileURLs.length > 0 ? fileURLs[0] : undefined, // Legacy support
-        originalFileNames: orderType === 'file' && originalFileNames.length > 0 ? originalFileNames : undefined,
-        originalFileName: orderType === 'file' && originalFileNames.length > 0 ? originalFileNames[0] : undefined, // Legacy support
-        fileTypes: orderType === 'file' && fileTypes.length > 0 ? fileTypes : undefined, // File types array
-        filePageCounts: orderType === 'file' && filePageCounts.length > 0 ? filePageCounts : undefined, // Per-file page counts
-        templateData: orderType === 'template' ? {
-          templateType: 'custom',
-          formData: {
-            name: customerInfo.name,
-            email: customerInfo.email,
-            phone: customerInfo.phone,
-          }
-        } : undefined,
-        printingOptions: {
-          ...printingOptions,
-          pageCount,
-          serviceOptions: printingOptions.serviceOptions, // Include per-file service options
-          serviceOption: printingOptions.serviceOption, // Legacy support
-          pageColors: printingOptions.pageColors, // Include per-file page colors
-          fileOptions: printingOptions.fileOptions, // Include per-file printing options
-        },
-        deliveryOption,
-        expectedDate,
-      };
+      if (uploadReceipts.length !== selectedFiles.length) {
+        throw new Error('Some files did not finish uploading. Please try again.');
+      }
 
-      console.log('🔍 Initiating payment with order data:', orderData);
-
-      // Initiate payment (this will NOT create order in database yet)
-      const response = await fetch('/api/payment/initiate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(orderData),
+      // Per-file options; the server recomputes the price from these and the receipts
+      const files = selectedFiles.map((_, i) => {
+        const fileOpts = getFilePrintingOptions(i, printingOptions);
+        const pageColors = fileOpts.pageColors ?? getFilePageColors(i, printingOptions.pageColors);
+        return {
+          receipt: uploadReceipts[i],
+          pageSize: fileOpts.pageSize,
+          color: fileOpts.color,
+          sided: fileOpts.sided,
+          copies: fileOpts.copies,
+          colorPages: fileOpts.color === 'mixed' ? pageColors.colorPages : undefined,
+          service: printingOptions.serviceOptions?.[i] || printingOptions.serviceOption || undefined,
+        };
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        // Show order ID immediately
-        if (data.orderId) {
-          alert(`Order #${data.orderId} created! Please complete payment to confirm your order.`);
-        }
-
-        // Initialize Razorpay payment
-        const options = {
-          key: data.key,
-          amount: data.amount * 100, // Razorpay expects amount in paise
-          currency: 'INR',
-          name: 'College Print Service',
-          description: `Print Order Payment - Order #${data.orderId || 'N/A'}`,
-          order_id: data.razorpayOrderId,
-          // Configure payment methods - enable all available methods as fallback
-          // This ensures users can use cards, UPI, netbanking, wallets if GPay doesn't work
-          method: {
-            upi: true,
-            card: true,
-            netbanking: true,
-            wallet: true,
-            emi: false,
-            paylater: false,
-          },
-          handler: async function (response: any) {
-            try {
-              console.log('💳 Payment response received:', response);
-
-              // Set verification status
-              setPaymentVerificationStatus({
-                verifying: true,
-                orderId: data.orderId,
-                razorpayOrderId: data.razorpayOrderId,
-                startTime: Date.now(),
-                polling: false,
-              });
-
-              // Start polling for payment status as fallback
-              const stopPolling = startPaymentStatusPolling(
-                data.razorpayOrderId,
-                data.orderId,
-                (pollData) => {
-                  // Payment completed via polling
-                  console.log('✅ Payment verified via polling:', pollData);
-                  setIsProcessingPayment(false); // Reset processing state
-                  setPaymentVerificationStatus({
-                    verifying: false,
-                    orderId: null,
-                    razorpayOrderId: null,
-                    startTime: null,
-                    polling: false,
-                  });
-                  alert(`Payment successful! Your order #${data.orderId} has been placed.`);
-                  window.location.href = '/my-orders';
-                },
-                (error) => {
-                  // Payment failed
-                  console.error('❌ Payment failed via polling:', error);
-                  setIsProcessingPayment(false); // Reset processing state
-                  setPaymentVerificationStatus({
-                    verifying: false,
-                    orderId: null,
-                    razorpayOrderId: null,
-                    startTime: null,
-                    polling: false,
-                  });
-                  alert(`Payment failed: ${error}`);
-                },
-                () => {
-                  // Polling timeout - keep verification status active for manual check
-                  console.log('⏱️ Payment status polling timeout');
-                  setIsProcessingPayment(false); // Reset processing state
-                  setPaymentVerificationStatus(prev => ({
-                    ...prev,
-                    polling: true, // Mark as polling timeout, show manual check button
-                  }));
-                }
-              );
-
-              // Use the new payment success handler with iPhone Safari recovery
-              const result = await handlePaymentSuccess(response, data.orderId);
-
-              // Stop polling if verification succeeds
-              stopPolling();
-
-              if (result.success) {
-                console.log('✅ Payment verified successfully:', result.data);
-                setIsProcessingPayment(false); // Reset processing state
-                setPaymentVerificationStatus({
-                  verifying: false,
-                  orderId: null,
-                  razorpayOrderId: null,
-                  startTime: null,
-                  polling: false,
-                });
-                alert(`🎉 Payment successful! Your order #${result.data.order.orderId} has been placed.`);
-                // Redirect to my orders page
-                window.location.href = '/my-orders';
-              } else {
-                console.error('❌ Payment verification failed:', result.error);
-                setIsProcessingPayment(false); // Reset processing state (but keep polling active)
-                // Keep verification status active for polling/manual check
-                setPaymentVerificationStatus(prev => ({
-                  ...prev,
-                  polling: true, // Allow manual check
-                }));
-                alert(`Payment verification is taking longer than expected. Please wait or check your order status.`);
-              }
-            } catch (error) {
-              console.error('❌ Error in payment handler:', error);
-              setIsProcessingPayment(false); // Reset processing state on error
-              const failureResult = handlePaymentFailure(error, data.orderId);
-              setPaymentVerificationStatus(prev => ({
-                ...prev,
-                polling: true, // Allow manual check on error
-              }));
-              alert(`Payment verification encountered an issue. Please check your order status.`);
-            }
-          },
-          modal: {
-            ondismiss: function () {
-              console.log('Payment modal dismissed');
-              setIsProcessingPayment(false);
-            }
-          },
-          callback_url: window.location.origin + '/payment-callback',
-          prefill: {
-            name: customerInfo.name,
-            email: customerInfo.email,
-            contact: customerInfo.phone,
-          },
-          // Ensure proper mobile handling
-          readonly: {
-            email: true,
-            contact: true,
-          },
-          // Mobile-specific options for better iPhone Safari compatibility
-          notes: {
-            order_id: data.orderId,
-            customer_email: customerInfo.email,
-          },
-          // Add retry mechanism for mobile
-          retry: {
-            enabled: true,
-            max_count: 3,
-          },
-          // Configure to show payment method selection first instead of auto-opening GPay
-          // This prevents getting stuck when GPay app is not installed or deep link fails
-          // Note: Razorpay will show payment method selection when all methods are enabled
-          // The method configuration above ensures all options are available
-          config: {
-            display: {
-              blocks: {
-                banks: {
-                  name: "All payment methods"
-                }
-              }
-            }
-          },
-          theme: {
-            color: '#000000',
-          },
-        };
-
-        try {
-          const razorpay = openRazorpay(options);
-
-          // Add error handlers for Razorpay modal
-          razorpay.on('payment.failed', function (response: any) {
-            console.error('❌ Payment failed:', response);
-            setIsProcessingPayment(false);
-            setPaymentVerificationStatus({
-              verifying: false,
-              orderId: null,
-              razorpayOrderId: null,
-              startTime: null,
-              polling: false,
-            });
-            alert(`Payment failed: ${response.error?.description || response.error?.reason || 'Payment could not be processed. Please try again.'}`);
-          });
-
-          razorpay.on('payment.error', function (error: any) {
-            console.error('❌ Payment error:', error);
-            setIsProcessingPayment(false);
-            setPaymentVerificationStatus({
-              verifying: false,
-              orderId: null,
-              razorpayOrderId: null,
-              startTime: null,
-              polling: false,
-            });
-            alert(`Payment error: ${error.error?.description || error.error?.reason || 'An error occurred during payment. Please try again.'}`);
-          });
-
-          // Add timeout detection for stuck modals (30 seconds)
-          const MODAL_TIMEOUT = 30000; // 30 seconds
-          const modalTimeout = setTimeout(() => {
-            console.warn('⚠️ Razorpay modal timeout - modal may be stuck at processing screen');
-            // Don't auto-close, but log for debugging
-            // User can still manually close the modal
-          }, MODAL_TIMEOUT);
-
-          // Track if user went to external app (GPay, etc.)
-          let appRedirectDetected = false;
-          const handleVisibilityChange = () => {
-            if (document.hidden) {
-              // Page became hidden - user might have switched to GPay app
-              appRedirectDetected = true;
-              console.log('📱 Page hidden - possible app redirect to GPay');
-            } else {
-              // Page became visible again - user returned from app
-              if (appRedirectDetected) {
-                console.log('🔄 User returned from app - checking payment status');
-                appRedirectDetected = false;
-                // Don't reset processing state here - let Razorpay handle it
-                // The payment handler or failed handler will be called if needed
-              }
-            }
-          };
-
-          // Add visibility change listener for app redirect detection
-          document.addEventListener('visibilitychange', handleVisibilityChange);
-
-          razorpay.on('modal.close', function () {
-            console.log('🔄 Razorpay modal closed');
-            // Clean up visibility listener
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            if (modalTimeout) {
-              clearTimeout(modalTimeout);
-            }
-          });
-
-          // Handle payment authorization (when user completes payment in app)
-          razorpay.on('payment.authorized', function (response: any) {
-            console.log('✅ Payment authorized:', response);
-            // This will be handled by the main handler function
-          });
-
-          // Handle external wallet selection (GPay, PhonePe, etc.)
-          razorpay.on('external.wallet.selected', function (response: any) {
-            console.log('📱 External wallet selected:', response);
-            // Log when user selects GPay or other external wallet
-          });
-
-          razorpay.open();
-          console.log('✅ Razorpay payment UI opened');
-
-          // Clear modal timeout if payment UI loads successfully (handler fires)
-          // The timeout will be cleared when handler fires or modal closes
-
-          // Add timeout to detect stuck payments (extended for slow networks)
-          // Default: 10 minutes, can be up to 15 minutes for very slow connections
-          const timeoutDuration = 600000; // 10 minutes (600 seconds)
-          setTimeout(() => {
-            if (isProcessingPayment) {
-              console.log('⚠️ Payment timeout detected - resetting processing state');
-              setIsProcessingPayment(false);
-              // Show notification but don't alert (less intrusive)
-              console.log('Payment is taking longer than expected. The payment may still be processing. Please check your order status in a few minutes.');
-            }
-          }, timeoutDuration);
-        } catch (razorpayError) {
-          console.error('❌ Error opening Razorpay:', razorpayError);
-          setIsProcessingPayment(false);
-          setPaymentVerificationStatus({
-            verifying: false,
-            orderId: null,
-            razorpayOrderId: null,
-            startTime: null,
-            polling: false,
-          });
-
-          let errorMessage = 'Failed to open payment gateway. Please try again.';
-          if (razorpayError instanceof Error) {
-            if (razorpayError.message.includes('not loaded')) {
-              errorMessage = 'Payment gateway is still loading. Please wait a moment and try again.';
-            } else if (razorpayError.message.includes('not available')) {
-              errorMessage = 'Payment gateway is not available. Please refresh the page and try again.';
-            }
-          }
-
-          alert(errorMessage);
-        }
-      } else {
-        alert(`Failed to create order: ${data.error}`);
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idempotencyKey: checkoutKeyRef.current,
+          customerInfo,
+          files,
+          delivery: { ...deliveryOption, speed: deliveryOption.type === 'delivery' ? deliverySpeed : undefined, pickupLocation: undefined, deliveryCharge: undefined },
+          expectedDate,
+        }),
+      });
+      const data = await response.json().catch(() => ({ success: false, error: 'Unexpected response from the server' }));
+      if (!response.ok || !data.success || !data.paymentUrl) {
+        throw new Error(data.error || 'Could not start the payment. Please try again.');
       }
+
+      // The server price is final. Show it when it differs from the estimate on screen
+      // (e.g. delivery charge, or a different page count found on upload).
+      const shownTotal = Math.round(amount * 1.03 * 100);
+      if (Math.abs(data.amounts.total - shownTotal) >= 100) {
+        const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
+        const ok = window.confirm(
+          `Order #${data.orderId}\n\nSubtotal: ${rupees(data.amounts.subtotal)}\nProcessing fee: ${rupees(data.amounts.fee)}\nTotal to pay: ${rupees(data.amounts.total)}\n\nContinue to payment?`
+        );
+        if (!ok) {
+          toast('Your order is saved. You can pay for it from My Orders.');
+          window.location.href = '/my-orders';
+          return;
+        }
+      }
+
+      // New key for any later, separate order from this page
+      checkoutKeyRef.current = crypto.randomUUID();
+      // Hand over to Razorpay's hosted payment page; it redirects back to /payment/status
+      window.location.assign(data.paymentUrl);
+      return;
     } catch (error) {
       console.error('Error processing payment:', error);
-      alert('Failed to process payment. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to process payment. Please try again.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -3672,7 +3327,7 @@ function OrderPageContent() {
                         handlePayment();
                       }
                     }}
-                    disabled={!deliveryOption.partnerId || amount === 0 || isProcessingPayment || uploadProgress.uploading || (isAuthenticated && !isRazorpayLoaded)}
+                    disabled={!deliveryOption.partnerId || amount === 0 || isProcessingPayment || uploadProgress.uploading}
                     className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all text-lg shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     {!isAuthenticated ? (
@@ -3683,11 +3338,6 @@ function OrderPageContent() {
                     ) : !deliveryOption.partnerId ? (
                       <span className="flex items-center justify-center gap-2">
                         📍 Select Delivery Point
-                      </span>
-                    ) : !isRazorpayLoaded ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <ClockIcon size={20} className="w-5 h-5" />
-                        Loading...
                       </span>
                     ) : uploadProgress.uploading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -3827,79 +3477,6 @@ function OrderPageContent() {
                     </div>
                   )}
 
-                  {/* Payment Verification Status */}
-                  {paymentVerificationStatus.verifying && (
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                          <span className="text-sm font-medium text-blue-900">
-                            Verifying payment...
-                          </span>
-                        </div>
-                        {paymentVerificationStatus.startTime && (
-                          <span className="text-xs text-blue-600">
-                            {Math.floor((Date.now() - paymentVerificationStatus.startTime) / 1000)}s
-                          </span>
-                        )}
-                      </div>
-                      {paymentVerificationStatus.startTime && Date.now() - paymentVerificationStatus.startTime > 60000 && (
-                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-                          <span className="flex items-center gap-1">
-                            <WarningIcon size={16} className="w-4 h-4" />
-                            Verification is taking longer than expected. Please wait...
-                          </span>
-                        </div>
-                      )}
-                      {paymentVerificationStatus.polling && (
-                        <div className="mt-2">
-                          <button
-                            onClick={async () => {
-                              if (!paymentVerificationStatus.razorpayOrderId) return;
-                              try {
-                                const response = await fetch('/api/payment/check-status', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    razorpay_order_id: paymentVerificationStatus.razorpayOrderId,
-                                  }),
-                                });
-                                const data = await response.json();
-                                if (data.success && data.payment_status === 'completed') {
-                                  alert(`Payment successful! Your order #${data.order.orderId} has been placed.`);
-                                  setPaymentVerificationStatus({
-                                    verifying: false,
-                                    orderId: null,
-                                    razorpayOrderId: null,
-                                    startTime: null,
-                                    polling: false,
-                                  });
-                                  window.location.href = '/my-orders';
-                                } else if (data.payment_status === 'failed') {
-                                  alert(`Payment failed: ${data.message}`);
-                                  setPaymentVerificationStatus({
-                                    verifying: false,
-                                    orderId: null,
-                                    razorpayOrderId: null,
-                                    startTime: null,
-                                    polling: false,
-                                  });
-                                } else {
-                                  alert(`Payment status: ${data.message}`);
-                                }
-                              } catch (error) {
-                                console.error('Error checking payment status:', error);
-                                alert('Failed to check payment status. Please try again later.');
-                              }
-                            }}
-                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                          >
-                            🔍 Check Payment Status
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {!isAuthenticated && (
                     <div className="mt-4 text-center">

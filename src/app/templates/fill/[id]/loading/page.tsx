@@ -30,7 +30,7 @@ export default function TemplateLoadingPage({ params }: { params: Promise<{ id: 
   const startGeneration = useCallback(async (storedData: string, templateIdParam: string) => {
     try {
       const parsedData = JSON.parse(storedData);
-      const { templateId, formData, wordUrl: existingWordUrl, paymentCompleted } = parsedData;
+      const { templateId, formData, wordUrl: existingWordUrl, paymentCompleted, paymentRef } = parsedData;
 
       // Clear stored data immediately
       if (typeof window !== 'undefined') {
@@ -60,7 +60,8 @@ export default function TemplateLoadingPage({ params }: { params: Promise<{ id: 
         },
         body: JSON.stringify({
           templateId,
-          formData
+          formData,
+          paymentRef
         }),
       });
 
