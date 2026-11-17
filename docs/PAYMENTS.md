@@ -26,7 +26,7 @@ browser → Razorpay hosted page ─ pays ─► GET /api/payments/callback ─�
    - the **webhook** `payment_link.paid`: signature checked, duplicates skipped by event id;
    - the **reconcile** job and the status page, which ask Razorpay directly when the webhook is late.
 4. **Fulfilment** (`runFulfilment`), each step once, recorded in `Payment.fulfilment`. A 90-second lease (`fulfilment.lockedUntil`) lets only one run proceed, so concurrent callback/webhook/status-page runs can't dispatch twice. If the order turns out to be paid by a different attempt, the remaining steps are skipped and the payment is flagged for a refund. Steps:
-   print orders: mark the order paid → dispatch to the partner (WSS) or central printer → PrintJob record → invoice email → admin email. Template purchases: creator earning. A failed step is retried when the customer opens the status page and by the reconcile job, up to 5 times, then the payment is flagged `needsReview`.
+   print orders: mark the order paid → create the print job for the chosen shop (docs/PRINT_JOBS.md) → invoice email → admin email. Template purchases: creator earning. A failed step is retried when the customer opens the status page and by the reconcile job, up to 5 times, then the payment is flagged `needsReview`.
 5. **Status page** `/payment/status/<ref>` shows paid / waiting / expired / refunded. For templates it continues to document generation with the form data stored at checkout.
 
 ## Prices
@@ -35,8 +35,7 @@ All amounts are integer **paise**.
 
 | Part | Rule |
 |---|---|
-| Partner shop | per file: (colour pages × colour price + B&W pages × B&W price) × 2 for A3 × 1.5 for double-sided × copies, + binding × copies; rounded up to the rupee |
-| No partner | per file: (colour pages × base × colour multiplier + B&W pages × base) × sided multiplier × copies, + service charge above the page limit (binding / ₹10 file handling / service fee) |
+| Price (every order is printed by a partner shop) | per file: (colour pages × colour price + B&W pages × B&W price) × 2 for A3 × 1.5 for double-sided × copies, + binding × copies; rounded up to the rupee |
 | Mixed colour | pages marked colour are colour; **every other page is B&W** |
 | Delivery | `src/lib/delivery/rates.ts` (Shiprocket, or ₹26 per 500 g estimate), same function as `/api/delivery/rate` |
 | Processing fee | 3% of the subtotal, shown to the customer |

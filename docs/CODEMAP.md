@@ -58,6 +58,16 @@ Rules for new code:
 | `/api/pricing`, `/api/pickup-locations`, `/api/delivery/rate`, `/api/partners/nearby` | GET | public | Read-only data for the order page | |
 | `/api/user/orders`, `/api/user/orders/[orderId]` | GET | session | Customer dashboard | |
 
+### Print jobs (docs/PRINT_JOBS.md)
+| Route | Methods | Guard | Notes |
+|---|---|---|---|
+| `/api/partner/v1/jobs` | GET | partner + `x-device-id` | The shop's jobs (devices pull) |
+| `/api/partner/v1/jobs/claim` | POST | partner device | Take the oldest queued job |
+| `/api/partner/v1/jobs/[jobId]` | POST | partner (device for claim/report) | accept, reject, claim, report printing/printed/failed/release |
+| `/api/jobs/deadline` | POST | QStash signature | Accept deadline (notify customer) / 24 h refund |
+| `/api/orders/[id]/choose` | GET, POST | email token or order owner | Shop late: refund now or keep waiting |
+| `/api/admin/orders/[id]/job` | GET, POST | admin | Job + history; resend, cancel (refund) |
+
 ### Partners
 | Route | Methods | Guard | Notes | Changes in |
 |---|---|---|---|---|
@@ -71,7 +81,7 @@ Rules for new code:
 
 ### Admin (all `requireAdmin` except where noted)
 `/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (GET public: template fill pages read it), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
-Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/printer/process-pending` and `/api/printing/jobs/[id]/status` (the old central Printer-API path).
+The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer*`, `/api/printing/*`, `printerClient`, the printer monitor page) was removed in Phase 3: every order is printed by a partner shop.
 
 ### Error tracking
 | Route | Methods | Guard | Notes |
@@ -99,7 +109,7 @@ Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/print
 | Payments | `payments/quote` (the only price calculation), `payments/money` (paise, fee), `payments/checkout`, `payments/templateCheckout`, `payments/links`, `payments/fulfil` (settle + idempotent side effects), `payments/webhooks`, `payments/reconcile`, `payments/refunds` (refunds, Route transfer release), `payments/signatures`, `payments/razorpayApi`, `payments/client` (browser) | See `docs/PAYMENTS.md` |
 | Uploads and delivery | `uploads/pageCount`, `uploads/receipt`, `delivery/rates` | |
 | Pricing settings and payouts | `pricing` (Pricing model access), `razorpayPayouts` (creator payouts via RazorpayX), `orderUtils`, `orderStatePersistence` | |
-| Fulfilment | `printerClient`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | `printerClient`'s Printer-API path goes in Phase 3 |
+| Fulfilment | `jobs/service` (create, accept, claim, report, sync), `jobs/deadlines` (customer notice, 24 h refund, cancel), `jobs/assign`, `jobs/scheduler` (QStash), `jobs/emails`, `jobs/deliveryNumber`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | |
 | Email | `mailer` (one transport), `notificationService`, `invoiceEmail`, `invoiceGenerator`, `dispatch-email`, `adminNotifications` | |
 | Documents | `docxProcessor`, `cloudmersive`, `libreoffice`, `freeConverters`, `renderPdfService`, `pdfGenerator`, `fileTypeDetection` | Phase 7: one converter interface |
 | Storage | `storage` (provider switch), `storage/cloudinary`, `storage/oracle`, `cloudinary` | Phase 7: merge the two Cloudinary modules |
@@ -107,13 +117,13 @@ Phase 3 removes `printer-status`, `printer-queue/*`, `/api/printer`, `/api/print
 
 ## Models (`src/models`)
 
-`Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
+`PrintJob` (one per paid order; collection `print_jobs`), `Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
 
 Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Phase 3 replaces this with one status field plus a separate payment status, and adds an `OrderEvent` log.
 
 ## Pages (`src/app`)
 
-Customer: `/`, `/order`, `/payment/status/[ref]`, `/cart`, `/my-orders`, `/orders/[id]`, `/verify-order/[id]`, `/templates/**`, `/my-templates`, `/profile`, `/dashboard`, `/payout-settings`, `/complete-profile`, `/auth/*`.
+Customer: `/`, `/order`, `/payment/status/[ref]`, `/orders/[id]/choose`, `/cart`, `/my-orders`, `/orders/[id]`, `/verify-order/[id]`, `/templates/**`, `/my-templates`, `/profile`, `/dashboard`, `/payout-settings`, `/complete-profile`, `/auth/*`.
 Partner: `/partner`, `/partner/dashboard`, `/partner/desktop-auth` (callback allowlist: `localhost:4321`, `funprintingpartner://`).
 Admin: `/admin/**`, gated by `AdminGoogleAuth` (session + `/api/auth/check-admin`); the API routes enforce it again server-side.
 Static: policies, contact, `sitemap.xml`.
