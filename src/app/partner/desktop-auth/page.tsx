@@ -4,6 +4,21 @@ import { useSession, signIn } from 'next-auth/react';
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+/**
+ * Only these callbacks may receive a partner device token.
+ * - Desktop app: local loopback server on port 4321
+ * - Mobile app: funprintingpartner:// deep link (Linking.createURL('callback'))
+ * - Expo Go (development only): exp://
+ */
+function isAllowedCallback(callback: string): boolean {
+  if (callback === 'http://localhost:4321/callback' || callback === 'http://127.0.0.1:4321/callback') {
+    return true;
+  }
+  if (callback.startsWith('funprintingpartner://')) return true;
+  if (process.env.NODE_ENV !== 'production' && callback.startsWith('exp://')) return true;
+  return false;
+}
+
 function DesktopAuthContent() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
@@ -17,14 +32,23 @@ function DesktopAuthContent() {
       return;
     }
 
+    if (!isAllowedCallback(callback)) {
+      setError('This sign-in link is not from a recognised Fun Printing Partner app.');
+      return;
+    }
+
     if (status === 'unauthenticated') {
       // Not logged in, redirect to signin and return here afterwards
       signIn('google', { callbackUrl: `/partner/desktop-auth?callback=${encodeURIComponent(callback)}` });
     } else if (status === 'authenticated') {
-      // Fetch the raw JWT token for the desktop app (will auto-upgrade to partner)
+      // Fetch the partner device token (only issued to existing partners)
       fetch('/api/partner/desktop-token')
         .then(res => res.json())
         .then(data => {
+          if (data.error === 'not_a_partner') {
+            setError('This account is not a Fun Printing partner yet. Apply to become a partner at funprinting.store/partner, then sign in again.');
+            return;
+          }
           if (data.success) {
             // Redirect back to the local desktop app server
             const redirectUrl = new URL(callback);

@@ -1,62 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import connectDB from '@/lib/mongodb';
+import { resolvePartnerRequest } from '@/lib/authz';
 import Order from '@/models/Order';
-import Partner from '@/models/Partner';
+
+/**
+ * Fulfilment progression a partner may move an order through.
+ * Only forward moves are allowed. Targets are limited to statuses that exist in
+ * both Order.status and Order.orderStatus enums.
+ * ('out_for_delivery' is not in the Order enums, so it is not offered.)
+ */
+const STATUS_RANK: Record<string, number> = {
+  paid: 0,
+  processing: 1,
+  printing: 2,
+  printed: 3,
+  ready_for_pickup: 4,
+  dispatched: 5,
+  delivered: 6,
+  completed: 7,
+};
+const PARTNER_TARGET_STATUSES = new Set([
+  'printing',
+  'printed',
+  'ready_for_pickup',
+  'delivered',
+  'completed',
+]);
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
-    let userId;
-    const session = await getServerSession(authOptions);
-    
-    if (session && session.user) {
-      userId = (session.user as any).id;
-    } else {
-      // Phase 4: Fallback to Bearer token for Desktop/Mobile Apps
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-          const token = authHeader.split(' ')[1];
-          // Basic base64 decode for now (in production, use jsonwebtoken verify)
-          const base64Payload = token.split('.')[1];
-          const payload = Buffer.from(base64Payload, 'base64').toString('utf8');
-          const parsed = JSON.parse(payload);
-          userId = parsed.userId || parsed.id || parsed.sub || parsed.partnerId;
-        } catch (e) {
-          console.error("Token decode error:", e);
-        }
-      }
-    }
+    const resolved = await resolvePartnerRequest(request);
+    if (resolved instanceof NextResponse) return resolved;
+    const { partner } = resolved;
 
-    if (!userId) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
-
-    await connectDB();
-
-    // Verify the caller is a partner
-    const partner = await Partner.findOne({ userId: userId });
-    if (!partner) {
-      return NextResponse.json({ success: false, error: 'Partner profile not found' }, { status: 404 });
-    }
-
-    const { status } = await request.json();
-    if (!status) {
+    const body = await request.json().catch(() => null);
+    const status = body?.status;
+    if (typeof status !== 'string' || !status) {
       return NextResponse.json({ success: false, error: 'Missing status update' }, { status: 400 });
     }
+    if (!PARTNER_TARGET_STATUSES.has(status)) {
+      return NextResponse.json(
+        { success: false, error: `Status "${status}" cannot be set by a partner` },
+        { status: 400 }
+      );
+    }
 
-    const resolvedParams = await params;
-    
+    const { orderId } = await params;
+    const partnerIdStr = partner._id.toString();
+
     // Find order and ensure it belongs to this partner
-    const order = await Order.findOne({ 
-      orderId: resolvedParams.orderId,
+    const order = await Order.findOne({
+      orderId,
       $or: [
-        { partnerId: partner._id.toString() },
-        { 'deliveryOption.partnerId': partner._id.toString() }
+        { partnerId: partnerIdStr },
+        { 'deliveryOption.partnerId': partnerIdStr }
       ]
     });
 
@@ -64,7 +63,29 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Order not found or unauthorized' }, { status: 404 });
     }
 
-    // Update status (both legacy and new format)
+    if (order.paymentStatus !== 'completed') {
+      return NextResponse.json(
+        { success: false, error: 'Order is not paid' },
+        { status: 400 }
+      );
+    }
+
+    const currentRank = STATUS_RANK[order.status];
+    if (currentRank === undefined) {
+      // pending_payment, cancelled, refunded, or unknown: partners cannot change these
+      return NextResponse.json(
+        { success: false, error: `Order in status "${order.status}" cannot be updated` },
+        { status: 400 }
+      );
+    }
+    if (STATUS_RANK[status] <= currentRank) {
+      return NextResponse.json(
+        { success: false, error: `Cannot move order from "${order.status}" to "${status}"` },
+        { status: 400 }
+      );
+    }
+
+    // Only the fulfilment status fields change; payment fields are never touched here
     order.status = status;
     order.orderStatus = status;
     await order.save();

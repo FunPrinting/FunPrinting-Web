@@ -159,3 +159,59 @@ export function canAccessOrder(
   const ownerEmail = order.customerInfo?.email?.trim().toLowerCase();
   return Boolean(ownerEmail && ownerEmail === user.email.toLowerCase());
 }
+
+/**
+ * Resolves the Partner document for a partner API request.
+ *
+ * - `Authorization: Bearer <jwt>` (desktop/mobile apps): verified with requirePartnerToken.
+ *   The Partner is looked up by the token's partnerId and must belong to the token's
+ *   subject (User._id). Tokens issued before Phase 0 carried partnerId = User._id, so we
+ *   fall back to Partner.findOne({ userId: sub }) for those.
+ * - Otherwise the NextAuth session is used (web /partner/dashboard).
+ *
+ * Returns { partner, userId } or a 401/404 NextResponse. `partner` is null only when
+ * `allowMissing` is true and the caller has no Partner document yet.
+ */
+export async function resolvePartnerRequest(
+  request: Request,
+  { allowMissing = false }: { allowMissing?: boolean } = {}
+): Promise<
+  | { partner: any; userId: string }
+  | NextResponse
+> {
+  // Lazy imports keep this module light for routes that only need session helpers
+  const { default: connectDB } = await import('@/lib/mongodb');
+  const { default: Partner } = await import('@/models/Partner');
+
+  let userId: string;
+  let tokenPartnerId: string | null = null;
+
+  if (request.headers.get('authorization')) {
+    const claims = requirePartnerToken(request);
+    if (claims instanceof NextResponse) return claims;
+    userId = claims.userId;
+    tokenPartnerId = claims.partnerId;
+  } else {
+    const user = await getSessionUser();
+    if (!user || !user.id) return unauthorized('Authentication required');
+    userId = user.id;
+  }
+
+  await connectDB();
+
+  let partner = null;
+  if (tokenPartnerId && /^[0-9a-fA-F]{24}$/.test(tokenPartnerId)) {
+    partner = await Partner.findOne({ _id: tokenPartnerId, userId });
+  }
+  if (!partner) {
+    partner = await Partner.findOne({ userId });
+  }
+
+  if (!partner && !allowMissing) {
+    return NextResponse.json(
+      { success: false, error: 'Partner profile not found' },
+      { status: 404 }
+    );
+  }
+  return { partner, userId };
+}

@@ -1,55 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import connectDB from '@/lib/mongodb';
+import { resolvePartnerRequest } from '@/lib/authz';
 import Order from '@/models/Order';
-import Partner from '@/models/Partner';
 
 export async function GET(request: NextRequest) {
   try {
-    let userId;
-    const session = await getServerSession(authOptions);
-    
-    if (session && session.user) {
-      userId = (session.user as any).id;
-    } else {
-      // Allow fallback to Bearer token for Desktop/Mobile Apps
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-          const token = authHeader.split(' ')[1];
-          // Basic base64 decode for now (in production, use jsonwebtoken verify)
-          const base64Payload = token.split('.')[1];
-          const payload = Buffer.from(base64Payload, 'base64').toString('utf8');
-          const parsed = JSON.parse(payload);
-          userId = parsed.userId || parsed.id || parsed.sub || parsed.partnerId;
-        } catch (e) {
-          console.error("Token decode error:", e);
-        }
-      }
-    }
-
-    if (!userId) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
-
-    await connectDB();
-
-    // Verify the caller is a partner. Auto-heal missing profiles.
-    let partner = await Partner.findOne({ userId: userId });
-    if (!partner) {
-      console.log(`Auto-healing: Creating missing Partner profile for user ${userId} upon financials access.`);
-      const User = require('@/models/User').default || require('@/models/User');
-      const userDoc = await User.findById(userId);
-      partner = await Partner.create({
-        userId: userId,
-        businessName: userDoc?.name ? `${userDoc.name}'s Print Shop` : 'New Franchise Partner',
-        isActive: true,
-        isOnline: false,
-        servicesOffered: { printing: true, binding: false, cashOnDelivery: true },
-        earnings: { totalRevenue: 0, pendingPayout: 0 }
-      });
-    }
+    const resolved = await resolvePartnerRequest(request);
+    if (resolved instanceof NextResponse) return resolved;
+    const { partner } = resolved;
 
     // Get today's start and end date
     const startOfToday = new Date();
