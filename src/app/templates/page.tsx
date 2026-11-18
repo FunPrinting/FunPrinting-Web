@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { borderCss } from '@/lib/templateBorders';
 import { WarningIcon, DocumentIcon, RefreshIcon } from '@/components/SocialIcons';
 
 interface FormField {
@@ -192,23 +193,7 @@ export default function TemplatesPage() {
     }
     // Favorite: User's custom border
     if (template.isFavorite) {
-      const colorMap: Record<string, string> = {
-        blue: '#3b82f6',
-        green: '#10b981',
-        purple: '#9333ea',
-        gold: '#fbbf24',
-        red: '#ef4444',
-        orange: '#f97316',
-        pink: '#ec4899',
-        indigo: '#4f46e5',
-        teal: '#14b8a6',
-        gray: '#6b7280',
-      };
-      return {
-        borderWidth: templateBorderPreference.width,
-        borderStyle: templateBorderPreference.style,
-        borderColor: colorMap[templateBorderPreference.color] || templateBorderPreference.color,
-      };
+      return borderCss(templateBorderPreference);
     }
     // Default: no special border
     return {};

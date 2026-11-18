@@ -24,15 +24,13 @@ export async function GET(_request: NextRequest) {
       );
     }
 
-    // Check if profile is complete
-    // Profile is complete if user has phone number and default location
-    const isComplete = !!(user.phone && user.defaultLocationId);
+    // A profile is complete once we have a phone number to contact the customer on
+    const isComplete = !!user.phone;
 
     return NextResponse.json({
       success: true,
       isComplete,
       hasPhone: !!user.phone,
-      hasDefaultLocation: !!user.defaultLocationId,
       hasPassword: !!user.password,
       provider: user.provider,
     });
