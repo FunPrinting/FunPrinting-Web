@@ -7,6 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { getCurrentUser } from '@/lib/templateAuth';
 import User from '@/models/User';
 import { extractPlaceholders, generateFormSchema } from '@/lib/docxProcessor';
+import { fetchTrustedFile, isTrustedFileUrl } from '@/lib/documents/fileUrls';
+
+const TEMPLATE_MAX_BYTES = 20 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   try {
@@ -88,12 +91,8 @@ export async function POST(request: NextRequest) {
       
       try {
         // Download DOCX from pdfUrl
-        console.log('📥 Downloading DOCX from:', pdfUrl);
-        const docxResponse = await fetch(pdfUrl);
-        if (!docxResponse.ok) {
-          throw new Error(`Failed to download DOCX: ${docxResponse.status}`);
-        }
-        const docxBuffer = Buffer.from(await docxResponse.arrayBuffer());
+        // Only our own storage (the file was uploaded through /api/upload-raw-file)
+        const { buffer: docxBuffer } = await fetchTrustedFile(pdfUrl, { maxBytes: TEMPLATE_MAX_BYTES });
         console.log(`✅ DOCX downloaded: ${docxBuffer.length} bytes`);
 
         // PRIORITIZE placeholders from frontend (more accurate, handles split placeholders)
@@ -270,7 +269,8 @@ export async function POST(request: NextRequest) {
       name: templateName,
       description: description || 'Dynamic template',
       category: category || 'other',
-      pdfUrl: pdfUrl || '',
+      // Stored only when it is our own file (it is downloaded again later)
+      pdfUrl: isTrustedFileUrl(pdfUrl) ? pdfUrl : '',
       wordUrl: wordUrl,
       wordContent: wordContent, // Keep JSON structure for backward compatibility
       placeholders: finalPlaceholders || [],

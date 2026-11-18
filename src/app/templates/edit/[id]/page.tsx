@@ -79,9 +79,6 @@ export default function EditTemplatePage() {
           isPublic: t.isPublic || false,
         };
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7f1476ab-d49e-47d2-abaf-6f03c7628f34',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'edit/[id]/page.tsx:72',message:'fetchTemplate state initialization',data:{templateData:t,initialFormData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         
         setFormData(initialFormData);
       } else {
@@ -99,9 +96,6 @@ export default function EditTemplatePage() {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7f1476ab-d49e-47d2-abaf-6f03c7628f34',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'edit/[id]/page.tsx:92',message:'handleInputChange entry',data:{name,value,type,checked,currentFormData:formData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     setFormData(prev => {
       const newFormData = {
@@ -109,9 +103,6 @@ export default function EditTemplatePage() {
       [name]: type === 'checkbox' ? checked : type === 'number' ? parseFloat(value) || 0 : value
       };
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7f1476ab-d49e-47d2-abaf-6f03c7628f34',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'edit/[id]/page.tsx:96',message:'handleInputChange state update',data:{prevFormData:prev,newFormData,fieldName:name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       
       return newFormData;
     });
@@ -226,9 +217,6 @@ export default function EditTemplatePage() {
         return;
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7f1476ab-d49e-47d2-abaf-6f03c7628f34',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'edit/[id]/page.tsx:197',message:'handleSave before API call',data:{formData,requestBody:JSON.stringify(formData)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
 
       const response = await fetch(`/api/templates/${templateId}`, {
         method: 'PUT',
@@ -240,9 +228,6 @@ export default function EditTemplatePage() {
 
       const data = await response.json();
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7f1476ab-d49e-47d2-abaf-6f03c7628f34',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'edit/[id]/page.tsx:219',message:'handleSave API response',data:{responseStatus:response.status,responseData:data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
 
       if (data.success) {
         setSuccess('Template updated successfully!');

@@ -83,7 +83,7 @@ Rules for new code:
 | `/api/admin/partners/[id]` | PATCH | admin | Approve/deactivate (`isActive`), set the Route linked account | Phase 4 |
 
 ### Admin (all `requireAdmin` except where noted)
-`/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (GET public: template fill pages read it), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
+`/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (POST admin; GET public for the fill page, Word file URL for admins only), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
 The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer*`, `/api/printing/*`, `printerClient`, the printer monitor page) was removed in Phase 3: every order is printed by a partner shop.
 
 ### Error tracking
@@ -97,10 +97,10 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 `/api/auth/[...nextauth]` (NextAuth), `register`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`, `setup-password`, `send-otp` / `verify-otp` (rate-limited by email and IP), `check-admin` (session only). `/api/user/*` all use the session.
 
 ### Templates marketplace
-`/api/templates` (list), `create`, `public`, `my-templates`, `[id]`, `[id]/update-file`, `[id]/earnings`, `pay` + `pay/verify` (Phase 2 moves to Payment Links), `generate*`, `generation-status/[jobId]`, `preview*`, `download-filled`, `user-download`, `/api/save-template`. Several generation and preview routes are public; Phase 7 reviews them together with the document tools.
+`/api/templates` (list; Word file and creator email only for the user's own), `create`, `public` (no Word file), `my-templates`, `[id]` (Word file for owner/admin), `[id]/update-file`, `[id]/earnings`, `generate-fill-pdf` (sign-in; PDF in the background with `after()`), `generation-status/[jobId]` (owner only), `generate-custom`, `download-filled` (sign-in). See `docs/DOCUMENTS.md`.
 
-### Document tools (Phase 7 consolidates these; all public today)
-`convert-docx-to-html`, `convert-word-to-pdf`, `convert-pdf-to-word`, `edit-docx-template`, `extract-placeholders`, `extract-placeholders-range`, `extract-word-info`, `generate-document`, `generate-dynamic-form`, `generate-personalized-document`, `parse-docx-structure`, `replace-placeholders`, `document-proxy` (SSRF risk), `pdf/fetch`, `wopi/files/[id]`. Uploads: `upload-file`, `upload-raw-file`, `upload/verify`, `pdf/upload` (all `requireUser`).
+### Document tools
+`extract-placeholders` (sign-in), `generate-dynamic-form`, `parse-docx-structure` (page count preview, rate-limited). Uploads: `upload-file`, `upload-raw-file` (Word/PDF, 20 MB), `upload/verify` (all `requireUser`). Conversion and file downloads go through `src/lib/documents/` (`docs/DOCUMENTS.md`).
 
 ## Library modules (`src/lib`)
 
@@ -114,7 +114,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 | Pricing settings and payouts | `pricing` (Pricing model access), `razorpayPayouts` (creator payouts via RazorpayX), `orderUtils`, `orderStatePersistence` | |
 | Fulfilment | `jobs/service` (create, accept, claim, report, sync), `jobs/deadlines` (customer notice, 24 h refund, cancel), `jobs/assign`, `jobs/scheduler` (QStash), `jobs/emails`, `jobs/deliveryNumber`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | |
 | Email | `mailer` (one transport), `notificationService`, `invoiceEmail`, `invoiceGenerator`, `dispatch-email`, `adminNotifications` | |
-| Documents | `docxProcessor`, `cloudmersive`, `libreoffice`, `freeConverters`, `renderPdfService`, `pdfGenerator`, `fileTypeDetection` | Phase 7: one converter interface |
+| Documents | `documents/convert` (one converter interface), `documents/fileUrls` (the only way to download stored files), `documents/templates`, `docxProcessor`; providers `cloudmersive`, `freeConverters`, `libreoffice`, `renderPdfService`; `fileTypeDetection` | |
 | Storage | `storage` (provider switch), `storage/cloudinary`, `storage/oracle`, `cloudinary` | Phase 7: merge the two Cloudinary modules |
 | Misc | `seo`, `phoneValidation`, `adminUtils` | |
 

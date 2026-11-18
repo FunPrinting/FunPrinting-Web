@@ -1,74 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as mammoth from 'mammoth';
+import { requireUser } from '@/lib/authz';
+import { decodeBase64File, fetchTrustedFile, FileFetchError } from '@/lib/documents/fileUrls';
+import { TEMPLATE_MAX_BYTES } from '@/lib/documents/templates';
 
+export const runtime = 'nodejs';
+
+const PLACEHOLDER = /\{\{([A-Za-z][A-Za-z0-9_\s]*)\}\}/g;
+
+/**
+ * POST /api/extract-placeholders { fileUrl } | { docxBuffer (base64) }
+ * Lists the {{placeholders}} in a Word file the user uploaded (template creation).
+ */
 export async function POST(request: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
   try {
-    const { docxBuffer, fileUrl } = await request.json();
-
+    const { docxBuffer, fileUrl } = await request.json().catch(() => ({}));
     if (!docxBuffer && !fileUrl) {
-      return NextResponse.json(
-        { error: 'Document buffer or file URL is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Document buffer or file URL is required' }, { status: 400 });
     }
-
-    let buffer: Buffer;
-
-    if (fileUrl) {
-      // Fetch file from URL
-      console.log('🔄 Fetching file from URL:', fileUrl);
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error('Failed to fetch file from URL');
-      }
-      buffer = Buffer.from(await response.arrayBuffer());
-      console.log('📄 Fetched buffer size:', buffer.length, 'bytes');
-    } else {
-      // Convert base64 to buffer
-      buffer = Buffer.from(docxBuffer, 'base64');
-    }
-
-    // Extract text from DOCX using mammoth
-    const result = await mammoth.extractRawText({ buffer });
-    const text = result.value;
-
-    // Find placeholders using regex pattern {{placeholder}} - allow spaces in placeholder names
-    const placeholderRegex = /\{\{([A-Za-z][A-Za-z0-9_\s]*)\}\}/g;
-    const matches = text.match(placeholderRegex) || [];
-    console.log('🔍 Found placeholder matches:', matches);
-    
-    const placeholders = [...new Set(
-      matches
-        .map(match => {
-          const matchResult = match.match(/\{\{([A-Za-z][A-Za-z0-9_\s]*)\}\}/);
-          return matchResult ? matchResult[1].trim() : '';
-        })
-        .filter(placeholder => placeholder.length > 0)
-    )];
-    
-    console.log('🔍 Extracted placeholders:', placeholders);
-
-    // Sort placeholders for better UX
-    const sortedPlaceholders = placeholders.sort();
-
-    console.log('📝 Extracted placeholders:', sortedPlaceholders);
-
+    const buffer = fileUrl ? (await fetchTrustedFile(fileUrl, { maxBytes: TEMPLATE_MAX_BYTES })).buffer : decodeBase64File(docxBuffer, TEMPLATE_MAX_BYTES);
+    const { value: text } = await mammoth.extractRawText({ buffer });
+    const placeholders = [...new Set([...text.matchAll(PLACEHOLDER)].map((m) => m[1].trim()).filter(Boolean))].sort();
     return NextResponse.json({
       success: true,
-      placeholders: sortedPlaceholders,
-      text: text.substring(0, 500) + (text.length > 500 ? '...' : ''), // Preview of extracted text
-      count: sortedPlaceholders.length
+      placeholders,
+      text: text.substring(0, 500) + (text.length > 500 ? '...' : ''),
+      count: placeholders.length,
     });
-
   } catch (error) {
-    console.error('Error extracting placeholders:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to extract placeholders from document',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    if (error instanceof FileFetchError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    return NextResponse.json({ success: false, error: 'Failed to extract placeholders from document' }, { status: 422 });
   }
 }

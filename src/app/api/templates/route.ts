@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest) {
 
     // Get templates matching the query
     const templates = await DynamicTemplate.find(query)
-      .select('id name description category placeholders pdfUrl wordUrl formSchema isPublic createdByType createdByEmail createdByName createdAt updatedAt')
+      .select('id name description category placeholders pdfUrl wordUrl formSchema isPublic createdByType createdByEmail createdByUserId createdByName createdAt updatedAt')
       .sort({ createdAt: -1 });
 
     // Get purchase counts for all templates
@@ -101,6 +101,9 @@ export async function GET(_request: NextRequest) {
     }
 
     // Generate form schemas for each template and add purchase count, rank, and favorite status
+    // The Word file and creator email are only sent for the user's own templates
+    const isMine = (t: { createdByUserId?: unknown; createdByEmail?: string }) =>
+      Boolean((userId && t.createdByUserId && String(t.createdByUserId) === userId) || (userEmail && t.createdByEmail?.toLowerCase() === userEmail));
     const templatesWithSchemas = templates.map(template => ({
       id: template.id,
       _id: template._id.toString(),
@@ -110,10 +113,10 @@ export async function GET(_request: NextRequest) {
       placeholders: template.placeholders,
       formSchema: template.formSchema || generateFormSchema(template.placeholders),
       pdfUrl: template.pdfUrl,
-      wordUrl: template.wordUrl,
+      ...(isMine(template) ? { wordUrl: template.wordUrl, createdByEmail: template.createdByEmail, createdByUserId: String(template.createdByUserId ?? '') } : {}),
+      isMine: isMine(template),
       isPublic: template.isPublic,
       createdByType: template.createdByType,
-      createdByEmail: template.createdByEmail,
       createdByName: template.createdByName,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,

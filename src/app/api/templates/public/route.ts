@@ -9,7 +9,8 @@ export async function GET(_request: NextRequest) {
 
     // Fetch all public templates
     const templates = await DynamicTemplate.find({ isPublic: true })
-      .select('id name description category placeholders pdfUrl wordUrl formSchema createdByType createdByEmail createdByName isPaid price allowFreeDownload createdAt updatedAt')
+      // No Word file (the paid product) or creator email in the public list
+      .select('id name description category placeholders pdfUrl formSchema createdByType createdByName isPaid price allowFreeDownload createdAt updatedAt')
       .sort({ createdAt: -1 });
 
     // Generate form schemas for each template
@@ -22,9 +23,7 @@ export async function GET(_request: NextRequest) {
       placeholders: template.placeholders,
       formSchema: template.formSchema || generateFormSchema(template.placeholders),
       pdfUrl: template.pdfUrl,
-      wordUrl: template.wordUrl,
       createdByType: template.createdByType,
-      createdByEmail: template.createdByEmail,
       createdByName: template.createdByName,
       isPaid: template.isPaid || false,
       price: template.price || 0,

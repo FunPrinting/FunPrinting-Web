@@ -27,24 +27,13 @@ export async function countPdfPages(buffer: Buffer | Uint8Array): Promise<number
 }
 
 async function docxToPdf(buffer: Buffer): Promise<Buffer | null> {
-  const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-  if (process.env.CLOUDMERSIVE_API_KEY) {
-    try {
-      const { convertDocxToPdf } = await import('@/lib/cloudmersive');
-      return await convertDocxToPdf(buffer);
-    } catch (error) {
-      console.warn('Page count: Cloudmersive DOCX→PDF failed:', error instanceof Error ? error.message : error);
-    }
+  try {
+    // Fast services only: a page count isn't worth the slow Render fallback
+    const { docxToPdf: convert } = await import('@/lib/documents/convert');
+    return (await convert(buffer, { providers: ['cloudmersive', 'libreoffice'] })).pdf;
+  } catch {
+    return null; // estimate from the text instead
   }
-  if (!serverless) {
-    try {
-      const { convertDocxToPdf, isLibreOfficeAvailable } = await import('@/lib/libreoffice');
-      if (await isLibreOfficeAvailable()) return await convertDocxToPdf(buffer);
-    } catch {
-      // LibreOffice not installed locally
-    }
-  }
-  return null;
 }
 
 async function estimateDocxPages(buffer: Buffer): Promise<number> {

@@ -15,15 +15,11 @@
     "setup-pricing": "node scripts/setup-pricing.js",
     "setup-sample-templates": "node scripts/setup-sample-templates.js",
     "setup-cloudmersive": "node scripts/setup-cloudmersive.js",
-    "test-https": "node scripts/test-https-api.js",
-    "test-generate-document": "node scripts/test-generate-document.js",
     "test-cloudmersive-simple": "node scripts/test-cloudmersive-simple.js",
     "test-libreoffice": "node scripts/test-libreoffice.js",
-    "test-api-endpoint": "node scripts/test-api-endpoint.js",
     "fix-filetypes": "ts-node scripts/fix-filetype-in-orders.ts"
   },
   "dependencies": {
-    "@thasmorato/docx-parser": "^1.4.0",
     "@upstash/qstash": "^2.12.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.4",
@@ -33,7 +29,6 @@
     "docx-templates": "^4.14.1",
     "docxtemplater": "^3.66.2",
     "dotenv": "^17.2.1",
-    "form-data": "^4.0.0",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
     "mammoth": "^1.12.0",

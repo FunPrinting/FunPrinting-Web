@@ -1,68 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUser } from '@/lib/authz';
 import { fillDocxTemplate } from '@/lib/docxProcessor';
 import { uploadFile } from '@/lib/storage';
+import { withRequestLogger } from '@/lib/logger';
+import { decodeBase64File, fetchTrustedFile, FileFetchError } from '@/lib/documents/fileUrls';
+import { TEMPLATE_MAX_BYTES } from '@/lib/documents/templates';
 
+export const runtime = 'nodejs';
+
+/**
+ * POST /api/templates/download-filled { fileUrl | docxBuffer, formData }
+ * Fills a Word file the user is building a template from (preview download).
+ */
 export async function POST(request: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const log = withRequestLogger(request, { userId: user.id });
   try {
-    const body = await request.json();
-    const { docxBuffer, fileUrl, formData, placeholders } = body;
-
-    console.log('🔄 Download API - Generating filled document...');
-    console.log('📄 DocxBuffer length:', docxBuffer?.length || 'null');
-    console.log('📄 File URL:', fileUrl || 'null');
-    console.log('📝 Form data:', formData);
-    console.log('📝 Placeholders:', placeholders);
-
+    const { docxBuffer, fileUrl, formData } = await request.json().catch(() => ({}));
     if (!docxBuffer && !fileUrl) {
-      return NextResponse.json({ error: 'No document buffer or file URL provided' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'No document buffer or file URL provided' }, { status: 400 });
     }
-
-    if (!formData || Object.keys(formData).length === 0) {
-      return NextResponse.json({ error: 'No form data provided' }, { status: 400 });
+    if (!formData || typeof formData !== 'object' || Object.keys(formData).length === 0) {
+      return NextResponse.json({ success: false, error: 'No form data provided' }, { status: 400 });
     }
-
-    let buffer: Buffer;
-
-    if (fileUrl) {
-      // Fetch file from URL
-      console.log('🔄 Fetching file from URL:', fileUrl);
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error('Failed to fetch file from URL');
-      }
-      buffer = Buffer.from(await response.arrayBuffer());
-      console.log('📄 Fetched buffer size:', buffer.length, 'bytes');
-    } else {
-      // Convert base64 to buffer
-      buffer = Buffer.from(docxBuffer, 'base64');
-      console.log('📄 Converted buffer size:', buffer.length, 'bytes');
-    }
-
-    // Fill the DOCX template
-    console.log('🔄 Filling DOCX template with data:', formData);
-    const filledBuffer = await fillDocxTemplate(buffer, formData);
-    console.log('✅ DOCX template filled successfully, size:', filledBuffer.length, 'bytes');
-
-    // Upload to storage
-    const storageProvider = process.env.STORAGE_PROVIDER || 'cloudinary';
-    console.log(`📤 Uploading filled document to ${storageProvider}...`);
-    const uploadResult = await uploadFile(filledBuffer, 'filled-documents', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    console.log(`✅ ${storageProvider} upload successful:`, uploadResult);
-
-    return NextResponse.json({
-      success: true,
-      downloadUrl: uploadResult,
-      message: 'Document generated successfully'
-    });
-
-  } catch (error: any) {
-    console.error('❌ Error in download API:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to generate document', 
-        details: error.message 
-      }, 
-      { status: 500 }
-    );
+    const buffer = fileUrl ? (await fetchTrustedFile(fileUrl, { maxBytes: TEMPLATE_MAX_BYTES })).buffer : decodeBase64File(docxBuffer, TEMPLATE_MAX_BYTES);
+    const filled = await fillDocxTemplate(buffer, formData);
+    const downloadUrl = await uploadFile(filled, 'filled-documents', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    return NextResponse.json({ success: true, downloadUrl, message: 'Document generated successfully' });
+  } catch (error) {
+    if (error instanceof FileFetchError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    log.error({ err: error }, 'filled download failed');
+    return NextResponse.json({ success: false, error: 'Failed to generate document' }, { status: 500 });
   }
 }

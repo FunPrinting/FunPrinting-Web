@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/authz';
+import { getSessionUser, isAdminSession, requireAdmin } from '@/lib/authz';
+import { fetchTrustedFile, isTrustedFileUrl } from '@/lib/documents/fileUrls';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
 import { extractPlaceholders, generateFormSchema } from '@/lib/docxProcessor';
@@ -30,7 +31,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Saving template: ${name}`);
+    // Both files must be in our storage: they are downloaded again when the template is used
+    if (!isTrustedFileUrl(pdfUrl) || !isTrustedFileUrl(docxUrl)) {
+      return NextResponse.json({ success: false, error: 'pdfUrl and docxUrl must be files uploaded to FunPrinting' }, { status: 400 });
+    }
 
     // Prioritize manually extracted placeholders from frontend (more accurate)
     let placeholders: string[] = [];
@@ -67,12 +71,7 @@ export async function POST(request: NextRequest) {
       console.log('Manual placeholders not provided, extracting from DOCX...');
       try {
         // Fetch DOCX content from Cloudinary
-        const response = await fetch(docxUrl);
-        if (!response.ok) {
-          throw new Error('Failed to fetch DOCX from Cloudinary');
-        }
-        
-        const docxBuffer = Buffer.from(await response.arrayBuffer());
+        const { buffer: docxBuffer } = await fetchTrustedFile(docxUrl, { maxBytes: 20 * 1024 * 1024 });
         
         // Extract placeholders from the DOCX buffer
         placeholders = await extractPlaceholders(docxBuffer);
@@ -192,33 +191,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // The Word file is what customers pay for on paid templates; only admins get its URL
+    const viewer = await getSessionUser().catch(() => null);
+    const isAdmin = Boolean(viewer && isAdminSession(viewer));
+
     // Use stored formSchema from database if available (preferred)
     // Only regenerate if formSchema is missing or empty
     let formSchema: any[] = [];
-    console.log(`[RETRIEVE] Template found: ${template.id}`);
-    console.log(`[RETRIEVE] Stored placeholders:`, template.placeholders);
-    console.log(`[RETRIEVE] Stored formSchema exists:`, !!template.formSchema);
-    console.log(`[RETRIEVE] Stored formSchema is array:`, Array.isArray(template.formSchema));
-    console.log(`[RETRIEVE] Stored formSchema length:`, template.formSchema?.length || 0);
     
     if (template.formSchema && Array.isArray(template.formSchema) && template.formSchema.length > 0) {
-      console.log('[RETRIEVE] Using stored formSchema from database');
       formSchema = template.formSchema;
-      console.log(`[RETRIEVE] Retrieved formSchema from DB: ${formSchema.length} fields`);
-      console.log(`[RETRIEVE] FormSchema keys:`, formSchema.map((f: any) => f.key));
-      console.log(`[RETRIEVE] FormSchema fields:`, formSchema.map((f: any) => ({ key: f.key, label: f.label })));
     } else {
       // Fallback: Generate form schema from placeholders if stored schema not available
-      console.log('[RETRIEVE] Generating formSchema from placeholders (stored schema not available)');
       if (template.placeholders && Array.isArray(template.placeholders) && template.placeholders.length > 0) {
         const schemaObject = generateFormSchema(template.placeholders);
-        console.log(`[RETRIEVE] Generated formSchema object keys:`, Object.keys(schemaObject));
         formSchema = Object.entries(schemaObject).map(([key, value]) => ({
           key,
           ...value,
           defaultPlaceholder: value.defaultPlaceholder || value.placeholder || `Enter ${key}`
         }));
-        console.log(`[RETRIEVE] Generated formSchema array (${formSchema.length} fields):`, formSchema.map(f => ({ key: f.key, label: f.label })));
       }
     }
 
@@ -231,7 +222,7 @@ export async function GET(request: NextRequest) {
           description: template.description,
           category: template.category,
           pdfUrl: template.pdfUrl,
-          wordUrl: template.wordUrl,
+          ...(isAdmin ? { wordUrl: template.wordUrl } : {}),
           placeholders: template.placeholders,
           formSchema,
           isPaid: template.isPaid,

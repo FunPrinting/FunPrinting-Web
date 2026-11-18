@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/authz';
-import { convertPdfToDocx } from '@/lib/cloudmersive';
+import { pdfToDocx } from '@/lib/documents/convert';
 import { uploadFile } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     // Convert PDF to DOCX using Cloudmersive
     console.log('Converting PDF to DOCX...');
-    const docxBuffer = await convertPdfToDocx(pdfBuffer);
+    const { docx: docxBuffer } = await pdfToDocx(pdfBuffer);
 
     // Upload original PDF to storage
     const storageProvider = process.env.STORAGE_PROVIDER || 'cloudinary';
