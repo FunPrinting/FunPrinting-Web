@@ -38,6 +38,8 @@ interface Order {
     type: 'pickup' | 'delivery';
     pickupLocation?: { name: string; address: string };
     deliveryCharge?: number;
+    method?: 'courier' | 'shop';
+    handover?: { code?: string; verifiedAt?: string };
     address?: string;
     city?: string;
     pinCode?: string;
@@ -118,6 +120,13 @@ function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: ()
         </div>
 
         <OrderProgress status={order.status} delivery={order.deliveryOption?.type === 'delivery'} />
+
+        {delivery?.method === 'shop' && delivery.handover?.code && order.paymentStatus === 'completed' && !delivery.handover.verifiedAt && !['cancelled', 'refunded'].includes(order.status || '') ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-accent/40 px-3 py-2 text-sm">
+            <span>The shop delivers this order. Give the delivery person this code:</span>
+            <span className="font-mono text-xl font-semibold tracking-[0.3em]" aria-label={`Delivery code ${delivery.handover.code.split('').join(' ')}`}>{delivery.handover.code}</span>
+          </div>
+        ) : null}
 
         {order.shiprocket?.awbCode && order.paymentStatus === 'completed' ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm">

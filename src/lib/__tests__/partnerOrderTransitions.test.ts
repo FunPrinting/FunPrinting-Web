@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPartnerTarget, checkPartnerTransition, fulfilmentOf } from '@/lib/partnerOrderTransitions';
+import { checkPartnerTarget, checkPartnerTransition, fulfilmentOf, nextPartnerStatuses } from '@/lib/partnerOrderTransitions';
 
 const paid = (status: string, deliveryOption?: Record<string, unknown>) => ({ status, paymentStatus: 'completed', deliveryOption });
 const shop = (status: string, verified = false) => paid(status, { type: 'delivery', method: 'shop', handover: verified ? { verifiedAt: new Date() } : {} });
@@ -62,5 +62,16 @@ describe('after printing, by how the order reaches the customer', () => {
     for (const target of ['ready_for_pickup', 'dispatched', 'delivered', 'completed']) {
       expect(checkPartnerTransition(courier('printed'), target).ok).toBe(false);
     }
+  });
+});
+
+describe('nextPartnerStatuses', () => {
+  it('offers the next step for each kind of order', () => {
+    expect(nextPartnerStatuses(paid('paid'))).toEqual(['printing', 'printed']);
+    expect(nextPartnerStatuses(paid('printed'))).toEqual(['ready_for_pickup']);
+    expect(nextPartnerStatuses(paid('ready_for_pickup'))).toEqual(['completed']);
+    expect(nextPartnerStatuses(shop('printed'))).toEqual(['dispatched']);
+    expect(nextPartnerStatuses(shop('dispatched'))).toEqual(['delivered']);
+    expect(nextPartnerStatuses(courier('printed'))).toEqual([]);
   });
 });

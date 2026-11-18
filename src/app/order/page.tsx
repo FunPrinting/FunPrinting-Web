@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import InlinePhoneModal from '@/components/InlinePhoneModal';
+import { DeliveryChooser, type DeliverySpeedChoice } from '@/components/order/DeliveryChooser';
+import type { ShopDeliverySummary } from '@/components/PartnerMapSelector';
 import { saveOrderState, restoreOrderState, clearOrderState } from '@/lib/orderStatePersistence';
 import { DocumentIcon, WarningIcon, InfoIcon, FolderIcon, CheckIcon, TruckIcon, BuildingIcon, LockIcon, ClockIcon, UploadIcon, RefreshIcon, MoneyIcon } from '@/components/SocialIcons';
 import toast from 'react-hot-toast';
@@ -488,7 +490,7 @@ function OrderPageContent() {
     const d = new Date(); d.setDate(d.getDate() + 5);
     return d.toISOString().split('T')[0];
   });
-  const [deliverySpeed, setDeliverySpeed] = useState<'standard' | 'express' | 'sameday'>('standard');
+  const [deliverySpeed, setDeliverySpeed] = useState<DeliverySpeedChoice>('standard');
   const [pageCount, setPageCount] = useState(1);
   const [filePageCounts, setFilePageCounts] = useState<number[]>([]); // Track page count for each file
   const [pdfUrls, setPdfUrls] = useState<string[]>([]);
@@ -504,15 +506,10 @@ function OrderPageContent() {
   });
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption>({ type: 'pickup' });
   const [partnerCalculatedPrice, setPartnerCalculatedPrice] = useState<number | null>(null);
-  const [showMapModal, setShowMapModal] = useState(false);
-  const [isPincodeLookup, setIsPincodeLookup] = useState(false);
-  const [pincodeError, setPincodeError] = useState<string>('');
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-  const [isFetchingRate, setIsFetchingRate] = useState(false);
-  const [deliveryRateInfo, setDeliveryRateInfo] = useState<{
-    charge: number; estimatedDays: number; courierName: string; weight: number;
-    tiers?: Array<{ id: string; label: string; description: string; emoji: string; deliveryCharge: number; estimatedDays: number; courierName: string }>;
-  } | null>(null);
+  // Chosen shop's delivery offer (from the shop list) and the fee of the chosen delivery option
+  const [shopDelivery, setShopDelivery] = useState<ShopDeliverySummary | undefined>(undefined);
+  const [shopName, setShopName] = useState<string | undefined>(undefined);
+  const [deliveryCharge, setDeliveryCharge] = useState<number | null>(null);
 
   // Calculate package weight from page count and paper size
   const calculatePackageWeight = (): number => {
@@ -525,55 +522,6 @@ function OrderPageContent() {
     const totalGrams = (totalPages * perSheetGrams) + 10;
     return Math.max(0.1, parseFloat((totalGrams / 1000).toFixed(2)));
   };
-
-  // Get the delivery charge for the selected speed tier
-  const getSelectedTierCharge = (): number => {
-    if (!deliveryRateInfo?.tiers) return 0;
-    const tier = deliveryRateInfo.tiers.find((t: { id: string }) => t.id === deliverySpeed);
-    return tier?.deliveryCharge || deliveryRateInfo.charge || 0;
-  };
-
-  // Fetch delivery rate tiers from API
-  const fetchDeliveryRate = async (pincode: string) => {
-    if (pincode.length !== 6 || selectedFiles.length === 0) return;
-    setIsFetchingRate(true);
-    try {
-      const weight = calculatePackageWeight();
-      const res = await fetch(`/api/delivery/rate?delivery_pincode=${pincode}&weight=${weight}`);
-      const data = await res.json();
-      if (data.success) {
-        setDeliveryRateInfo({
-          charge: data.deliveryCharge,
-          estimatedDays: data.estimatedDays,
-          courierName: data.courierName,
-          weight: data.weight,
-          tiers: data.tiers || [],
-        });
-        // Set delivery charge based on currently selected speed
-        const selectedTier = (data.tiers || []).find((t: any) => t.id === deliverySpeed);
-        const charge = selectedTier?.deliveryCharge || data.deliveryCharge;
-        setDeliveryOption((prev: DeliveryOption) => ({ ...prev, deliveryCharge: charge }));
-      }
-    } catch {
-      // Silently fail
-    } finally {
-      setIsFetchingRate(false);
-    }
-  };
-
-  // Auto-fetch delivery rate when pincode or files change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (
-      deliveryOption.type === 'delivery' &&
-      deliveryOption.pinCode &&
-      deliveryOption.pinCode.length === 6 &&
-      selectedFiles.length > 0
-    ) {
-      fetchDeliveryRate(deliveryOption.pinCode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deliveryOption.pinCode, deliveryOption.type, selectedFiles.length, printingOptions.pageSize, printingOptions.copies]);
 
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
   const [selectedPickupLocation, setSelectedPickupLocation] = useState<PickupLocation | null>(null);
@@ -884,6 +832,8 @@ function OrderPageContent() {
   // General state
   const [isLoading, setIsLoading] = useState(false);
   const [amount, setAmount] = useState(0);
+  // Shown estimate; checkout recomputes everything on the server
+  const subtotalWithDelivery = amount + (deliveryOption.type === 'delivery' ? deliveryCharge ?? 0 : 0);
   const [pricingData, setPricingData] = useState<any>(null);
   const [pricingLoading, setPricingLoading] = useState(true);
 
@@ -1329,12 +1279,14 @@ function OrderPageContent() {
     }
 
     // Check location info based on delivery type
-    if (deliveryOption.type === 'pickup') {
-      if (!selectedPickupLocation) {
-        missingFields.push('pickupLocation');
-        toast.error('Please select a pickup location');
-      }
+    if (!deliveryOption.partnerId) {
+      missingFields.push('partnerId');
+      toast.error('Please choose a print shop');
     } else if (deliveryOption.type === 'delivery') {
+      if (deliveryCharge === null) {
+        missingFields.push('deliveryMethod');
+        toast.error('Please choose how the order should be delivered');
+      }
       if (!deliveryOption.recipientName) {
         missingFields.push('recipientName');
         toast.error('Please fill in the recipient name');
@@ -1684,7 +1636,7 @@ function OrderPageContent() {
           idempotencyKey: checkoutKeyRef.current,
           customerInfo,
           files,
-          delivery: { ...deliveryOption, speed: deliveryOption.type === 'delivery' ? deliverySpeed : undefined, pickupLocation: undefined, deliveryCharge: undefined },
+          delivery: { ...deliveryOption, speed: deliveryOption.type === 'delivery' ? deliverySpeed : undefined, pickupLocation: undefined, pickupLocationId: undefined, deliveryCharge: undefined, distance: undefined },
           expectedDate,
         }),
       });
@@ -3141,7 +3093,7 @@ function OrderPageContent() {
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                           <span className="text-xl font-bold text-gray-800">Total:</span>
-                          <span className="text-2xl font-bold text-gray-800">₹{(amount * 1.03).toFixed(2)}</span>
+                          <span className="text-2xl font-bold text-gray-800">₹{(subtotalWithDelivery * 1.03).toFixed(2)}</span>
                         </div>
                       </div>
                     </div>
@@ -3224,11 +3176,31 @@ function OrderPageContent() {
                               };
                             })
                           ]}
-                          onPartnerSelected={(id, dpName, price) => {
-                            setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName }));
+                          onPartnerSelected={(id, dpName, price, delivery, name) => {
+                            const delivers = Boolean(delivery?.courier || delivery?.self);
+                            setDeliveryOption(prev => ({ ...prev, partnerId: id, pickupLocationId: undefined, partnerDeliveryPoint: dpName, type: delivers ? prev.type : 'pickup' }));
+                            setShopDelivery(delivery);
+                            setShopName(name);
+                            setDeliveryCharge(delivers && deliveryOption.type === 'delivery' ? null : 0);
                             setPartnerCalculatedPrice(price || null);
                           }}
                           selectedPartnerId={deliveryOption.partnerId}
+                        />
+                      </div>
+                      <div className="border-t pt-6">
+                        <h4 className="mb-4 text-lg font-semibold">Pickup or delivery</h4>
+                        <DeliveryChooser
+                          partnerId={deliveryOption.partnerId}
+                          shop={shopDelivery}
+                          shopName={shopName}
+                          weightKg={calculatePackageWeight()}
+                          value={deliveryOption}
+                          speed={deliverySpeed}
+                          onChange={(next, nextSpeed, charge) => {
+                            setDeliveryOption(prev => ({ ...prev, ...next }));
+                            setDeliverySpeed(nextSpeed);
+                            setDeliveryCharge(next.type === 'pickup' ? 0 : charge);
+                          }}
                         />
                       </div>
                     </div>
@@ -3277,42 +3249,27 @@ function OrderPageContent() {
                         {deliveryOption.type === 'pickup' ? (
                           <>
                             <BuildingIcon size={14} className="w-3.5 h-3.5" />
-                            Pickup (Free)
+                            Pickup (free)
                           </>
                         ) : (
                           <>
                             <TruckIcon size={14} className="w-3.5 h-3.5" />
-                            {isFetchingRate ? (
-                              <span className="flex items-center gap-1">
-                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-500 border-t-transparent"></div>
-                                Calculating...
-                              </span>
-                            ) : deliveryRateInfo ? (
-                              <span>₹{deliveryRateInfo.charge} ({deliveryRateInfo.estimatedDays}d)</span>
-                            ) : (
-                              <span>Enter PIN for rate</span>
-                            )}
+                            {deliveryCharge === null ? 'Choose an option' : `₹${deliveryCharge}`}
                           </>
                         )}
                       </span>
                     </div>
-                    {deliveryOption.type === 'delivery' && deliveryRateInfo && (
-                      <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>📦 {(deliveryRateInfo.weight * 1000).toFixed(0)}g via {deliveryRateInfo.courierName}</span>
-                        <span>~{deliveryRateInfo.estimatedDays} days</span>
-                      </div>
-                    )}
                   </div>
 
                   {/* Total Amount */}
                   <div className="border-t pt-4 mb-6 space-y-2">
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-600">Subtotal:</span>
-                      <span className="font-medium">₹{amount.toFixed(2)}</span>
+                      <span className="font-medium">₹{subtotalWithDelivery.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-gray-500">Processing fee (3%)</span>
-                      <span className="text-gray-500">₹{(amount * 0.03).toFixed(2)}</span>
+                      <span className="text-gray-500">₹{(subtotalWithDelivery * 0.03).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                       <span className="text-lg font-semibold text-gray-800">Total:</span>

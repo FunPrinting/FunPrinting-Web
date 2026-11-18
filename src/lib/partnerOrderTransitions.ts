@@ -90,5 +90,27 @@ export function checkPartnerTransition(order: TransitionOrder, target: string): 
   return { ok: true, needsHandoverCode };
 }
 
+/** The moves to offer a shop for this order: the next step only (same rules as checkPartnerTransition). */
+export function nextPartnerStatuses(order: TransitionOrder): string[] {
+  const rank = STATUS_RANK[order.status ?? ''] ?? -1;
+  const steps: Record<Fulfilment, string[]> = {
+    pickup: ['ready_for_pickup', 'completed'],
+    shop: ['dispatched', 'delivered'],
+    courier: [],
+  };
+  // Before printing: printing / printed. After: the one next step for this kind of order.
+  const candidates = rank < STATUS_RANK.printed ? ['printing', 'printed'] : steps[fulfilmentOf(order)].filter((t) => STATUS_RANK[t] > rank).slice(0, 1);
+  return candidates.filter((t) => checkPartnerTransition(order, t).ok);
+}
+
+export const PARTNER_STATUS_LABEL: Readonly<Record<string, string>> = {
+  printing: 'Printing',
+  printed: 'Printed',
+  ready_for_pickup: 'Ready for pickup',
+  dispatched: 'Out for delivery',
+  delivered: 'Delivered',
+  completed: 'Collected',
+};
+
 /** Wrong codes allowed before the shop has to contact support. */
 export const MAX_HANDOVER_ATTEMPTS = 5;

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Wallet, X } from 'lucide-react';
+import { Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, Wallet, X } from 'lucide-react';
 import PartnerDevices from '@/components/partner/PartnerDevices';
 import { statusInfo } from '@/lib/orderStatus';
+import { fulfilmentOf, nextPartnerStatuses, PARTNER_STATUS_LABEL } from '@/lib/partnerOrderTransitions';
+import { orderPartnerShare } from '@/lib/payments/money';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -31,17 +33,6 @@ const RELEASES = {
   desktopAll: 'https://github.com/FunPrinting/partner-desktop/releases/latest',
 };
 
-/** Forward moves a shop may make (server: src/lib/partnerOrderTransitions.ts). */
-const NEXT: Record<string, string[]> = {
-  paid: ['printing', 'printed'],
-  processing: ['printing', 'printed'],
-  printing: ['printed'],
-  printed: ['ready_for_pickup', 'delivered', 'completed'],
-  ready_for_pickup: ['delivered', 'completed'],
-  dispatched: ['delivered', 'completed'],
-  delivered: ['completed'],
-};
-const LABEL: Record<string, string> = { printing: 'Printing', printed: 'Printed', ready_for_pickup: 'Ready for pickup', delivered: 'Delivered', completed: 'Completed' };
 const TONE = { neutral: 'bg-muted text-muted-foreground', primary: 'bg-accent text-accent-foreground', success: 'bg-success/10 text-success', warning: 'bg-warning/10 text-warning', danger: 'bg-destructive/10 text-destructive' };
 
 const rupees = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -152,6 +143,9 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
+  const [handover, setHandover] = useState<PartnerOrder | null>(null);
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
   const toAccept = orders.filter((o) => o.job?.status === 'pending_acceptance');
   const shown = filter === 'all' ? orders : orders.filter((o) => !['completed', 'delivered', 'cancelled', 'refunded', 'pending_payment'].includes(o.status));
 
@@ -169,13 +163,39 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
     setOrders(orders.map((o) => (o.orderId === order.orderId ? { ...o, status: action === 'reject' ? 'cancelled' : o.status, job: { ...o.job, status: action === 'accept' ? 'queued' : 'cancelled' } } : o)));
   };
 
-  const move = async (order: PartnerOrder, status: string) => {
+  const move = async (order: PartnerOrder, status: string, handoverCode?: string) => {
+    // Shop delivery: ask for the customer's code first
+    if (status === 'delivered' && fulfilmentOf(order) === 'shop' && handoverCode === undefined) {
+      setCode('');
+      setCodeError('');
+      setHandover(order);
+      return;
+    }
     setBusy(order.orderId);
-    const res = await fetch(`/api/partner/orders/${encodeURIComponent(order.orderId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    const res = await fetch(`/api/partner/orders/${encodeURIComponent(order.orderId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(handoverCode === undefined ? { status } : { status, code: handoverCode }),
+    });
     const data = await res.json().catch(() => ({}));
     setBusy(null);
-    if (!res.ok) return toast.error(data.error || 'Could not update the order');
-    setOrders(orders.map((o) => (o.orderId === order.orderId ? { ...o, status } : o)));
+    if (!res.ok) {
+      if (handoverCode !== undefined) return setCodeError(data.error || 'Could not check the code');
+      return toast.error(data.error || 'Could not update the order');
+    }
+    setHandover(null);
+    if (status === 'delivered') toast.success(`Order #${order.orderId} delivered`);
+    setOrders(orders.map((o) => (o.orderId === order.orderId ? (data.order ? { ...data.order, job: o.job } : { ...o, status }) : o)));
+  };
+
+  const bookCourier = async (order: PartnerOrder) => {
+    setBusy(order.orderId);
+    const res = await fetch(`/api/partner/orders/${encodeURIComponent(order.orderId)}/ship`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) return toast.error(data.error || 'Could not book the courier');
+    toast.success(`Courier booked: ${data.courierName}. Keep the parcel ready for pickup (AWB ${data.awbCode}).`);
+    setOrders(orders.map((o) => (o.orderId === order.orderId ? (data.order ? { ...data.order, job: o.job } : o) : o)));
   };
 
   return (
@@ -191,7 +211,7 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
               <div key={o.orderId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="min-w-0">
                   <p className="font-mono text-sm font-semibold">#{o.orderId}</p>
-                  <p className="truncate text-sm text-muted-foreground">{o.originalFileName || o.originalFileNames?.[0] || 'Document'} · {rupees(o.amount * 0.9)} to you</p>
+                  <p className="truncate text-sm text-muted-foreground">{o.originalFileName || o.originalFileNames?.[0] || 'Document'} · {rupees(orderPartnerShare(o))} to you</p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => { setReason(''); setDecline(o); }} disabled={busy === o.orderId}><X />Decline</Button>
@@ -221,6 +241,7 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
                   <TableHead className="pl-6">Order</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Document</TableHead>
+                  <TableHead>Delivery</TableHead>
                   <TableHead className="text-right">Your share</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="pr-6">Move to</TableHead>
@@ -229,23 +250,39 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
               <TableBody>
                 {shown.map((o) => {
                   const info = statusInfo(o.job?.status === 'pending_acceptance' ? 'paid' : o.status);
-                  const next = o.job?.status === 'pending_acceptance' ? [] : NEXT[o.status] || [];
+                  const next = o.job?.status === 'pending_acceptance' ? [] : nextPartnerStatuses(o);
+                  const how = fulfilmentOf(o);
+                  const canBook = how === 'courier' && o.status === 'printed' && !o.shiprocket?.awbCode;
                   return (
                     <TableRow key={o.orderId}>
                       <TableCell className="pl-6 font-mono text-xs">{o.orderId}</TableCell>
                       <TableCell className="text-muted-foreground">{new Date(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
                       <TableCell className="max-w-48 truncate">{o.originalFileName || o.originalFileNames?.[0] || 'Document'}</TableCell>
-                      <TableCell className="text-right tabular-nums">{rupees(o.amount * 0.9)}</TableCell>
+                      <TableCell className="text-sm">
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          {how === 'shop' ? <Bike className="size-4" aria-hidden /> : how === 'courier' ? <Truck className="size-4" aria-hidden /> : <Building2 className="size-4" aria-hidden />}
+                          {how === 'shop' ? `You deliver${o.deliveryOption?.distance ? ` · ${o.deliveryOption.distance} km` : ''}` : how === 'courier' ? (o.shiprocket?.awbCode ? `Courier · ${o.shiprocket.courierName || 'booked'}` : 'Courier') : 'Pickup'}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{rupees(orderPartnerShare(o))}</TableCell>
                       <TableCell>
                         <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', TONE[info.tone])}>
                           {o.job?.status === 'pending_acceptance' ? 'Needs your OK' : info.label}
                         </span>
                       </TableCell>
                       <TableCell className="pr-6">
-                        {next.length ? (
+                        {canBook ? (
+                          <Button size="sm" variant="outline" onClick={() => bookCourier(o)} disabled={busy === o.orderId}>
+                            {busy === o.orderId ? <Loader2 className="animate-spin" /> : <Truck />}Book courier
+                          </Button>
+                        ) : next.length === 1 ? (
+                          <Button size="sm" variant="outline" onClick={() => move(o, next[0])} disabled={busy === o.orderId}>
+                            {busy === o.orderId ? <Loader2 className="animate-spin" /> : null}{PARTNER_STATUS_LABEL[next[0]] || next[0]}
+                          </Button>
+                        ) : next.length ? (
                           <Select onValueChange={(v) => move(o, v)} disabled={busy === o.orderId}>
                             <SelectTrigger size="sm" className="w-40" aria-label={`Move order ${o.orderId}`}><SelectValue placeholder="Move to…" /></SelectTrigger>
-                            <SelectContent>{next.map((s) => <SelectItem key={s} value={s}>{LABEL[s] || s}</SelectItem>)}</SelectContent>
+                            <SelectContent>{next.map((s) => <SelectItem key={s} value={s}>{PARTNER_STATUS_LABEL[s] || s}</SelectItem>)}</SelectContent>
                           </Select>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
@@ -276,11 +313,119 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={Boolean(handover)} onOpenChange={(o) => !o && setHandover(null)}>
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); if (handover) move(handover, 'delivered', code); }}>
+            <DialogHeader>
+              <DialogTitle>Delivered order #{handover?.orderId}?</DialogTitle>
+              <DialogDescription>Ask the customer for the 4-digit delivery code shown in their order.</DialogDescription>
+            </DialogHeader>
+            <div className="my-4 space-y-2">
+              <Label htmlFor="handover-code">Delivery code</Label>
+              <Input id="handover-code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 4)); setCodeError(''); }} inputMode="numeric" autoComplete="one-time-code" maxLength={4} placeholder="0000" className="h-12 w-36 text-center font-mono text-2xl tracking-[0.4em]" aria-invalid={Boolean(codeError)} aria-describedby={codeError ? 'handover-error' : undefined} autoFocus />
+              {codeError ? <p id="handover-error" className="text-sm text-destructive">{codeError}</p> : null}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+              <Button type="submit" disabled={code.length !== 4 || busy === handover?.orderId}>{busy === handover?.orderId ? <Loader2 className="animate-spin" /> : <Check />}Confirm delivery</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ── Shop settings ─────────────────────────────────────────────────────
+
+function DeliveryCard({ partner, setPartner }: { partner: Partner; setPartner: (p: Partner) => void }) {
+  const d = partner.delivery || {};
+  const [courier, setCourier] = useState<boolean>(Boolean(d.courier?.enabled));
+  const [self, setSelf] = useState<boolean>(Boolean(d.self?.enabled));
+  const [radiusKm, setRadiusKm] = useState(String(d.self?.radiusKm ?? 3));
+  const [fee, setFee] = useState(String(d.self?.fee ?? 30));
+  const [eta, setEta] = useState(String(d.self?.etaMinutes ?? 120));
+  const [saving, setSaving] = useState(false);
+  const noAddress = !partner.address?.zipCode || !/^[1-9]\d{5}$/.test(partner.address.zipCode);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const p = await saveProfile({
+        delivery: {
+          courier: { enabled: courier },
+          self: { enabled: self, radiusKm: Number(radiusKm), fee: Math.round(Number(fee)), etaMinutes: Math.round(Number(eta)) },
+        },
+      });
+      setPartner(p);
+      toast.success('Delivery settings saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const courierState = !d.courier?.enabled
+    ? null
+    : d.courier.pickupName
+      ? { tone: 'text-success', text: 'Ready: couriers collect from your shop address.' }
+      : d.courier.lastError
+        ? { tone: 'text-destructive', text: `Not ready: ${d.courier.lastError}` }
+        : partner.isActive
+          ? { tone: 'text-muted-foreground', text: 'Setting up your pickup address…' }
+          : { tone: 'text-muted-foreground', text: 'Starts once your shop is approved.' };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Home delivery</CardTitle>
+        <CardDescription>Choose how customers can get orders delivered. With both off, customers collect from your shop.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="courier-switch" className="flex items-center gap-2"><Truck className="size-4" aria-hidden />Courier pickup from my shop</Label>
+            <p className="text-sm text-muted-foreground">A courier collects the parcel from your shop and delivers anywhere in India. The customer pays the courier charge; you get your usual share of the printing.</p>
+            {courierState ? <p className={cn('text-sm', courierState.tone)}>{courierState.text}</p> : null}
+            {courier && noAddress ? <p className="text-sm text-warning">Add your full shop address with a 6-digit pincode in the Partner app first.</p> : null}
+          </div>
+          <Switch id="courier-switch" checked={courier} onCheckedChange={setCourier} />
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="self-switch" className="flex items-center gap-2"><Bike className="size-4" aria-hidden />I deliver orders myself</Label>
+              <p className="text-sm text-muted-foreground">Offered only to customers within your radius. You keep the whole delivery fee. The customer gives you a 4-digit code when you hand over the order.</p>
+            </div>
+            <Switch id="self-switch" checked={self} onCheckedChange={setSelf} />
+          </div>
+          {self ? (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="radius">Radius (km)</Label>
+                <Input id="radius" type="number" inputMode="decimal" min={0.5} max={25} step={0.5} value={radiusKm} onChange={(e) => setRadiusKm(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fee">Delivery fee (₹)</Label>
+                <Input id="fee" type="number" inputMode="numeric" min={0} max={1000} step={1} value={fee} onChange={(e) => setFee(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="eta">Usual time (minutes)</Label>
+                <Input id="eta" type="number" inputMode="numeric" min={15} max={1440} step={15} value={eta} onChange={(e) => setEta(e.target.value)} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+      <CardFooter className="border-t pt-6">
+        <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : null}Save delivery settings</Button>
+      </CardFooter>
+    </Card>
+  );
+}
 
 function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Partner) => void }) {
   const [phones, setPhones] = useState<string[]>(partner.phoneNumbers || []);
@@ -303,6 +448,8 @@ function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Pa
   };
 
   return (
+    <div className="space-y-6">
+    <DeliveryCard partner={partner} setPartner={setPartner} />
     <Card>
       <CardHeader>
         <CardTitle>Contact numbers</CardTitle>
@@ -339,6 +486,7 @@ function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Pa
         <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : null}Save</Button>
       </CardFooter>
     </Card>
+    </div>
   );
 }
 

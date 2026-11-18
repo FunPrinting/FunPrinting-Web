@@ -6,7 +6,15 @@ import { IOrder } from '@/models/Order';
 /**
  * Generate HTML email body for invoice
  */
+/** Customer-entered text (names, file names, addresses) must not become HTML. */
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+
 function generateInvoiceHTML(order: IOrder, deliveryNumber: string): string {
+  const d = order.deliveryOption;
+  const deliveryMethod = d.type === 'pickup' ? 'Pickup from the shop' : d.method === 'shop' ? 'Delivered by the shop' : 'Courier delivery';
+  const address = [d.flatBuilding, d.address, d.landmark, d.city, d.state, d.pinCode].filter(Boolean).join(', ');
+  const paid = typeof order.amountPaid === 'number' ? order.amountPaid : order.amount;
+  const site = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || '').replace(/\/+$/, '');
   const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', {
     year: 'numeric',
     month: 'long',
@@ -70,15 +78,15 @@ function generateInvoiceHTML(order: IOrder, deliveryNumber: string): string {
               <h3 style="color: #333; margin: 0 0 15px 0;">Customer Information</h3>
               <div class="detail-item">
                 <div class="detail-label">Name:</div>
-                <div class="detail-value">${order.customerInfo.name}</div>
+                <div class="detail-value">${esc(order.customerInfo.name)}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">Email:</div>
-                <div class="detail-value">${order.customerInfo.email}</div>
+                <div class="detail-value">${esc(order.customerInfo.email)}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">Phone:</div>
-                <div class="detail-value">${order.customerInfo.phone}</div>
+                <div class="detail-value">${esc(order.customerInfo.phone)}</div>
               </div>
             </div>
             
@@ -90,7 +98,7 @@ function generateInvoiceHTML(order: IOrder, deliveryNumber: string): string {
               </div>
               <div class="detail-item">
                 <div class="detail-label">File Name:</div>
-                <div class="detail-value">${order.originalFileName || 'N/A'}</div>
+                <div class="detail-value">${esc(order.originalFileName || 'N/A')}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">Page Size:</div>
@@ -114,31 +122,38 @@ function generateInvoiceHTML(order: IOrder, deliveryNumber: string): string {
               </div>
               <div class="detail-item">
                 <div class="detail-label">Delivery Method:</div>
-                <div class="detail-value">${order.deliveryOption.type === 'pickup' ? 'Pickup' : 'Home Delivery'}</div>
+                <div class="detail-value">${deliveryMethod}</div>
               </div>
               ${order.deliveryOption.type === 'pickup' && order.deliveryOption.pickupLocation ? `
               <div class="detail-item">
                 <div class="detail-label">Pickup Location:</div>
-                <div class="detail-value">${order.deliveryOption.pickupLocation.name}<br>${order.deliveryOption.pickupLocation.address}</div>
+                <div class="detail-value">${esc(order.deliveryOption.pickupLocation.name)}<br>${esc(order.deliveryOption.pickupLocation.address)}</div>
               </div>
               ` : ''}
-              ${order.deliveryOption.type === 'delivery' && order.deliveryOption.address ? `
+              ${d.type === 'delivery' && address ? `
               <div class="detail-item">
                 <div class="detail-label">Delivery Address:</div>
-                <div class="detail-value">${order.deliveryOption.address}</div>
+                <div class="detail-value">${esc(address)}</div>
               </div>
               ` : ''}
             </div>
             
             <div class="total-section">
               <div class="detail-label" style="font-size: 18px;">Total Amount:</div>
-              <div class="total-amount">₹${order.amount.toFixed(2)}</div>
+              <div class="total-amount">₹${paid.toFixed(2)}</div>
               <div style="margin-top: 10px; color: #28a745; font-weight: bold;">
                 Payment Status: ${order.paymentStatus === 'completed' ? '✅ Paid' : order.paymentStatus}
               </div>
             </div>
           </div>
           
+          ${d.type === 'delivery' && d.method === 'shop' && d.handover?.code ? `
+          <div style="background: #eef2ff; border: 1px solid #c7d2fe; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+            <h3 style="color: #3730a3; margin: 0 0 8px 0;">Your delivery code</h3>
+            <p style="font-family: monospace; font-size: 32px; letter-spacing: 8px; margin: 0; color: #111827;">${esc(d.handover.code)}</p>
+            <p style="color: #4b5563; margin: 8px 0 0 0; font-size: 14px;">Give this code to the shop's delivery person when you receive your order. Don't share it before.</p>
+          </div>
+          ` : ''}
           <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
             <h3 style="color: #856404; margin: 0 0 10px 0;">📎 Invoice PDF Attached</h3>
             <p style="color: #856404; margin: 0; font-size: 14px;">
@@ -148,9 +163,9 @@ function generateInvoiceHTML(order: IOrder, deliveryNumber: string): string {
         </div>
         
         <div class="footer">
-          <p>Thank you for choosing PrintService!</p>
-          <p>For support, contact: support@printservice.com</p>
-          <p>© ${new Date().getFullYear()} PrintService. All rights reserved.</p>
+          <p>Thank you for choosing Fun Printing!</p>
+          ${site ? `<p>Questions? <a href="${site}/contact">Contact us</a> or see <a href="${site}/my-orders">My orders</a>.</p>` : ''}
+          <p>© ${new Date().getFullYear()} Fun Printing</p>
         </div>
       </div>
     </body>
@@ -174,9 +189,9 @@ export async function sendInvoiceEmail(order: IOrder, deliveryNumber: string): P
 
     // Send email
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER,
       to: order.customerInfo.email,
-      subject: `📄 Invoice - Order #${order.orderId} | PrintService`,
+      subject: `Invoice for order #${order.orderId} | Fun Printing`,
       html: htmlBody,
       attachments: [
         {

@@ -48,10 +48,16 @@ interface Partner {
   }>;
   calculatedPrice?: number;
   distance?: number; // In km
+  delivery?: ShopDeliverySummary;
+}
+/** What a shop offers for home delivery (from /api/partners/nearby). */
+export interface ShopDeliverySummary {
+  courier: boolean;
+  self: { radiusKm: number; fee: number; etaMinutes: number } | null;
 }
 
 interface PartnerMapSelectorProps {
-  onPartnerSelected: (partnerId: string, deliveryPointName?: string, calculatedPrice?: number) => void;
+  onPartnerSelected: (partnerId: string, deliveryPointName?: string, calculatedPrice?: number, delivery?: ShopDeliverySummary, businessName?: string) => void;
   selectedPartnerId?: string;
   cartItems: any[];
 }
@@ -198,7 +204,7 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
 
   const handlePartnerSelect = (partner: Partner, deliveryPointName?: string) => {
     setSelectedDeliveryPoint(deliveryPointName);
-    onPartnerSelected(partner._id, deliveryPointName, partner.calculatedPrice);
+    onPartnerSelected(partner._id, deliveryPointName, partner.calculatedPrice, partner.delivery, partner.businessName);
   };
 
   return (
@@ -300,11 +306,20 @@ export default function PartnerMapSelector({ onPartnerSelected, selectedPartnerI
                             </div>
                           </div>
                           
-                          <div className="flex items-center gap-4 mt-4">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-4">
                              <div className="flex items-center text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
                                <svg className="w-4 h-4 mr-1.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                {partner.distance?.toFixed(1)} km away
                              </div>
+                             {partner.delivery?.self ? (
+                               <span className="text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">Delivers within {partner.delivery.self.radiusKm} km</span>
+                             ) : null}
+                             {partner.delivery?.courier ? (
+                               <span className="text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">Courier delivery</span>
+                             ) : null}
+                             {!partner.delivery?.self && !partner.delivery?.courier ? (
+                               <span className="text-sm text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">Pickup only</span>
+                             ) : null}
                              <button 
                                onClick={() => setExpandedPartnerId(expandedPartnerId === partner._id ? null : partner._id)}
                                className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"

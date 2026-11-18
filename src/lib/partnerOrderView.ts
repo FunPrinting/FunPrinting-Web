@@ -5,7 +5,6 @@
  */
 import { MAX_HANDOVER_ATTEMPTS } from '@/lib/partnerOrderTransitions';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function forPartner<T extends Record<string, any>>(order: T): T {
   const o = typeof order?.toObject === 'function' ? order.toObject() : order;
   const delivery = o?.deliveryOption;

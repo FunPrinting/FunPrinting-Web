@@ -40,6 +40,13 @@ export function partnerShareOf(input: { subtotal: number; delivery: number; deli
   return percentOf(printing, PARTNER_SHARE_PERCENT) + (input.deliveryByShop ? input.delivery : 0);
 }
 
+/** The shop's share of a saved order, in rupees (Order.amount is the subtotal incl. delivery). */
+export function orderPartnerShare(order: { amount?: number; deliveryOption?: { type?: string; method?: string; deliveryCharge?: number } }): number {
+  const delivery = order.deliveryOption?.type === 'delivery' ? Number(order.deliveryOption.deliveryCharge) || 0 : 0;
+  const paise = partnerShareOf({ subtotal: rupeesToPaise(Number(order.amount) || 0), delivery: rupeesToPaise(delivery), deliveryByShop: order.deliveryOption?.method === 'shop' });
+  return paiseToRupees(paise);
+}
+
 export interface Totals {
   subtotal: number;
   fee: number;

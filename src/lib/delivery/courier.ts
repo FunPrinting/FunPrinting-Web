@@ -17,7 +17,6 @@ export class CourierError extends Error {
 
 const LOCK_MS = 2 * 60_000;
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- order documents are read as loose JSON */
 function weightOf(order: any): number {
   const files: any[] = order.pricing?.files ?? [];
   const opts: any[] = order.printingOptions?.fileOptions ?? [];

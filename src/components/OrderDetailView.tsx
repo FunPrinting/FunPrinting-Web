@@ -352,6 +352,19 @@ export function OrderDetailView({
                 {delivery.landmark ? <p className="text-muted-foreground">Landmark: {delivery.landmark}</p> : null}
                 <p>{[delivery.city, delivery.state].filter(Boolean).join(', ')}{delivery.pinCode ? ` – ${delivery.pinCode}` : ''}</p>
                 {delivery.deliveryCharge ? <p className="pt-1 text-muted-foreground">Delivery charge ₹{delivery.deliveryCharge}</p> : null}
+                <p className="pt-1 text-muted-foreground">{delivery.method === 'shop' ? `Delivered by the shop${delivery.distance ? ` (${delivery.distance} km)` : ''}` : 'Courier'}</p>
+                {delivery.method === 'shop' && delivery.handover?.code ? (
+                  <div className="mt-3 rounded-lg border border-primary/30 bg-accent/40 p-3">
+                    {delivery.handover.verifiedAt ? (
+                      <p>Handed over {formatDate(String(delivery.handover.verifiedAt), 'long')}.</p>
+                    ) : (
+                      <>
+                        <p className="text-muted-foreground">{admin ? 'Customer’s delivery code' : 'Give the delivery person this code'}</p>
+                        <p className="font-mono text-2xl font-semibold tracking-[0.3em]">{delivery.handover.code}</p>
+                      </>
+                    )}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </Section>

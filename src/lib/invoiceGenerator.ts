@@ -1,6 +1,9 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { IOrder } from '@/models/Order';
 
+/** Public site address for the invoice footer (no made-up email addresses). */
+const SITE = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || '').replace(/\/+$/, '');
+
 export interface InvoiceData {
   order: IOrder;
   deliveryNumber: string;
@@ -35,7 +38,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   yPosition -= 40;
 
   // Company Info
-  page.drawText('PrintService', {
+  page.drawText('Fun Printing', {
     x: 50,
     y: yPosition,
     size: 14,
@@ -43,7 +46,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   });
 
   yPosition -= 20;
-  page.drawText('College Printing Service', {
+  page.drawText('Online printing marketplace', {
     x: 50,
     y: yPosition,
     size: 10,
@@ -51,7 +54,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   });
 
   yPosition -= 20;
-  page.drawText('Email: support@printservice.com', {
+  page.drawText(SITE ? `Web: ${SITE}` : '', {
     x: 50,
     y: yPosition,
     size: 10,
@@ -248,7 +251,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 
   // Footer
   yPosition = 50;
-  page.drawText('Thank you for choosing PrintService!', {
+  page.drawText('Thank you for choosing Fun Printing!', {
     x: 50,
     y: yPosition,
     size: 10,
@@ -257,7 +260,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   });
 
   yPosition -= 15;
-  page.drawText('For support, contact: support@printservice.com', {
+  page.drawText(SITE ? `Support: ${SITE}/contact` : '', {
     x: 50,
     y: yPosition,
     size: 9,
