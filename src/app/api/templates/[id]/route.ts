@@ -4,6 +4,7 @@ import DynamicTemplate from '@/models/DynamicTemplate';
 import User from '@/models/User';
 import { getCurrentUser, canViewTemplate, canEditTemplate, canDeleteTemplate, isAdminUser } from '@/lib/templateAuth';
 import { generateFormSchema } from '@/lib/docxProcessor';
+import { TEMPLATE_CATEGORIES } from '@/lib/templates';
 
 // GET: Get template details (if public or owned by user)
 export async function GET(
@@ -131,28 +132,38 @@ export async function PUT(
       );
     }
 
-    // Update template fields
-    if (name !== undefined) template.name = name;
-    if (description !== undefined) template.description = description;
+    // Validate before changing anything
+    if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 100)) {
+      return NextResponse.json({ success: false, error: 'Give the template a name of up to 100 characters.' }, { status: 400 });
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 500)) {
+      return NextResponse.json({ success: false, error: 'The description can be up to 500 characters.' }, { status: 400 });
+    }
+    if (category !== undefined && !TEMPLATE_CATEGORIES.some((c) => c.value === category)) {
+      return NextResponse.json({ success: false, error: 'Choose a valid category.' }, { status: 400 });
+    }
+    const nextPrice = price === undefined ? template.price || 0 : Number(price);
+    if (!Number.isFinite(nextPrice) || nextPrice < 0 || nextPrice > 10000) {
+      return NextResponse.json({ success: false, error: 'The price can be at most ₹10,000.' }, { status: 400 });
+    }
+    const nextPaid = isPaid === undefined ? !!template.isPaid : !!isPaid;
+    if (nextPaid && nextPrice <= 0) {
+      return NextResponse.json({ success: false, error: 'Paid templates require a valid price greater than 0' }, { status: 400 });
+    }
+    // Switching a template to paid needs somewhere to send the money
+    if (nextPaid && !template.isPaid && !(user.upiId || user.bankDetails?.accountNumber)) {
+      return NextResponse.json({ success: false, error: 'Please set up payout settings before making a template paid' }, { status: 400 });
+    }
+
+    if (name !== undefined) template.name = name.trim();
+    if (description !== undefined) template.description = description.trim();
     if (category !== undefined) template.category = category;
     if (placeholders !== undefined) template.placeholders = placeholders;
     if (formSchema !== undefined) template.formSchema = formSchema;
-    
-    // Update monetization fields
     if (isPublic !== undefined) template.isPublic = !!isPublic;
-    if (isPaid !== undefined) {
-      // Validate paid templates have valid price and payout info
-      if (isPaid && (price === undefined || price <= 0)) {
-        return NextResponse.json(
-          { success: false, error: 'Paid templates require a valid price greater than 0' },
-          { status: 400 }
-        );
-      }
-      template.isPaid = !!isPaid;
-    }
-    if (price !== undefined) template.price = Math.max(0, Number(price) || 0);
+    template.isPaid = nextPaid;
+    template.price = nextPaid ? nextPrice : 0;
     if (allowFreeDownload !== undefined) template.allowFreeDownload = allowFreeDownload !== false;
-
 
     await template.save();
 
