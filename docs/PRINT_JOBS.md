@@ -67,7 +67,9 @@ Devices fetch the job list on start-up, on every socket reconnect, and when the 
 
 The desktop app (partner-desktop, from Phase 5) works this way: it takes **one job at a time** (claim, print every file, report `printed` or `failed`), sends `printing` every 2 minutes as a heartbeat, and also re-fetches every minute. Several computers can share a shop's queue. Manual-mode shops accept or decline in the app as well as on the dashboard.
 
-**Compatibility with apps on a legacy token** (installed before device sign-in; the mobile app until Phase 6). These rules apply only when the request or socket has no device id:
+The mobile app (partner-mobile, from Phase 6) is a companion by default: it lists jobs and lets manual-mode shops accept or decline. In **print station** mode it works like the desktop app, but claims a specific job by id (`{ action: 'claim' }`) and only one it can print (PDF/images, and options its printer supports), leaving the rest for a computer.
+
+**Compatibility with apps on a legacy token** (installed before device sign-in). These rules apply only when the request or socket has no device id:
 - Automatic-mode shops also receive the old `new_print_job` push. Only legacy sockets get it and are counted; a device receiving it counts as a claim (`legacy-push`).
 - When a legacy desktop app fetches `GET /api/partner/orders`, the shop's queued jobs are claimed (`legacy-pull`), because that app prints every paid order it sees.
 - Orders waiting for a manual shop to accept are hidden from legacy apps; the shop accepts or declines on the web dashboard.
