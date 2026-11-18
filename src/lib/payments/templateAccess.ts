@@ -47,7 +47,8 @@ export async function checkTemplateAccess(
             purpose: 'template',
             templateId,
             userEmail: email,
-            status: 'paid',
+            // A partial refund (for example a goodwill credit) keeps access
+            status: { $in: ['paid', 'partially_refunded'] },
             'template.generationCount': { $lt: MAX_GENERATIONS_PER_PURCHASE },
           },
           { $inc: { 'template.generationCount': 1 } },
@@ -58,4 +59,14 @@ export async function checkTemplateAccess(
     return NextResponse.json({ success: false, error: 'Payment is required for this template.', code: 'payment_required' }, { status: 402 });
   }
   return { paid: true, formData: purchase.template?.formData ?? data, referenceId: purchase.referenceId };
+}
+
+/** Gives back the generation counted by checkTemplateAccess when making the document failed. */
+export async function releaseTemplateGeneration(access: TemplateAccess): Promise<void> {
+  if (!access.paid) return;
+  await connectDB();
+  await Payment.updateOne(
+    { referenceId: access.referenceId, 'template.generationCount': { $gt: 0 } },
+    { $inc: { 'template.generationCount': -1 } }
+  );
 }

@@ -37,7 +37,7 @@ interface Earning {
 }
 interface Summary { totalEarnings: number; pendingEarnings: number; paidEarnings: number; totalCount: number }
 
-const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
 const EARNING_LABEL: Record<Earning['status'], string> = { pending: 'Waiting for payout', processing: 'Being paid', paid: 'Paid', failed: 'Failed' };
 
 export default function MyTemplatesPage() {

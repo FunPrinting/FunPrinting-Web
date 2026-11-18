@@ -5,7 +5,7 @@ import { uploadFile } from '@/lib/storage';
 import { jobStore } from '@/lib/jobStore';
 import { generationRateLimit, getClientIdentifier, checkRateLimit } from '@/lib/ratelimit';
 import { requireUser } from '@/lib/authz';
-import { checkTemplateAccess } from '@/lib/payments/templateAccess';
+import { checkTemplateAccess, releaseTemplateGeneration, type TemplateAccess } from '@/lib/payments/templateAccess';
 import { withRequestLogger, logger } from '@/lib/logger';
 import { docxToPdf, ConversionError } from '@/lib/documents/convert';
 import { FileFetchError } from '@/lib/documents/fileUrls';
@@ -42,11 +42,13 @@ export async function POST(request: NextRequest) {
   if (user instanceof NextResponse) return user;
   const log = withRequestLogger(request, { userId: user.id });
 
+  let counted: TemplateAccess | null = null;
   try {
     const body = await request.json().catch(() => ({}));
     const { templateId, paymentRef } = body;
     const access = await checkTemplateAccess(templateId, body.formData, paymentRef);
     if (access instanceof NextResponse) return access;
+    counted = access;
     const formData = access.formData;
     if (!templateId || !formData) {
       return NextResponse.json({ success: false, error: 'templateId and formData are required' }, { status: 400 });
@@ -72,6 +74,8 @@ export async function POST(request: NextRequest) {
       message: 'Document generated. PDF conversion in progress...',
     });
   } catch (error) {
+    // A failed attempt must not use up one of the buyer's generations
+    if (counted) await releaseTemplateGeneration(counted).catch((err) => log.error({ err }, 'could not release template generation'));
     if (error instanceof TemplateError || error instanceof FileFetchError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }

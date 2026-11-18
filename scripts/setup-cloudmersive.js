@@ -90,7 +90,7 @@ async function setupCloudmersive() {
   console.log('\n📋 Next steps:');
   console.log('1. Restart your development server: npm run dev');
   console.log('2. Test the integration: npm run test-cloudmersive');
-  console.log('3. Upload a PDF at: http://localhost:3000/admin/templates/upload');
+  console.log('3. Create a template at: http://localhost:3000/templates/create');
   
   rl.close();
 }

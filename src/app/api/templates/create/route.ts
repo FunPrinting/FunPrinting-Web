@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/templateAuth';
 import User from '@/models/User';
 import { extractPlaceholders, generateFormSchema } from '@/lib/docxProcessor';
 import { fetchTrustedFile, isTrustedFileUrl } from '@/lib/documents/fileUrls';
+import { TEMPLATE_CATEGORIES } from '@/lib/templates';
 
 const TEMPLATE_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -76,6 +77,16 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Please enter a valid price greater than 0 for a paid template' },
         { status: 400 }
       );
+    }
+
+    if (typeof templateName !== 'string' || !templateName.trim() || templateName.length > 100) {
+      return NextResponse.json({ success: false, error: 'Give the template a name of up to 100 characters.' }, { status: 400 });
+    }
+    if (category !== undefined && !TEMPLATE_CATEGORIES.some((c) => c.value === category)) {
+      return NextResponse.json({ success: false, error: 'Choose a valid category.' }, { status: 400 });
+    }
+    if (isPaid && Number(price) > 10000) {
+      return NextResponse.json({ success: false, error: 'The price can be at most ₹10,000.' }, { status: 400 });
     }
 
     // Generate unique template ID
@@ -266,7 +277,7 @@ export async function POST(request: NextRequest) {
     
     const template = new DynamicTemplate({
       id: templateId,
-      name: templateName,
+      name: templateName.trim(),
       description: description || 'Dynamic template',
       category: category || 'other',
       // Stored only when it is our own file (it is downloaded again later)

@@ -29,7 +29,11 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     // The old customer dashboard duplicated My orders
-    return [{ source: '/dashboard', destination: '/my-orders', permanent: true }];
+    return [
+      { source: '/dashboard', destination: '/my-orders', permanent: true },
+      // Order sheets printed before the order page took over handover checks
+      { source: '/verify-order/:id', destination: '/orders/:id', permanent: true },
+    ];
   },
   async headers() {
     return [

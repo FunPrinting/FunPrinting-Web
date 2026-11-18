@@ -37,7 +37,7 @@ export async function sendNewOrderNotification(orderData: OrderNotificationData)
     const orderDetails = formatOrderDetails(orderData);
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: adminEmail,
       subject: `🆕 New Order Received - #${orderData.orderId}`,
       html: `
@@ -223,7 +223,7 @@ export async function sendCustomerOrderConfirmation(orderData: OrderNotification
     console.log('📧 Customer email:', orderData.customerEmail);
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: orderData.customerEmail,
       subject: `✅ Order Confirmation - #${orderData.orderId} | PrintService`,
       html: `
@@ -341,7 +341,7 @@ export async function sendPaymentReminderToCustomer(orderData: OrderNotification
     console.log('📧 Customer email:', orderData.customerEmail);
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: orderData.customerEmail,
       subject: `⏰ Payment Reminder - Order #${orderData.orderId} | PrintService`,
       html: `
@@ -439,7 +439,7 @@ export async function sendPaymentReminderToAdmin(orderData: OrderNotificationDat
     console.log('📧 Sending payment reminder to admin...');
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: adminEmail,
       subject: `⏰ Payment Reminder - Order #${orderData.orderId} Still Pending`,
       html: `
@@ -536,7 +536,7 @@ export async function sendPaymentNotification(orderData: OrderNotificationData, 
     const statusText = paymentStatus === 'completed' ? 'Payment Completed' : 'Payment Failed';
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: adminEmail,
       subject: `${statusEmoji} Payment ${statusText} - Order #${orderData.orderId}`,
       html: `

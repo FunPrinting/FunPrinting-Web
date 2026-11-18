@@ -35,7 +35,10 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "scripts",
+    "semantic-review",
+    ".next-verify"
   ],
   "ts-node": {
     "transpileOnly": true,

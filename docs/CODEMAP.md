@@ -54,7 +54,7 @@ Rules for new code:
 | `/api/orders` | GET | user | Signed-in user's orders (`?email=` admin only) | |
 | `/api/orders/[id]` | GET, DELETE | user + owner | | |
 | `/api/orders/[id]/track` | GET | public | Shiprocket tracking by order id | Phase 3: owner check |
-| `/api/pricing`, `/api/pickup-locations`, `/api/partners/nearby` | GET | public | Read-only data for the order page (nearby shops: public fields only) | |
+| `/api/pricing`, `/api/partners/nearby` | GET | public | Read-only data for the order page (nearby shops: public fields only) | |
 | `/api/delivery/options` | GET | public, rate-limited | Pickup / shop delivery / courier options for one shop and address (docs/DELIVERY.md) | |
 | `/api/partner/orders/[orderId]/ship` | POST | partner | Shop books the courier pickup after printing | |
 | `/api/webhooks/courier-updates` | POST | `x-api-key` = `SHIPROCKET_WEBHOOK_TOKEN` | Shiprocket tracking; marks courier orders delivered | |
@@ -84,7 +84,7 @@ Rules for new code:
 | `/api/admin/partners/[id]` | PATCH | admin | Approve/deactivate (`isActive`), set the Route linked account | Phase 4 |
 
 ### Admin (all `requireAdmin` except where noted)
-`/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `pickup-locations`, `info` (GET public: home page reads it), `save-template` (POST admin; GET public for the fill page, Word file URL for admins only), `pdf-viewer` (`requireUser` + owner), `upload-pdf`, `templates/**`, `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
+`/api/admin/orders`, `orders/[id]`, `orders/[id]/ship`, `pricing`, `info` (GET public: home page reads it), `pdf-viewer` (`requireUser` + owner), `templates/all` (every template with its owner; changes go through `/api/templates/[id]`, which lets admins act on any template), `creator-earnings`, `creator-earnings/process` (RazorpayX payouts), `send-payment-reminder`, `cleanup-pending-orders`, `migrate-*`, `printer-status`, `printer-queue/*`.
 The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer*`, `/api/printing/*`, `printerClient`, the printer monitor page) was removed in Phase 3: every order is printed by a partner shop.
 
 ### Error tracking
@@ -118,11 +118,11 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 | Email | `mailer` (one transport), `notificationService`, `invoiceEmail`, `invoiceGenerator`, `dispatch-email`, `adminNotifications` | |
 | Documents | `documents/convert` (one converter interface), `documents/fileUrls` (the only way to download stored files), `documents/templates`, `docxProcessor`; providers `cloudmersive`, `freeConverters`, `libreoffice`, `renderPdfService`; `fileTypeDetection` | |
 | Storage | `storage` (provider switch), `storage/cloudinary`, `storage/oracle`, `cloudinary` | Phase 7: merge the two Cloudinary modules |
-| Misc | `seo`, `phoneValidation`, `adminUtils` | |
+| Misc | `seo`, `phoneValidation`, `dates` (`formatDate`, default expected date) | |
 
 ## Models (`src/models`)
 
-`PartnerDevice` (signed-in partner apps), `DeviceAuthCode` (one-time sign-in codes), `PrintJob` (one per paid order; collection `print_jobs`), `Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `PickupLocation`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
+`PartnerDevice` (signed-in partner apps), `DeviceAuthCode` (one-time sign-in codes), `PrintJob` (one per paid order; collection `print_jobs`), `Payment` (one per payment attempt; amounts in paise, fulfilment steps, events), `WebhookEvent` (processed Razorpay events, 30-day TTL), `ErrorGroup` (error tracking issues, 90-day TTL), `Order` (the only order model; indexes on Razorpay ids, customer email, partner + status, payment status), `PrintJob`, `Partner`, `User`, `Pricing`, `AdminInfo`, `DynamicTemplate`, `CreatorEarning`, `VerificationToken`.
 
 Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Phase 3 replaces this with one status field plus a separate payment status, and adds an `OrderEvent` log.
 
@@ -130,7 +130,7 @@ Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Ph
 
 Customer: `/`, `/order`, `/payment/status/[ref]`, `/orders/[id]/choose`, `/cart`, `/my-orders`, `/orders/[id]`, `/templates/**`, `/my-templates`, `/profile`, `/payout-settings`, `/complete-profile`, `/auth/*`.
 Partner: `/partner`, `/partner/dashboard`, `/partner/desktop-auth` (callback allowlist: `localhost:4321`, `funprintingpartner://`).
-Admin: `/admin/**`, gated by `AdminGoogleAuth` (session + `/api/auth/check-admin`); the API routes enforce it again server-side.
+Admin: `/admin` (orders and shops), `/admin/orders/[id]`, `/admin/templates`, `/admin/creator-earnings`, `/admin/pricing`, `/admin/info`, `/admin/errors`. `src/app/admin/layout.tsx` wraps them all in `AdminGate` (session + `/api/auth/check-admin`, admin header); the API routes enforce it again server-side. Shared admin pieces: `components/admin/{PageHeader,AdminPartnersView,AdminJobPanel,AdminOrderActions}`; `components/ConfirmDialog` replaces `confirm`/`prompt`.
 Static: policies, contact, `sitemap.xml`.
 
 ## Checks

@@ -70,7 +70,7 @@ export default function TemplatesPage() {
       if (view === 'favourites' && !t.isFavorite) return false;
       if (view === 'mine' && !t.isMine) return false;
       if (category !== 'all' && t.category !== category) return false;
-      return !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
+      return !q || t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q);
     });
   }, [templates, view, search, category]);
 

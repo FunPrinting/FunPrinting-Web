@@ -7,7 +7,7 @@ export async function sendVerificationEmail(email: string, name: string, token: 
     const verificationUrl = `${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/auth/verify-email?token=${token}`;
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: email,
       subject: 'Verify Your Email - Print Service',
       html: `
@@ -70,7 +70,7 @@ export async function sendPasswordResetEmail(email: string, name: string, token:
     const resetUrl = `${process.env.NEXTAUTH_URL || 'https://www.funprinting.store'}/auth/reset-password?token=${token}`;
     
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@printservice.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: email,
       subject: 'Reset Your Password - Print Service',
       html: `

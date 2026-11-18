@@ -34,8 +34,8 @@ export async function GET(
       );
     }
 
-    // Check if user can view this template
-    const canView = await canViewTemplate(id, userId);
+    const isAdmin = userId ? await isAdminUser() : false;
+    const canView = await canViewTemplate(id, userId, isAdmin);
     if (!canView) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: You do not have permission to view this template' },
@@ -44,9 +44,11 @@ export async function GET(
     }
 
     // The Word file is the paid product: only its owner (or an admin) gets the URL
-    const canEdit = userId ? await canEditTemplate(id, userId, await isAdminUser()) : false;
+    const canEdit = userId ? await canEditTemplate(id, userId, isAdmin) : false;
     // Generate form schema from placeholders
-    const formSchema = template.formSchema || generateFormSchema(template.placeholders);
+    const formSchema = template.formSchema?.length
+      ? template.formSchema
+      : Object.entries(generateFormSchema(template.placeholders)).map(([key, value]) => ({ key, ...value }));
 
     return NextResponse.json({
       success: true,
@@ -142,17 +144,28 @@ export async function PUT(
     if (category !== undefined && !TEMPLATE_CATEGORIES.some((c) => c.value === category)) {
       return NextResponse.json({ success: false, error: 'Choose a valid category.' }, { status: 400 });
     }
+    // Price rules apply only when the request changes the price or paid flag,
+    // so an admin can still toggle visibility on an old template with odd data
+    const changesMoney = isPaid !== undefined || price !== undefined;
     const nextPrice = price === undefined ? template.price || 0 : Number(price);
-    if (!Number.isFinite(nextPrice) || nextPrice < 0 || nextPrice > 10000) {
-      return NextResponse.json({ success: false, error: 'The price can be at most ₹10,000.' }, { status: 400 });
-    }
     const nextPaid = isPaid === undefined ? !!template.isPaid : !!isPaid;
-    if (nextPaid && nextPrice <= 0) {
-      return NextResponse.json({ success: false, error: 'Paid templates require a valid price greater than 0' }, { status: 400 });
-    }
-    // Switching a template to paid needs somewhere to send the money
-    if (nextPaid && !template.isPaid && !(user.upiId || user.bankDetails?.accountNumber)) {
-      return NextResponse.json({ success: false, error: 'Please set up payout settings before making a template paid' }, { status: 400 });
+    if (changesMoney) {
+      if (!Number.isFinite(nextPrice) || nextPrice < 0 || nextPrice > 10000) {
+        return NextResponse.json({ success: false, error: 'The price can be at most ₹10,000.' }, { status: 400 });
+      }
+      if (nextPaid && nextPrice <= 0) {
+        return NextResponse.json({ success: false, error: 'Paid templates require a valid price greater than 0' }, { status: 400 });
+      }
+      // Switching to paid needs somewhere to send the creator's money
+      if (nextPaid && !template.isPaid) {
+        const creator = template.createdByUserId
+          ? await User.findById(template.createdByUserId).select('upiId bankDetails')
+          : await User.findOne({ email: String(template.createdByEmail || '').toLowerCase() }).select('upiId bankDetails');
+        if (!(creator?.upiId || creator?.bankDetails?.accountNumber)) {
+          const whose = creator && String(creator._id) === userId ? 'your' : 'the creator’s';
+          return NextResponse.json({ success: false, error: `Set up ${whose} payout details before making this template paid` }, { status: 400 });
+        }
+      }
     }
 
     if (name !== undefined) template.name = name.trim();
@@ -161,8 +174,10 @@ export async function PUT(
     if (placeholders !== undefined) template.placeholders = placeholders;
     if (formSchema !== undefined) template.formSchema = formSchema;
     if (isPublic !== undefined) template.isPublic = !!isPublic;
-    template.isPaid = nextPaid;
-    template.price = nextPaid ? nextPrice : 0;
+    if (changesMoney) {
+      template.isPaid = nextPaid;
+      template.price = nextPaid ? nextPrice : 0;
+    }
     if (allowFreeDownload !== undefined) template.allowFreeDownload = allowFreeDownload !== false;
 
     await template.save();

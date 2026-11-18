@@ -77,7 +77,7 @@ export async function canDeleteTemplate(templateId: string, userId: string | nul
 /**
  * Check if a user can view a template
  */
-export async function canViewTemplate(templateId: string, userId: string | null): Promise<boolean> {
+export async function canViewTemplate(templateId: string, userId: string | null, isAdmin: boolean = false): Promise<boolean> {
   try {
     await connectDB();
     const template = await DynamicTemplate.findOne({ id: templateId });
@@ -86,8 +86,8 @@ export async function canViewTemplate(templateId: string, userId: string | null)
       return false;
     }
 
-    // Public templates can be viewed by anyone
-    if (template.isPublic) {
+    // Public templates can be viewed by anyone; admins can view all
+    if (template.isPublic || isAdmin) {
       return true;
     }
 

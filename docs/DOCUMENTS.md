@@ -47,7 +47,7 @@ Page counts for uploads (`src/lib/uploads/pageCount.ts`) use only Cloudmersive a
 | `POST /api/parse-docx-structure` | Anyone; rate-limited | Page count preview for the order page |
 | `GET /api/admin/pdf-viewer` | Customers: files of their own order; admins: any of our files | Previews a stored file |
 
-The Word file of a template is the paid product, so its URL is sent only to the template's owner and admins (template lists, `templates/[id]`, `admin/save-template` GET).
+The Word file of a template is the paid product, so its URL is sent only to the template's owner and admins (template lists and `templates/[id]`).
 
 The file viewer shows PDFs and raster images inline. Everything else (SVG, HTML, Word, text) is sent as a download with `X-Content-Type-Options: nosniff`, so an uploaded file can't run scripts on our site.
 

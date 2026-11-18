@@ -32,6 +32,8 @@ function Result({ id }: { id: string }) {
   const [meta, setMeta] = useState<{ name: string; allowDownload: boolean }>({ name: 'Document', allowDownload: true });
   const [saving, setSaving] = useState<'pdf' | 'word' | null>(null);
   const runId = useRef(0);
+  // One generate request per visit: a second start (React re-running effects) waits for the same one
+  const generation = useRef<Promise<{ status: number; ok: boolean; data: any }> | null>(null);
 
   useEffect(() => {
     fetch(`/api/templates/${encodeURIComponent(id)}`)
@@ -47,6 +49,7 @@ function Result({ id }: { id: string }) {
       const res = await fetch(`/api/templates/generation-status/${encodeURIComponent(jobId)}`, { cache: 'no-store' }).catch(() => null);
       if (run !== runId.current) return;
       const data = res ? await res.json().catch(() => null) : null;
+      if (res?.status === 400) return setState({ kind: 'error', message: 'This link is not valid. Create the document again.' });
       if (res?.status === 401 || res?.status === 404) {
         return setState(data?.error?.includes('expired') ? { kind: 'error', message: 'This document has expired. Create it again.' } : { kind: 'sign-in' });
       }
@@ -80,21 +83,24 @@ function Result({ id }: { id: string }) {
     const pending = readPending(id);
     if (!pending) return setState({ kind: 'missing' });
     try {
-      const res = await fetch('/api/templates/generate-fill-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: id, formData: pending.formData, paymentRef: pending.paymentRef }),
-      });
-      const data = await res.json().catch(() => ({}));
+      if (fresh || !generation.current) {
+        generation.current = fetch('/api/templates/generate-fill-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId: id, formData: pending.formData, paymentRef: pending.paymentRef }),
+        }).then(async (res) => ({ status: res.status, ok: res.ok, data: await res.json().catch(() => ({})) }));
+      }
+      const { status, ok, data } = await generation.current;
       if (run !== runId.current) return;
-      if (res.status === 401) return setState({ kind: 'sign-in' });
-      if (res.status === 402) return setState({ kind: 'error', message: 'This template needs a payment first. Go back to the template and pay to continue.' });
-      if (res.status === 429) return setState({ kind: 'error', message: 'Too many attempts. Wait a minute and try again.' });
-      if (!res.ok || !data.success || !data.jobId) return setState({ kind: 'error', message: data.error || 'We couldn’t create the document. Please try again.' });
+      if (status === 401) return setState({ kind: 'sign-in' });
+      if (status === 402) return setState({ kind: 'error', message: 'This template needs a payment first. Go back to the template and pay to continue.' });
+      if (status === 429) return setState({ kind: 'error', message: 'Too many attempts. Wait a minute and try again.' });
+      if (!ok || !data.success || !data.jobId) return setState({ kind: 'error', message: data.error || 'We couldn’t create the document. Please try again.' });
       // The job id in the address makes a refresh resume instead of starting over
       router.replace(`${pathname}?jobId=${encodeURIComponent(data.jobId)}`);
       await poll(data.jobId, run, data.wordUrl);
     } catch {
+      generation.current = null;
       if (run === runId.current) setState({ kind: 'error', message: 'We couldn’t reach the server. Check your connection and try again.' });
     }
   }, [id, search, router, pathname, poll]);

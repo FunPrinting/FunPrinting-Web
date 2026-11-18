@@ -16,7 +16,7 @@ import {
   Truck,
   User,
 } from 'lucide-react';
-import { formatDate, getDefaultExpectedDate } from '@/lib/adminUtils';
+import { formatDate, getDefaultExpectedDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

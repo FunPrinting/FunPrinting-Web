@@ -27,7 +27,7 @@ interface Earning {
 }
 interface Summary { totalEarnings: number; pendingEarnings: number; paidEarnings: number; platformEarnings: number; totalCount: number; pendingCount: number; paidCount: number }
 
-const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
 const STATUS_LABEL: Record<Earning['status'], string> = { pending: 'To pay', processing: 'Being paid', paid: 'Paid', failed: 'Failed' };
 const creatorOf = (e: Earning): Creator => (e.creatorUserId && typeof e.creatorUserId === 'object' ? e.creatorUserId : { email: String(e.creatorUserId ?? 'Unknown') });
 
