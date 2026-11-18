@@ -99,10 +99,10 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 `/api/auth/[...nextauth]` (NextAuth), `register`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`, `setup-password`, `send-otp` / `verify-otp` (rate-limited by email and IP), `check-admin` (session only). `/api/user/*` all use the session.
 
 ### Templates marketplace
-`/api/templates` (list; Word file and creator email only for the user's own), `create`, `public` (no Word file), `my-templates`, `[id]` (Word file for owner/admin), `[id]/update-file`, `[id]/earnings`, `generate-fill-pdf` (sign-in; PDF in the background with `after()`), `generation-status/[jobId]` (owner only), `generate-custom`, `download-filled` (sign-in). See `docs/DOCUMENTS.md`.
+`/api/templates` (list for the browse page: cards only, no Word files or schemas), `create`, `my-templates`, `[id]` (Word file for owner/admin), `[id]/update-file`, `[id]/earnings`, `generate-fill-pdf` (sign-in; PDF in the background with `after()`), `generation-status/[jobId]` (owner only), `download-filled` (sign-in). See `docs/DOCUMENTS.md`.
 
 ### Document tools
-`extract-placeholders` (sign-in), `generate-dynamic-form`, `parse-docx-structure` (page count preview, rate-limited). Uploads: `upload-file`, `upload-raw-file` (Word/PDF, 20 MB) (both `requireUser`). The order page counts PDF pages in the browser for the preview; the upload recounts. Conversion and file downloads go through `src/lib/documents/` (`docs/DOCUMENTS.md`).
+`extract-placeholders` (sign-in), `parse-docx-structure` (page count preview, rate-limited). Uploads: `upload-file`, `upload-raw-file` (Word/PDF, 20 MB) (both `requireUser`). The order page counts PDF pages in the browser for the preview; the upload recounts. Conversion and file downloads go through `src/lib/documents/` (`docs/DOCUMENTS.md`).
 
 ## Library modules (`src/lib`)
 

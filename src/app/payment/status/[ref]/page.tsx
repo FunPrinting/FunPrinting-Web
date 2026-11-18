@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { savePending } from '@/lib/templates/pending';
 import { CheckCircle2, CircleAlert, Clock, Loader2, RotateCcw, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -76,10 +77,7 @@ export default function PaymentStatusPage() {
 
   const continueTemplate = () => {
     if (!payment?.templateId) return;
-    sessionStorage.setItem(
-      'pendingTemplateFormData',
-      JSON.stringify({ templateId: payment.templateId, formData: payment.formData ?? {}, paymentCompleted: true, paymentRef: payment.referenceId })
-    );
+    savePending({ templateId: payment.templateId, formData: (payment.formData ?? {}) as Record<string, string>, paymentRef: payment.referenceId });
     router.push(`/templates/fill/${encodeURIComponent(payment.templateId)}/loading`);
   };
 

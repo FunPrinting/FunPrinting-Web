@@ -41,7 +41,6 @@ Page counts for uploads (`src/lib/uploads/pageCount.ts`) use only Cloudmersive a
 |---|---|---|
 | `POST /api/templates/generate-fill-pdf` | Sign-in; paid templates need a purchase | Fills the Word file, returns it and a job id; the PDF is made in the background (`after()`) |
 | `GET /api/templates/generation-status/[jobId]` | The user who started the job | Progress, PDF and Word URLs (jobs last an hour) |
-| `POST /api/templates/generate-custom` | Paid templates need a purchase; rate-limited | Fills `{{placeholders}}` (docxtemplater) and converts to PDF |
 | `POST /api/templates/download-filled` | Sign-in | Fills a Word file the user is building a template from |
 | `POST /api/extract-placeholders` | Sign-in | Lists `{{placeholders}}` in an uploaded Word file |
 | `POST /api/upload-raw-file` | Sign-in | Stores a Word or PDF file (type checked from content, 20 MB) |

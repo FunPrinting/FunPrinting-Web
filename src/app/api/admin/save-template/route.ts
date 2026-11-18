@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUser, isAdminSession, requireAdmin } from '@/lib/authz';
+import { requireAdmin } from '@/lib/authz';
 import { fetchTrustedFile, isTrustedFileUrl } from '@/lib/documents/fileUrls';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
@@ -168,77 +168,3 @@ export async function POST(request: NextRequest) {
 }
 
 // GET endpoint to retrieve template details
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const templateId = searchParams.get('id');
-
-    if (!templateId) {
-      return NextResponse.json(
-        { success: false, error: 'Template ID is required' },
-        { status: 400 }
-      );
-    }
-
-    await connectDB();
-    
-    const template = await DynamicTemplate.findOne({ id: templateId });
-    
-    if (!template) {
-      return NextResponse.json(
-        { success: false, error: 'Template not found' },
-        { status: 404 }
-      );
-    }
-
-    // The Word file is what customers pay for on paid templates; only admins get its URL
-    const viewer = await getSessionUser().catch(() => null);
-    const isAdmin = Boolean(viewer && isAdminSession(viewer));
-
-    // Use stored formSchema from database if available (preferred)
-    // Only regenerate if formSchema is missing or empty
-    let formSchema: any[] = [];
-    
-    if (template.formSchema && Array.isArray(template.formSchema) && template.formSchema.length > 0) {
-      formSchema = template.formSchema;
-    } else {
-      // Fallback: Generate form schema from placeholders if stored schema not available
-      if (template.placeholders && Array.isArray(template.placeholders) && template.placeholders.length > 0) {
-        const schemaObject = generateFormSchema(template.placeholders);
-        formSchema = Object.entries(schemaObject).map(([key, value]) => ({
-          key,
-          ...value,
-          defaultPlaceholder: value.defaultPlaceholder || value.placeholder || `Enter ${key}`
-        }));
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        template: {
-          id: template.id,
-          name: template.name,
-          description: template.description,
-          category: template.category,
-          pdfUrl: template.pdfUrl,
-          ...(isAdmin ? { wordUrl: template.wordUrl } : {}),
-          placeholders: template.placeholders,
-          formSchema,
-          isPaid: template.isPaid,
-          price: template.price,
-          allowFreeDownload: template.allowFreeDownload,
-          createdAt: template.createdAt,
-          updatedAt: template.updatedAt
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching template:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch template' },
-      { status: 500 }
-    );
-  }
-}

@@ -44,7 +44,7 @@ All amounts are integer **paise**.
 
 ## Paid templates
 
-Every generator (`generate-fill-pdf`, `generate-fill`, `generate-custom`, `user-download`) calls `checkTemplateAccess()`: a paid template needs a paid purchase by the signed-in user (`paymentRef`), allows 5 generations per purchase, and uses the form data stored at checkout. Paid templates are paid for before the document is generated.
+Every generator (`generate-fill-pdf` and any other) calls `checkTemplateAccess()`: a paid template needs a paid purchase by the signed-in user (`paymentRef`), allows 5 generations per purchase, and uses the form data stored at checkout. Paid templates are paid for before the document is generated.
 
 ## Statuses
 

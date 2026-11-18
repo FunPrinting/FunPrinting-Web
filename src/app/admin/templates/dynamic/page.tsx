@@ -331,7 +331,7 @@ function ManageDynamicTemplatesContent() {
                         {/* Action Buttons */}
                         <div className="grid grid-cols-2 gap-2 mb-2">
                           <button
-                            onClick={() => router.push(`/templates/custom/${template.id}`)}
+                            onClick={() => router.push(`/templates/fill/${template.id}`)}
                             className="bg-blue-600 text-white py-1.5 px-2 rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
                           >
                             View
