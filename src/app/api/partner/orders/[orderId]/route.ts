@@ -5,6 +5,29 @@ import { syncJobFromOrderStatus } from '@/lib/jobs/service';
 import { withRequestLogger } from '@/lib/logger';
 import Order from '@/models/Order';
 
+/**
+ * GET /api/partner/orders/[orderId] — one of the shop's orders. The desktop app
+ * uses it for the order summary sheet it prints on top of a job.
+ */
+export async function GET(request: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+  const log = withRequestLogger(request);
+  try {
+    const resolved = await resolvePartnerRequest(request);
+    if (resolved instanceof NextResponse) return resolved;
+    const partnerIdStr = resolved.partner._id.toString();
+    const { orderId } = await params;
+    const order = await Order.findOne({
+      orderId,
+      $or: [{ partnerId: partnerIdStr }, { 'deliveryOption.partnerId': partnerIdStr }],
+    }).lean();
+    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    return NextResponse.json({ success: true, order });
+  } catch (error) {
+    log.error({ err: error }, 'partner order fetch failed');
+    return NextResponse.json({ success: false, error: 'Failed to fetch order' }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }

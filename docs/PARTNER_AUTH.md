@@ -40,7 +40,9 @@ The device id in the token is also the device used for print job claims, so `x-d
 
 ## Installed apps (legacy tokens)
 
-Apps installed before this change open the sign-in page without `code_challenge` and receive the old 30-day token in the redirect. Those tokens (signed with `NEXTAUTH_SECRET`) keep working on the API and the socket so nobody is locked out. They can't be signed out individually; deactivating the shop still blocks them on the API. Phases 5 and 6 move the apps to the new sign-in, after which the legacy path can be removed.
+Apps installed before this change open the sign-in page without `code_challenge` and receive the old 30-day token in the redirect. Those tokens (signed with `NEXTAUTH_SECRET`) keep working on the API and the socket so nobody is locked out. They can't be signed out individually; deactivating the shop still blocks them on the API.
+
+The desktop app uses the new sign-in from Phase 5 (shops sign in once again after updating; the old token is discarded). The mobile app moves in Phase 6, after which the legacy path can be removed.
 
 ## Environment
 

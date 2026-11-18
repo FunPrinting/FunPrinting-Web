@@ -24,8 +24,10 @@ vi.mock('@/lib/payments/refunds', () => ({
   releasePartnerTransfer: vi.fn(async (ref: string) => { money.released.push(ref); return 'released'; }),
 }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn() }));
-const partnerAuth = vi.hoisted(() => ({ id: '' }));
-vi.mock('@/lib/authz', () => ({ resolvePartnerRequest: vi.fn(async () => ({ partner: { _id: partnerAuth.id }, userId: 'u' })) }));
+const partnerAuth = vi.hoisted(() => ({ id: '', deviceId: undefined as string | undefined }));
+vi.mock('@/lib/authz', () => ({
+  resolvePartnerRequest: vi.fn(async () => ({ partner: { _id: partnerAuth.id }, userId: 'u', deviceId: partnerAuth.deviceId })),
+}));
 vi.mock('next/server', async (orig) => ({ ...(await orig<typeof import('next/server')>()), after: () => undefined }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
@@ -408,5 +410,27 @@ describe('installed desktop app (GET /api/partner/orders)', () => {
     // The web dashboard (session, no bearer) sees it, with its job
     const web = await (await GET(new NextRequest('http://x/api/partner/orders'))).json();
     expect(web.orders.find((o: any) => o.orderId === manualOrder).job.status).toBe('pending_acceptance');
+  });
+
+  it('a desktop app with device sign-in does not claim by fetching, and sees orders to accept', async () => {
+    const { GET } = await import('@/app/api/partner/orders/route');
+    const { NextRequest } = await import('next/server');
+    const queuedOrder = await paidOrder(autoShop);
+    await createJobForOrder(queuedOrder);
+    partnerAuth.id = autoShop;
+    partnerAuth.deviceId = 'dev_new_app';
+    try {
+      const req = new NextRequest('http://x/api/partner/orders', { headers: { authorization: 'Bearer t', 'user-agent': 'FunPrinting Electron/44' } });
+      await GET(req);
+      expect((await jobOf(queuedOrder)).status).toBe('queued');
+
+      const manualOrder = await paidOrder(manualShop);
+      await createJobForOrder(manualOrder);
+      partnerAuth.id = manualShop;
+      const body = await (await GET(req)).json();
+      expect(body.orders.find((o: any) => o.orderId === manualOrder).job.status).toBe('pending_acceptance');
+    } finally {
+      partnerAuth.deviceId = undefined;
+    }
   });
 });

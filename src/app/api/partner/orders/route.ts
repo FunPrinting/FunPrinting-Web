@@ -14,7 +14,7 @@ let lastSweep = 0;
  * The shop's orders, with each order's print job (status, deadlines) for the web
  * dashboard's Accept / Decline buttons.
  *
- * Compatibility with the installed apps, which don't know about print jobs yet:
+ * Compatibility with apps on a legacy token, which don't know about print jobs:
  * - Orders waiting for a manual-mode shop to accept are not sent to the apps, so they
  *   can't print or advance an order the shop hasn't accepted.
  * - The desktop app prints every paid order it receives here, so its fetch claims
@@ -28,8 +28,10 @@ export async function GET(request: NextRequest) {
     const resolved = await resolvePartnerRequest(request);
     if (resolved instanceof NextResponse) return resolved;
     const partnerId = resolved.partner._id.toString();
-    const fromApp = Boolean(request.headers.get('authorization'));
-    const fromDesktopApp = fromApp && /Electron/i.test(request.headers.get('user-agent') || '');
+    // Only apps on a legacy token need the compatibility behaviour; apps with device
+    // sign-in (resolved.deviceId) use /api/partner/v1/jobs and know about acceptance.
+    const fromLegacyApp = Boolean(request.headers.get('authorization')) && !resolved.deviceId;
+    const fromDesktopApp = fromLegacyApp && /Electron/i.test(request.headers.get('user-agent') || '');
 
     const status = request.nextUrl.searchParams.get('status') || 'all';
     const query: Record<string, unknown> = { $or: [{ partnerId }, { 'deliveryOption.partnerId': partnerId }] };
@@ -58,7 +60,7 @@ export async function GET(request: NextRequest) {
       .lean<Array<Pick<IPrintJob, 'jobId' | 'orderId' | 'status' | 'acceptBy' | 'refundBy' | 'acceptanceMode'>>>();
     const jobByOrder = new Map(jobs.map((j) => [j.orderId, j]));
 
-    const visible = fromApp ? orders.filter((o) => jobByOrder.get(o.orderId)?.status !== 'pending_acceptance') : orders;
+    const visible = fromLegacyApp ? orders.filter((o) => jobByOrder.get(o.orderId)?.status !== 'pending_acceptance') : orders;
     const result = visible.map((o) => {
       const j = jobByOrder.get(o.orderId);
       return j ? { ...o, job: { jobId: j.jobId, status: j.status, acceptBy: j.acceptBy, refundBy: j.refundBy, acceptanceMode: j.acceptanceMode } } : o;

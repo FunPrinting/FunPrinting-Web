@@ -65,11 +65,13 @@ Auth: the partner device token (`Authorization: Bearer`), plus `x-device-id` (a 
 
 Devices fetch the job list on start-up, on every socket reconnect, and when the socket server sends `jobs:available`. The socket carries no job data, so a device that was offline misses nothing. Two devices can't print the same job: a claim is atomic, and a device that stops reporting loses its lease after 5 minutes.
 
-**Compatibility with the installed apps** (until Phase 5):
-- Automatic-mode shops also receive the old `new_print_job` push; a device receiving it counts as a claim (`legacy-push`).
-- When the installed desktop app fetches `GET /api/partner/orders`, the shop's queued jobs are claimed (`legacy-pull`), because that app prints every paid order it sees.
-- Orders waiting for a manual shop to accept are hidden from the apps; the shop accepts or declines on the web dashboard.
-- Claims by the old apps never report "printed"; if the order isn't moved to printed within 24 hours, the job is flagged for an admin (it shows in `/admin/errors`).
+The desktop app (partner-desktop, from Phase 5) works this way: it takes **one job at a time** (claim, print every file, report `printed` or `failed`), sends `printing` every 2 minutes as a heartbeat, and also re-fetches every minute. Several computers can share a shop's queue. Manual-mode shops accept or decline in the app as well as on the dashboard.
+
+**Compatibility with apps on a legacy token** (installed before device sign-in; the mobile app until Phase 6). These rules apply only when the request or socket has no device id:
+- Automatic-mode shops also receive the old `new_print_job` push. Only legacy sockets get it and are counted; a device receiving it counts as a claim (`legacy-push`).
+- When a legacy desktop app fetches `GET /api/partner/orders`, the shop's queued jobs are claimed (`legacy-pull`), because that app prints every paid order it sees.
+- Orders waiting for a manual shop to accept are hidden from legacy apps; the shop accepts or declines on the web dashboard.
+- Claims by legacy apps never report "printed"; if the order isn't moved to printed within 24 hours, the job is flagged for an admin (it shows in `/admin/errors`).
 
 ## Orders from before print jobs
 

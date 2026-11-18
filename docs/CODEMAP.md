@@ -76,7 +76,7 @@ Rules for new code:
 | `/api/partner/devices` | GET, DELETE | partner | Signed-in apps; sign one out | |
 | `/api/partner/desktop-token` | GET | session | Legacy 30-day token for apps installed before device sign-in | Remove after Phases 5–6 |
 | `/api/partner/orders` | GET | partner | Orders assigned to the partner | Phase 3: Partner API v1 (jobs, claim) |
-| `/api/partner/orders/[orderId]` | PATCH | partner | Forward-only status moves (`src/lib/partnerOrderTransitions.ts`), conditional update | Phase 3: order state machine |
+| `/api/partner/orders/[orderId]` | GET, PATCH | partner | GET: one order (desktop summary sheet). PATCH: forward-only status moves (`src/lib/partnerOrderTransitions.ts`), conditional update | Phase 3: order state machine |
 | `/api/partner/profile` | GET, POST | partner (inactive allowed) | Apply / edit shop. New partners start `isActive: false`; partners can't set `isActive`, and can't change `razorpayAccountId` after approval | Phase 4 |
 | `/api/partner/financials` | GET | partner | | |
 | `/api/admin/partners` | GET | admin | | Phase 4 |
