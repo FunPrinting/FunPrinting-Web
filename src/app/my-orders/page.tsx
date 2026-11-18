@@ -7,7 +7,8 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, Building2, CreditCard, Download, ExternalLink, FileText, Loader2, Package, RefreshCw, Truck, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { startOrderPayment } from '@/lib/payments/client';
-import { ACTIVE_STATUSES, progressSteps, statusInfo, type StatusTone } from '@/lib/orderStatus';
+import { ACTIVE_STATUSES } from '@/lib/orderStatus';
+import { OrderProgress, StatusBadge } from '@/components/orders/OrderStatus';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -50,14 +51,6 @@ interface Order {
   shiprocket?: { awbCode?: string; courierName?: string; trackingUrl?: string; status?: string };
 }
 
-const TONE: Record<StatusTone, string> = {
-  neutral: 'bg-muted text-muted-foreground',
-  primary: 'bg-accent text-accent-foreground',
-  success: 'bg-success/10 text-success',
-  warning: 'bg-warning/10 text-warning',
-  danger: 'bg-destructive/10 text-destructive',
-};
-
 const rupees = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const date = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -65,25 +58,9 @@ function isAwaitingPayment(o: Order) {
   return o.paymentStatus !== 'completed' && (o.status === 'pending_payment' || !o.status);
 }
 
-function Progress({ order }: { order: Order }) {
-  const info = statusInfo(order.status);
-  if (info.step < 1) return null;
-  const steps = progressSteps(order.deliveryOption?.type === 'delivery');
-  return (
-    <ol className="grid grid-cols-5 gap-1.5" aria-label={`Progress: ${info.label}`}>
-      {steps.map((label, i) => (
-        <li key={label} className="space-y-1.5">
-          <div className={cn('h-1.5 rounded-full', i < info.step ? 'bg-primary' : 'bg-muted')} />
-          <span className={cn('block text-[11px]', i < info.step ? 'font-medium text-foreground' : 'text-muted-foreground')}>{label}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: () => void; onCancel: () => void; paying: boolean }) {
   const router = useRouter();
-  const info = statusInfo(isAwaitingPayment(order) ? 'pending_payment' : order.status);
+  const shownStatus = isAwaitingPayment(order) ? 'pending_payment' : order.status;
   const files = order.originalFileNames?.length ? order.originalFileNames : order.originalFileName ? [order.originalFileName] : [];
   const opts = order.printingOptions;
   const delivery = order.deliveryOption;
@@ -95,7 +72,7 @@ function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: ()
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-sm font-semibold">#{order.orderId}</h2>
-            <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', TONE[info.tone])}>{info.label}</span>
+            <StatusBadge status={shownStatus} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{date(order.createdAt)}</p>
         </div>
@@ -140,7 +117,7 @@ function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: ()
           ) : null}
         </div>
 
-        <Progress order={order} />
+        <OrderProgress status={order.status} delivery={order.deliveryOption?.type === 'delivery'} />
 
         {order.shiprocket?.awbCode && order.paymentStatus === 'completed' ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm">

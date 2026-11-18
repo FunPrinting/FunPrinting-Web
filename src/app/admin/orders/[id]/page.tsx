@@ -113,8 +113,6 @@ function OrderDetailPageContent() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isShipping, setIsShipping] = useState(false);
-  const [pdfLoaded, setPdfLoaded] = useState(false);
-  const [selectedFileIndex, setSelectedFileIndex] = useState(0); // For multiple file preview
 
   const fetchOrder = useCallback(async (orderId: string) => {
     try {
@@ -179,25 +177,8 @@ function OrderDetailPageContent() {
   useEffect(() => {
     if (params.id) {
       fetchOrder(params.id as string);
-      setPdfLoaded(false); // Reset PDF loaded state when order changes
-      setSelectedFileIndex(0); // Reset to first file when order changes
     }
   }, [params.id, fetchOrder]);
-
-  // Add timeout to prevent stuck loading state (onLoad may not fire for PDFs)
-  useEffect(() => {
-    const currentFileURL = (Array.isArray(order?.fileURLs) && order!.fileURLs.length > 0)
-      ? order.fileURLs[selectedFileIndex]
-      : order?.fileURL;
-    if (order && currentFileURL && !pdfLoaded) {
-      const timeout = setTimeout(() => {
-        console.log('⏱️ Showing PDF preview after 3 seconds (onLoad may not fire for PDFs)');
-        setPdfLoaded(true);
-      }, 3000); // 3 second timeout as fallback
-
-      return () => clearTimeout(timeout);
-    }
-  }, [order, order?.fileURL, order?.fileURLs, selectedFileIndex, pdfLoaded]);
 
   const updateOrderStatus = async (newStatus: string) => {
     if (!order) return;
@@ -410,10 +391,6 @@ function OrderDetailPageContent() {
         <OrderDetailView
           order={order}
           mode="admin"
-          selectedFileIndex={selectedFileIndex}
-          setSelectedFileIndex={setSelectedFileIndex}
-          pdfLoaded={pdfLoaded}
-          setPdfLoaded={setPdfLoaded}
           isUpdating={isUpdating}
           isPrinting={isPrinting}
           isShipping={isShipping}

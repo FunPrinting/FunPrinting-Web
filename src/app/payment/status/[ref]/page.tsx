@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { CheckCircle2, CircleAlert, Clock, Loader2, RotateCcw, Undo2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface PaymentStatus {
   referenceId: string;
@@ -21,6 +25,10 @@ interface PaymentStatus {
 const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
 const POLL_MS = 3000;
 const MAX_WAIT_MS = 3 * 60_000;
+
+function Icon({ icon: I, tone }: { icon: React.ElementType; tone: string }) {
+  return <span className={`grid size-10 place-items-center rounded-full ${tone}`}><I className="size-5" aria-hidden /></span>;
+}
 
 export default function PaymentStatusPage() {
   const { ref } = useParams<{ ref: string }>();
@@ -78,84 +86,93 @@ export default function PaymentStatusPage() {
   const unverified = search.get('notice') === 'unverified';
 
   return (
-    <main className="min-h-[70vh] bg-gray-50 px-4 py-16">
-      <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+    <div className="px-4 py-16">
+      <Card className="mx-auto max-w-lg">
         {error ? (
           <>
-            <h1 className="text-xl font-bold text-gray-900">Payment status</h1>
-            <p className="mt-2 text-gray-600">{error}</p>
-            <Link href="/my-orders" className="mt-6 inline-block font-semibold text-indigo-600 hover:underline">Go to My Orders</Link>
+            <CardHeader>
+              <Icon icon={CircleAlert} tone="bg-muted text-muted-foreground" />
+              <CardTitle className="mt-2 text-xl">Payment status</CardTitle>
+              <CardDescription>{error}</CardDescription>
+            </CardHeader>
+            <CardFooter><Button asChild variant="outline"><Link href="/my-orders">Go to My orders</Link></Button></CardFooter>
           </>
         ) : !payment ? (
-          <div className="flex items-center gap-3 text-gray-600" role="status">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-            Loading payment…
-          </div>
+          <CardContent className="flex items-center gap-2 py-10 text-muted-foreground" role="status">
+            <Loader2 className="size-4 animate-spin" aria-hidden />Loading payment…
+          </CardContent>
         ) : payment.status === 'paid' ? (
           <>
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl" aria-hidden>✓</div>
-            <h1 className="mt-4 text-2xl font-bold text-gray-900">Payment received</h1>
-            <p className="mt-1 text-gray-600">
-              {rupees(payment.amounts.total)} paid
-              {payment.orderId ? <> for order <span className="font-mono font-semibold">#{payment.orderId}</span></> : null}
-              {payment.templateName ? <> for <span className="font-semibold">{payment.templateName}</span></> : null}.
-            </p>
+            <CardHeader>
+              <Icon icon={CheckCircle2} tone="bg-success/10 text-success" />
+              <CardTitle className="mt-2 text-2xl">Payment received</CardTitle>
+              <CardDescription>
+                {rupees(payment.amounts.total)} paid
+                {payment.orderId ? <> for order <span className="font-mono font-medium text-foreground">#{payment.orderId}</span></> : null}
+                {payment.templateName ? <> for <span className="font-medium text-foreground">{payment.templateName}</span></> : null}.
+              </CardDescription>
+            </CardHeader>
             {payment.purpose === 'print_order' ? (
               <>
-                <p className="mt-3 text-sm text-gray-600">We have sent your order to the print shop and emailed your invoice.</p>
-                <Link href="/my-orders" className="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700">View my orders</Link>
+                <CardContent className="text-sm text-muted-foreground">We’ve sent your order to the print shop and emailed your invoice.</CardContent>
+                <CardFooter><Button asChild><Link href="/my-orders">View my orders</Link></Button></CardFooter>
               </>
             ) : (
-              <button type="button" onClick={continueTemplate} className="mt-6 rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700">
-                Generate my document
-              </button>
+              <CardFooter><Button onClick={continueTemplate}>Generate my document</Button></CardFooter>
             )}
           </>
         ) : payment.status === 'created' ? (
           <>
-            <h1 className="text-2xl font-bold text-gray-900">{waitedTooLong ? 'Still waiting for the payment' : 'Confirming your payment…'}</h1>
-            <p className="mt-2 text-gray-600">
-              {waitedTooLong
-                ? 'We have not received confirmation from Razorpay yet. If money was taken, it will show up here automatically; you will not be charged twice.'
-                : 'This usually takes a few seconds. Please keep this page open.'}
-            </p>
-            {unverified && <p className="mt-2 text-sm text-amber-700">The redirect from the payment page could not be verified, so we are checking with Razorpay directly.</p>}
-            {!waitedTooLong && (
-              <div className="mt-4 flex items-center gap-3 text-sm text-gray-500" role="status">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-                Checking…
-              </div>
-            )}
-            <div className="mt-6 flex flex-wrap gap-3">
-              {payment.paymentUrl && (
-                <a href={payment.paymentUrl} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700">
-                  Complete payment ({rupees(payment.amounts.total)})
-                </a>
-              )}
-              <button type="button" onClick={() => { started.current = Date.now(); setWaitedTooLong(false); void load(); }} className="rounded-lg border border-gray-300 px-5 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
-                Check again
-              </button>
-            </div>
+            <CardHeader>
+              <Icon icon={waitedTooLong ? Clock : Loader2} tone={waitedTooLong ? 'bg-warning/10 text-warning' : 'bg-accent text-accent-foreground [&_svg]:animate-spin'} />
+              <CardTitle className="mt-2 text-2xl">{waitedTooLong ? 'Still waiting for the payment' : 'Confirming your payment…'}</CardTitle>
+              <CardDescription>
+                {waitedTooLong
+                  ? 'Razorpay hasn’t confirmed the payment yet. If money was taken, it will show up here automatically. You won’t be charged twice.'
+                  : 'This usually takes a few seconds. Please keep this page open.'}
+              </CardDescription>
+            </CardHeader>
+            {unverified ? (
+              <CardContent>
+                <Alert><AlertDescription>We couldn’t verify the redirect from the payment page, so we’re checking with Razorpay directly.</AlertDescription></Alert>
+              </CardContent>
+            ) : null}
+            <CardFooter className="flex flex-wrap gap-2">
+              {payment.paymentUrl ? (
+                <Button asChild><a href={payment.paymentUrl}>Complete payment ({rupees(payment.amounts.total)})</a></Button>
+              ) : null}
+              <Button variant="outline" onClick={() => { started.current = Date.now(); setWaitedTooLong(false); void load(); }}>
+                <RotateCcw />Check again
+              </Button>
+            </CardFooter>
           </>
         ) : payment.status === 'expired' || payment.status === 'cancelled' ? (
           <>
-            <h1 className="text-2xl font-bold text-gray-900">Payment not completed</h1>
-            <p className="mt-2 text-gray-600">This payment link has {payment.status === 'expired' ? 'expired' : 'been closed'}. No money was taken.</p>
-            {payment.orderId ? (
-              <Link href="/my-orders" className="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700">Pay from My Orders</Link>
-            ) : (
-              <Link href={payment.templateId ? `/templates/fill/${encodeURIComponent(payment.templateId)}` : '/templates'} className="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700">Try again</Link>
-            )}
+            <CardHeader>
+              <Icon icon={CircleAlert} tone="bg-muted text-muted-foreground" />
+              <CardTitle className="mt-2 text-2xl">Payment not completed</CardTitle>
+              <CardDescription>This payment link has {payment.status === 'expired' ? 'expired' : 'been closed'}. No money was taken.</CardDescription>
+            </CardHeader>
+            <CardFooter>
+              {payment.orderId ? (
+                <Button asChild><Link href="/my-orders">Pay from My orders</Link></Button>
+              ) : (
+                <Button asChild><Link href={payment.templateId ? `/templates/fill/${encodeURIComponent(payment.templateId)}` : '/templates'}>Try again</Link></Button>
+              )}
+            </CardFooter>
           </>
         ) : (
           <>
-            <h1 className="text-2xl font-bold text-gray-900">{payment.status === 'refunded' ? 'Payment refunded' : 'Partly refunded'}</h1>
-            <p className="mt-2 text-gray-600">{rupees(payment.amountRefunded)} of {rupees(payment.amounts.total)} has been refunded to your original payment method. Banks usually take 5–7 working days.</p>
-            <Link href="/my-orders" className="mt-6 inline-block font-semibold text-indigo-600 hover:underline">Go to My Orders</Link>
+            <CardHeader>
+              <Icon icon={Undo2} tone="bg-muted text-muted-foreground" />
+              <CardTitle className="mt-2 text-2xl">{payment.status === 'refunded' ? 'Payment refunded' : 'Partly refunded'}</CardTitle>
+              <CardDescription>{rupees(payment.amountRefunded)} of {rupees(payment.amounts.total)} has been refunded to your original payment method. Banks usually take 5–7 working days.</CardDescription>
+            </CardHeader>
+            <CardFooter><Button asChild variant="outline"><Link href="/my-orders">Go to My orders</Link></Button></CardFooter>
           </>
         )}
-        <p className="mt-8 text-xs text-gray-400">Reference: {ref}</p>
-      </div>
-    </main>
+        <CardContent className="border-t pt-4 text-xs text-muted-foreground">Reference: <span className="font-mono">{ref}</span></CardContent>
+      </Card>
+    </div>
   );
 }

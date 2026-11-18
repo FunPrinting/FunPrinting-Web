@@ -1,135 +1,66 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, CircleAlert } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { OrderDetailView } from '@/components/OrderDetailView';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function OrderDetailsPage() {
-  const params = useParams();
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [order, setOrder] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pdfLoaded, setPdfLoaded] = useState(false);
-  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/auth/signin?callbackUrl=/my-orders');
-    }
-  }, [authLoading, isAuthenticated, router]);
+    if (!authLoading && !isAuthenticated) router.push(`/auth/signin?callbackUrl=${encodeURIComponent(`/orders/${id}`)}`);
+  }, [authLoading, isAuthenticated, router, id]);
 
   useEffect(() => {
-    if (isAuthenticated && params.id) {
-      fetchOrder(params.id as string);
-    }
-  }, [isAuthenticated, params.id]);
-
-  const fetchOrder = async (orderId: string) => {
-    try {
-      const response = await fetch(`/api/orders/${orderId}`);
-      const result = await response.json();
-
-      if (result.success && result.order) {
-        const loadedOrder = result.order;
-
-        // Basic client-side ownership check (backend should also enforce)
-        if (user?.email && loadedOrder.customerInfo?.email && loadedOrder.customerInfo.email !== user.email) {
-          setError('You are not allowed to view this order.');
-          setIsLoading(false);
-          return;
-        }
-
-        setOrder(loadedOrder);
-      } else {
-        setError(result.error || 'Failed to load order');
-      }
-    } catch (err) {
-      console.error('Error fetching order:', err);
-      setError('Failed to load order');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading order details...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={() => router.push('/my-orders')}
-            className="mt-2 bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Back to My Orders
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!order) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600 mb-4">Order not found.</p>
-          <button
-            onClick={() => router.push('/my-orders')}
-            className="mt-2 bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Back to My Orders
-          </button>
-        </div>
-      </div>
-    );
-  }
+    if (!isAuthenticated || !id) return;
+    // The API only returns orders that belong to the signed-in user (404 otherwise)
+    fetch(`/api/orders/${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((data) => (data.success && data.order ? setOrder(data.order) : setError(data.error || 'We could not find this order.')))
+      .catch(() => setError('Could not load the order. Check your connection and try again.'));
+  }, [isAuthenticated, id]);
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Order #{order.orderId}</h1>
-            <p className="text-sm text-gray-600">
-              This is a read-only view of your order. For any changes, please contact support at the counter.
-            </p>
-          </div>
-          <button
-            onClick={() => router.push('/my-orders')}
-            className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors text-sm"
-          >
-            Back to My Orders
-          </button>
-        </div>
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+      <Button asChild variant="ghost" size="sm" className="-ml-2 mb-4">
+        <Link href="/my-orders"><ArrowLeft />My orders</Link>
+      </Button>
 
-        <OrderDetailView
-          order={order}
-          mode="user"
-          selectedFileIndex={selectedFileIndex}
-          setSelectedFileIndex={setSelectedFileIndex}
-          pdfLoaded={pdfLoaded}
-          setPdfLoaded={setPdfLoaded}
-        />
-      </div>
+      {error ? (
+        <Card className="mx-auto max-w-lg">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <CircleAlert className="size-8 text-muted-foreground" aria-hidden />
+            <p>{error}</p>
+            <Button asChild variant="outline"><Link href="/my-orders">Back to My orders</Link></Button>
+          </CardContent>
+        </Card>
+      ) : !order ? (
+        <div className="grid gap-6 lg:grid-cols-5" role="status" aria-label="Loading order">
+          <div className="space-y-6 lg:col-span-2">
+            <Skeleton className="h-28 rounded-xl" />
+            <Skeleton className="h-80 rounded-xl" />
+          </div>
+          <Skeleton className="h-[36rem] rounded-xl lg:col-span-3" />
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h1 className="text-3xl font-semibold">Order <span className="font-mono">#{order.orderId}</span></h1>
+            <p className="mt-1 text-muted-foreground">Need to change something? Contact the print shop or <Link href="/contact" className="underline">our support team</Link>.</p>
+          </div>
+          <OrderDetailView order={order} mode="user" />
+        </>
+      )}
     </div>
   );
 }
-
