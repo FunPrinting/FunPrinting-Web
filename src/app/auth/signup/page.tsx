@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { AuthShell, BackHome, GoogleButton, OrDivider } from '@/components/auth/AuthShell';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -46,6 +47,12 @@ export default function SignUpPage() {
       return;
     }
 
+    const phoneCheck = normalisePhoneInput(formData.phone);
+    if (!phoneCheck.ok) {
+      setError(phoneCheck.error);
+      setIsLoading(false);
+      return;
+    }
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters long');
       setIsLoading(false);
@@ -62,7 +69,7 @@ export default function SignUpPage() {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          phone: formData.phone,
+          phone: phoneCheck.phone,
         }),
       });
 
@@ -179,8 +186,9 @@ export default function SignUpPage() {
           <Input id="email" name="email" type="email" autoComplete="email" value={formData.email} onChange={handleInputChange} className="h-11" required placeholder="you@example.com" />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="phone">Phone <span className="font-normal text-muted-foreground">(optional)</span></Label>
-          <Input id="phone" name="phone" type="tel" autoComplete="tel" value={formData.phone} onChange={handleInputChange} className="h-11" placeholder="+91 98765 43210" />
+          <Label htmlFor="phone">Mobile number</Label>
+          <Input id="phone" name="phone" type="tel" autoComplete="tel" inputMode="tel" required value={formData.phone} onChange={handleInputChange} className="h-11" placeholder="98765 43210" aria-describedby="phone-hint" />
+          <p id="phone-hint" className="text-xs text-muted-foreground">The print shop uses it to reach you about your order.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

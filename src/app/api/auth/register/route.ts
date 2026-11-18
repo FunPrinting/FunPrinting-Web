@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import VerificationToken from '@/models/VerificationToken';
 import { sendVerificationEmail } from '@/lib/email-verification';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +17,12 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Name, email, and password are required' },
         { status: 400 }
       );
+    }
+
+    // Phone is required: shops call customers about their orders
+    const phoneCheck = normalisePhoneInput(phone);
+    if (!phoneCheck.ok) {
+      return NextResponse.json({ success: false, error: phoneCheck.error }, { status: 400 });
     }
 
     // Validate email format
@@ -60,7 +67,7 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
-      phone: phone?.trim(),
+      phone: phoneCheck.phone,
       provider: 'email',
       emailVerified: false,
     });
