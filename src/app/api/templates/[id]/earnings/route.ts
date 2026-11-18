@@ -36,7 +36,6 @@ export async function GET(
       templateId: templateId,
       creatorUserId: user._id
     })
-      .populate('creatorUserId', 'name email upiId bankDetails')
       .sort({ createdAt: -1 });
 
     // Calculate summary statistics

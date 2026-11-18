@@ -54,7 +54,6 @@ Rules for new code:
 | `/api/orders` | GET | user | Signed-in user's orders (`?email=` admin only) | |
 | `/api/orders/[id]` | GET, DELETE | user + owner | | |
 | `/api/orders/[id]/track` | GET | public | Shiprocket tracking by order id | Phase 3: owner check |
-| `/api/orders/verify/*` | POST | OTP / session | Pickup/delivery handover OTP | |
 | `/api/pricing`, `/api/pickup-locations`, `/api/partners/nearby` | GET | public | Read-only data for the order page (nearby shops: public fields only) | |
 | `/api/delivery/options` | GET | public, rate-limited | Pickup / shop delivery / courier options for one shop and address (docs/DELIVERY.md) | |
 | `/api/partner/orders/[orderId]/ship` | POST | partner | Shop books the courier pickup after printing | |
@@ -129,7 +128,7 @@ Order state today is spread over `status`, `orderStatus` and `paymentStatus`. Ph
 
 ## Pages (`src/app`)
 
-Customer: `/`, `/order`, `/payment/status/[ref]`, `/orders/[id]/choose`, `/cart`, `/my-orders`, `/orders/[id]`, `/verify-order/[id]`, `/templates/**`, `/my-templates`, `/profile`, `/dashboard`, `/payout-settings`, `/complete-profile`, `/auth/*`.
+Customer: `/`, `/order`, `/payment/status/[ref]`, `/orders/[id]/choose`, `/cart`, `/my-orders`, `/orders/[id]`, `/templates/**`, `/my-templates`, `/profile`, `/payout-settings`, `/complete-profile`, `/auth/*`.
 Partner: `/partner`, `/partner/dashboard`, `/partner/desktop-auth` (callback allowlist: `localhost:4321`, `funprintingpartner://`).
 Admin: `/admin/**`, gated by `AdminGoogleAuth` (session + `/api/auth/check-admin`); the API routes enforce it again server-side.
 Static: policies, contact, `sitemap.xml`.
