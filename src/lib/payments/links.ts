@@ -4,7 +4,7 @@ import Payment, { type IPayment, type PaymentPurpose } from '@/models/Payment';
 import Order from '@/models/Order';
 import { createPaymentLink, type RouteTransfer } from '@/lib/payments/razorpayApi';
 import { callbackUrl, isRouteEnabled, LINK_TTL_MINUTES } from '@/lib/payments/config';
-import { PARTNER_SHARE_PERCENT, percentOf, type Totals } from '@/lib/payments/money';
+import { partnerShareOf, type Totals } from '@/lib/payments/money';
 import { logger } from '@/lib/logger';
 import type { SessionUser } from '@/lib/authz';
 
@@ -77,13 +77,17 @@ export const newPaymentAttempt = {
     orderId?: string;
     totals: Totals;
     partner?: { id: string; accountId?: string };
+    /** Delivery part of the subtotal (paise) and whether the shop delivers it itself. */
+    delivery?: { amount: number; byShop: boolean };
     templateId?: string;
     template?: IPayment['template'];
     creatorShare?: number;
   }) {
     const referenceId = await nextReferenceId(args.purpose, args.orderId);
     const routeTransfer = Boolean(args.partner?.accountId && isRouteEnabled());
-    const partnerShare = routeTransfer ? percentOf(args.totals.subtotal, PARTNER_SHARE_PERCENT) : undefined;
+    const partnerShare = routeTransfer
+      ? partnerShareOf({ subtotal: args.totals.subtotal, delivery: args.delivery?.amount ?? 0, deliveryByShop: Boolean(args.delivery?.byShop) })
+      : undefined;
     return Payment.create({
       referenceId,
       purpose: args.purpose,

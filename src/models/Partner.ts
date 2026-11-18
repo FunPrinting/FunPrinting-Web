@@ -48,6 +48,26 @@ export interface IPartner {
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
   // auto: paid orders go straight to the print queue; manual: the partner accepts each order
   acceptanceMode: 'auto' | 'manual';
+  /**
+   * How this shop can get orders to customers' homes. Both are off by default:
+   * a shop without either offers pickup only.
+   * - courier: a Shiprocket courier collects parcels from the shop's address
+   * - self: the shop's own person delivers within radiusKm for its own fee
+   */
+  delivery?: {
+    courier?: {
+      enabled: boolean;
+      pickupName?: string; // Shiprocket pickup_location nickname, set once registered
+      registeredAt?: Date;
+      lastError?: string;
+    };
+    self?: {
+      enabled: boolean;
+      radiusKm: number;
+      fee: number; // rupees, kept by the shop
+      etaMinutes: number; // typical time from printed to delivered
+    };
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -98,6 +118,20 @@ const partnerSchema = new mongoose.Schema<IPartner>({
   }],
   razorpayAccountId: { type: String, required: false },
   acceptanceMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
+  delivery: {
+    courier: {
+      enabled: { type: Boolean, default: false },
+      pickupName: String,
+      registeredAt: Date,
+      lastError: String,
+    },
+    self: {
+      enabled: { type: Boolean, default: false },
+      radiusKm: { type: Number, default: 3, min: 0.5, max: 25 },
+      fee: { type: Number, default: 30, min: 0, max: 1000 },
+      etaMinutes: { type: Number, default: 120, min: 15, max: 24 * 60 },
+    },
+  },
 }, {
   timestamps: true,
 });

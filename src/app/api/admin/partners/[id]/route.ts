@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/authz';
 import { withRequestLogger } from '@/lib/logger';
@@ -65,6 +65,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const { revokeAllDevices } = await import('@/lib/partnerAuth/service');
       const revoked = await revokeAllDevices(id, `partner deactivated by ${admin.email}`);
       log.info({ partnerId: id, revoked }, 'partner devices signed out');
+    }
+    if (parsed.data.isActive === true && partner.delivery?.courier?.enabled && !partner.delivery.courier.pickupName) {
+      after(async () => {
+        const { ensureCourierPickup } = await import('@/lib/delivery/options');
+        const result = await ensureCourierPickup(id).catch((err: unknown) => ({ ok: false, error: String(err) }));
+        if (!result.ok) log.warn({ partnerId: id, error: result.error }, 'courier pickup not registered');
+      });
     }
     log.info({ partnerId: id, changes: Object.keys(update) }, 'partner updated by admin');
     return NextResponse.json({ success: true, partner });

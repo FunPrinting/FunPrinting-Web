@@ -1,6 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { z } from 'zod';
 import { resolvePartnerRequest } from '@/lib/authz';
+import { ensureCourierPickup } from '@/lib/delivery/options';
 import Partner from '@/models/Partner';
+
+/** Home delivery settings a shop controls (docs/DELIVERY.md). */
+const deliverySettings = z.object({
+  courier: z.object({ enabled: z.boolean() }).optional(),
+  self: z
+    .object({
+      enabled: z.boolean(),
+      radiusKm: z.number().min(0.5, 'Delivery radius must be at least 0.5 km').max(25, 'Delivery radius can be at most 25 km').optional(),
+      fee: z.number().int('Use a whole-rupee fee').min(0).max(1000, 'Delivery fee can be at most ₹1,000').optional(),
+      etaMinutes: z.number().int().min(15).max(24 * 60).optional(),
+    })
+    .optional(),
+});
 
 // GET Partner Profile
 export async function GET(request: NextRequest) {
@@ -43,8 +58,28 @@ export async function POST(request: NextRequest) {
       }
 
       if (data.location) {
+        const moved = JSON.stringify(partner.address ?? {}) !== JSON.stringify(data.address ?? {});
         partner.location = data.location;
         partner.address = data.address;
+        // Couriers collect from the address: a new address needs a new pickup registration
+        if (moved && partner.delivery?.courier?.pickupName) {
+          partner.set('delivery.courier.pickupName', undefined);
+          partner.set('delivery.courier.registeredAt', undefined);
+        }
+      }
+      if (data.delivery !== undefined) {
+        const parsed = deliverySettings.safeParse(data.delivery);
+        if (!parsed.success) {
+          return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message || 'Invalid delivery settings' }, { status: 400 });
+        }
+        const { courier, self } = parsed.data;
+        if (courier) partner.set('delivery.courier.enabled', courier.enabled);
+        if (self) {
+          partner.set('delivery.self.enabled', self.enabled);
+          if (self.radiusKm !== undefined) partner.set('delivery.self.radiusKm', self.radiusKm);
+          if (self.fee !== undefined) partner.set('delivery.self.fee', self.fee);
+          if (self.etaMinutes !== undefined) partner.set('delivery.self.etaMinutes', self.etaMinutes);
+        }
       }
       if (data.servicesOffered) {
         partner.servicesOffered = { ...partner.servicesOffered, ...data.servicesOffered };
@@ -64,6 +99,11 @@ export async function POST(request: NextRequest) {
       if (data.acceptanceMode === 'auto' || data.acceptanceMode === 'manual') partner.acceptanceMode = data.acceptanceMode;
 
       await partner.save();
+      // Register the shop's courier pickup address in the background once it is needed
+      if (partner.isActive && partner.delivery?.courier?.enabled && !partner.delivery.courier.pickupName) {
+        const id = String(partner._id);
+        after(() => ensureCourierPickup(id).then(() => undefined, (err) => console.error('courier pickup registration failed', err)));
+      }
     } else {
       // Create new
       if (!data.businessName || !data.location || !data.address) {

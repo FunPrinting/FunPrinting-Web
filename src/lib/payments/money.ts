@@ -31,6 +31,15 @@ export function percentOf(paise: number, percent: number): number {
   return Math.round((paise * percent) / 100);
 }
 
+/**
+ * What the shop receives: 90% of the printing, plus all of its own delivery fee.
+ * A courier charge is not shared, because the platform pays the courier.
+ */
+export function partnerShareOf(input: { subtotal: number; delivery: number; deliveryByShop: boolean }): number {
+  const printing = Math.max(0, input.subtotal - input.delivery);
+  return percentOf(printing, PARTNER_SHARE_PERCENT) + (input.deliveryByShop ? input.delivery : 0);
+}
+
 export interface Totals {
   subtotal: number;
   fee: number;

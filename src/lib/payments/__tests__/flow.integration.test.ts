@@ -210,14 +210,55 @@ describe('checkout', () => {
     await expect(createPrintCheckout(user, checkoutInput({ delivery: { type: 'pickup', partnerId: String(p._id) } }), 'http://x')).rejects.toThrow(/not available/);
   });
 
-  it('computes the delivery charge on the server', async () => {
-    const r = await createPrintCheckout(
-      user,
-      checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'express', recipientName: 'B', recipientPhone: '9876543210', address: 'X', city: 'C', state: 'S', pinCode: '110001' } }),
-      'http://x'
-    );
-    // estimated: 0.06 kg → 1 slab ₹26, express ₹39
-    expect(r.amounts.subtotal).toBe(5000 + 3900);
+  describe('home delivery', () => {
+    const address = { recipientName: 'B', recipientPhone: '98765 43210', address: 'X', city: 'C', state: 'S', pinCode: '110001' };
+    // Shop at lng 77, lat 28; 0.01° of latitude ≈ 1.1 km
+    const near = { lat: 28.01, lng: 77 };
+    const far = { lat: 28.1, lng: 77 };
+    const setDelivery = (delivery: Record<string, unknown>) =>
+      Partner.updateOne({ _id: shopId }, { $set: { delivery, address: { street: 'Main Road, Shop 4', city: 'C', state: 'S', zipCode: '110002' } } });
+
+    it('courier: charged on the server from the shop pincode; the courier charge is not shared with the shop', async () => {
+      await setDelivery({ courier: { enabled: true } });
+      await Partner.updateOne({ _id: shopId }, { razorpayAccountId: 'acc_ABCDEFGHIJKLMN' });
+      process.env.RAZORPAY_ROUTE_ENABLED = '1';
+      const r = await createPrintCheckout(user, checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'standard', ...address } }), 'http://x');
+      // estimated without Shiprocket: 0.06 kg → one 500 g slab, ₹26
+      expect(r.amounts.subtotal).toBe(5000 + 2600);
+      // 90% of the printing only
+      expect(rz.created[0].transfers).toEqual([expect.objectContaining({ amount: 4500 })]);
+      const order = await Order.findOne({ orderId: r.orderId }).lean<any>();
+      expect(order.deliveryOption).toMatchObject({ method: 'courier', deliveryCharge: 26, recipientPhone: '+919876543210' });
+      expect(order.deliveryOption.handover).toBeUndefined();
+    });
+
+    it('courier: rejected when the shop does not use couriers, or the speed is not offered', async () => {
+      await expect(createPrintCheckout(user, checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'standard', ...address } }), 'http://x')).rejects.toThrow(/No courier/);
+      await setDelivery({ courier: { enabled: true } });
+      await expect(createPrintCheckout(user, checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'express', ...address } }), 'http://x')).rejects.toThrow(/no longer available/);
+    });
+
+    it('shop delivery: within the radius, the shop fee is charged and kept by the shop, with a handover code', async () => {
+      await setDelivery({ self: { enabled: true, radiusKm: 3, fee: 40, etaMinutes: 90 } });
+      await Partner.updateOne({ _id: shopId }, { razorpayAccountId: 'acc_ABCDEFGHIJKLMN' });
+      process.env.RAZORPAY_ROUTE_ENABLED = '1';
+      const r = await createPrintCheckout(user, checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'shop', location: near, ...address } }), 'http://x');
+      expect(r.amounts.subtotal).toBe(5000 + 4000);
+      // 90% of ₹50 printing + all of the ₹40 fee
+      expect(rz.created[0].transfers).toEqual([expect.objectContaining({ amount: 4500 + 4000 })]);
+      const order = await Order.findOne({ orderId: r.orderId }).lean<any>();
+      expect(order.deliveryOption).toMatchObject({ method: 'shop', deliveryCharge: 40, speed: 'shop' });
+      expect(order.deliveryOption.distance).toBeCloseTo(1.1, 1);
+      expect(order.deliveryOption.handover.code).toMatch(/^\d{4}$/);
+    });
+
+    it('shop delivery: rejected without a location, outside the radius, or when the shop does not deliver', async () => {
+      const shopInput = (extra: Record<string, unknown>) => checkoutInput({ delivery: { type: 'delivery', partnerId: shopId, speed: 'shop', ...address, ...extra } });
+      await expect(createPrintCheckout(user, shopInput({ location: near }), 'http://x')).rejects.toThrow(/doesn’t deliver itself/);
+      await setDelivery({ self: { enabled: true, radiusKm: 3, fee: 40, etaMinutes: 90 } });
+      await expect(createPrintCheckout(user, shopInput({}), 'http://x')).rejects.toThrow(/Share your location/);
+      await expect(createPrintCheckout(user, shopInput({ location: far }), 'http://x')).rejects.toThrow(/outside the shop’s delivery area/);
+    });
   });
 });
 

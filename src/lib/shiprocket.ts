@@ -107,6 +107,7 @@ interface ShiprocketOrderInput {
     breadth?: number; // in cm
     height?: number; // in cm
     paymentMethod?: 'Prepaid' | 'COD';
+    pickupLocation: string; // the shop's Shiprocket pickup nickname (see ensureCourierPickup)
 }
 
 interface ShiprocketOrderResult {
@@ -121,7 +122,7 @@ interface ShiprocketOrderResult {
  */
 export async function createShiprocketOrder(input: ShiprocketOrderInput): Promise<ShiprocketOrderResult> {
     try {
-        const pickupLocation = process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary';
+        const pickupLocation = input.pickupLocation;
         const defaultWeight = parseFloat(process.env.SHIPROCKET_DEFAULT_WEIGHT || '0.5');
 
         const payload = {
@@ -239,69 +240,7 @@ export async function assignAWB(shipmentId: number, courierId?: number): Promise
     }
 }
 
-// ─── Shipment Tracking ────────────────────────────────────────────────────────
-
-interface TrackingActivity {
-    date: string;
-    activity: string;
-    location: string;
-    status: string;
-}
-
-interface TrackingResult {
-    success: boolean;
-    currentStatus?: string;
-    deliveredDate?: string;
-    etd?: string; // estimated time of delivery
-    activities?: TrackingActivity[];
-    trackingUrl?: string;
-    error?: string;
-}
-
-/**
- * Track a shipment by AWB code
- */
-export async function trackShipment(awbCode: string): Promise<TrackingResult> {
-    try {
-        console.log(`📍 Tracking shipment with AWB: ${awbCode}`);
-        const data = await shiprocketRequest(`/courier/track/awb/${awbCode}`, 'GET');
-
-        const trackingData = data.tracking_data;
-        if (!trackingData) {
-            return {
-                success: true,
-                currentStatus: 'UNKNOWN',
-                activities: [],
-                trackingUrl: getTrackingUrl(awbCode),
-            };
-        }
-
-        const activities: TrackingActivity[] = (trackingData.shipment_track_activities || []).map(
-            (activity: any) => ({
-                date: activity.date || '',
-                activity: activity['sr-status-label'] || activity.activity || '',
-                location: activity.location || '',
-                status: activity['sr-status'] || '',
-            })
-        );
-
-        return {
-            success: true,
-            currentStatus: trackingData.shipment_status?.toString() || trackingData.track_status?.toString() || 'UNKNOWN',
-            deliveredDate: trackingData.delivered_date || undefined,
-            etd: trackingData.etd || undefined,
-            activities,
-            trackingUrl: getTrackingUrl(awbCode),
-        };
-    } catch (error: any) {
-        console.error('❌ Failed to track shipment:', error.message);
-        return {
-            success: false,
-            error: error.message || 'Failed to track shipment',
-        };
-    }
-}
-
+// ─── Tracking ─────────────────────────────────────────────────────────────────
 /**
  * Get the public Shiprocket tracking URL for an AWB
  */
@@ -309,109 +248,6 @@ export function getTrackingUrl(awbCode: string): string {
     return `https://shiprocket.co/tracking/${awbCode}`;
 }
 
-// ─── Combined Ship Order Flow ─────────────────────────────────────────────────
-
-interface ShipOrderResult {
-    success: boolean;
-    shiprocketOrderId?: number;
-    shipmentId?: number;
-    awbCode?: string;
-    courierName?: string;
-    trackingUrl?: string;
-    error?: string;
-}
-
-/**
- * Full shipping flow: Create Shiprocket order + Assign AWB in one call.
- * This is the main function used by the admin "Ship Order" action.
- */
-export async function shipOrder(order: any): Promise<ShipOrderResult> {
-    try {
-        // Validate that order has delivery address
-        if (!order.deliveryOption || order.deliveryOption.type !== 'delivery') {
-            return { success: false, error: 'Order is not a delivery order (pickup only)' };
-        }
-
-        const address = order.deliveryOption.address;
-        const city = order.deliveryOption.city;
-        const pinCode = order.deliveryOption.pinCode;
-
-        if (!address || !city || !pinCode) {
-            return { success: false, error: 'Order is missing delivery address, city, or pin code' };
-        }
-
-        const customerInfo = order.customerInfo || order.studentInfo;
-        if (!customerInfo) {
-            return { success: false, error: 'Order is missing customer information' };
-        }
-
-        // Step 1: Create Shiprocket order
-        const orderResult = await createShiprocketOrder({
-            orderId: order.orderId,
-            orderDate: order.createdAt,
-            customerName: customerInfo.name,
-            customerEmail: customerInfo.email,
-            customerPhone: customerInfo.phone,
-            address,
-            city,
-            pinCode,
-            state: order.deliveryOption.state || '',
-            amount: order.amount,
-            items: [{
-                name: `Printing Order #${order.orderId}`,
-                sku: `PRINT-${order.orderId}`,
-                units: 1,
-                sellingPrice: order.amount,
-            }],
-            paymentMethod: 'Prepaid', // Already paid via Razorpay
-        });
-
-        if (!orderResult.success || !orderResult.shipmentId) {
-            return {
-                success: false,
-                error: orderResult.error || 'Failed to create Shiprocket order',
-            };
-        }
-
-        // Step 2: Assign AWB (courier + tracking number)
-        const awbResult = await assignAWB(orderResult.shipmentId);
-
-        if (!awbResult.success || !awbResult.awbCode) {
-            // Order was created but AWB assignment failed - still partially successful
-            return {
-                success: true, // Order exists in Shiprocket, AWB can be assigned later
-                shiprocketOrderId: orderResult.shiprocketOrderId,
-                shipmentId: orderResult.shipmentId,
-                error: `Order created in Shiprocket but AWB assignment failed: ${awbResult.error}. You can retry AWB assignment from the Shiprocket dashboard.`,
-            };
-        }
-
-        const trackingUrl = getTrackingUrl(awbResult.awbCode);
-
-        console.log(`🎉 Order shipped successfully:`, {
-            shiprocketOrderId: orderResult.shiprocketOrderId,
-            shipmentId: orderResult.shipmentId,
-            awbCode: awbResult.awbCode,
-            courierName: awbResult.courierName,
-            trackingUrl,
-        });
-
-        return {
-            success: true,
-            shiprocketOrderId: orderResult.shiprocketOrderId,
-            shipmentId: orderResult.shipmentId,
-            awbCode: awbResult.awbCode,
-            courierName: awbResult.courierName,
-            trackingUrl,
-        };
-    } catch (error: any) {
-        console.error('❌ Ship order failed:', error.message);
-        return {
-            success: false,
-            error: error.message || 'Failed to ship order',
-        };
-    }
-}
 
 // ─── Courier Serviceability & Rate Check ──────────────────────────────────────
 
@@ -514,4 +350,53 @@ export async function checkServiceability(
  */
 export function isShiprocketConfigured(): boolean {
     return !!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD);
+}
+
+// ─── Pickup addresses (one per partner shop) ─────────────────────────────────
+
+export interface PickupAddressInput {
+    nickname: string; // max 36 characters, unique in our Shiprocket account
+    name: string;
+    email: string;
+    phone: string; // 10-digit Indian mobile
+    address: string;
+    address2?: string;
+    city: string;
+    state: string;
+    pinCode: string;
+}
+
+export type PickupAddressResult = { ok: true; nickname: string; alreadyExisted: boolean } | { ok: false; error: string };
+
+/**
+ * Adds a pickup address (POST /settings/company/addpickup) so couriers collect from
+ * that shop. Re-registering the same nickname is treated as success.
+ * Shiprocket asks to verify the pickup phone number the first time it is used.
+ */
+export async function addPickupAddress(input: PickupAddressInput): Promise<PickupAddressResult> {
+    const phone = input.phone.replace(/\D/g, '').slice(-10);
+    if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: 'The shop needs a valid 10-digit mobile number' };
+    if (!/^[1-9]\d{5}$/.test(input.pinCode)) return { ok: false, error: 'The shop address needs a valid 6-digit pincode' };
+    // Shiprocket limits the first address line to 80 characters and rejects very short ones
+    const line = input.address.trim();
+    if (line.length < 10) return { ok: false, error: 'The shop address is too short for the courier (add the building and street)' };
+    try {
+        await shiprocketRequest('/settings/company/addpickup', 'POST', {
+            pickup_location: input.nickname.slice(0, 36),
+            name: input.name.slice(0, 100),
+            email: input.email,
+            phone,
+            address: line.slice(0, 80),
+            address_2: [line.slice(80), input.address2].filter(Boolean).join(', ').slice(0, 80),
+            city: input.city,
+            state: input.state,
+            country: 'India',
+            pin_code: input.pinCode,
+        });
+        return { ok: true, nickname: input.nickname, alreadyExisted: false };
+    } catch (error: any) {
+        const message = String(error?.message || '');
+        if (/already|exists|in use/i.test(message)) return { ok: true, nickname: input.nickname, alreadyExisted: true };
+        return { ok: false, error: message.slice(0, 300) || 'Shiprocket rejected the pickup address' };
+    }
 }

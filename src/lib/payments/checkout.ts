@@ -4,7 +4,9 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
 import { getFileTypeFromFileNames } from '@/lib/fileTypeDetection';
-import { getDeliveryQuote, isValidPincode, tierCharge } from '@/lib/delivery/rates';
+import { isValidPincode } from '@/lib/delivery/rates';
+import { getDeliveryOptions, newHandoverCode, type PartnerDeliveryFields } from '@/lib/delivery/options';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
 import { verifyUploadReceipt, type UploadReceipt } from '@/lib/uploads/receipt';
 import { DEFAULT_PARTNER_PRICING, normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
 import { assertChargeable, paiseToRupees, withProcessingFee } from '@/lib/payments/money';
@@ -46,7 +48,8 @@ export const printCheckoutSchema = z.object({
     type: z.enum(['pickup', 'delivery']),
     partnerId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Choose a print shop'),
     partnerDeliveryPoint: z.string().max(200).optional(),
-    speed: z.enum(['standard', 'express', 'sameday']).optional(),
+    /** Courier tier id, or 'shop' for the shop's own delivery. */
+    speed: z.enum(['standard', 'express', 'sameday', 'shop']).optional(),
     recipientName: z.string().trim().max(100).optional(),
     recipientPhone: z.string().trim().max(20).optional(),
     address: z.string().trim().max(500).optional(),
@@ -55,7 +58,7 @@ export const printCheckoutSchema = z.object({
     city: z.string().trim().max(100).optional(),
     state: z.string().trim().max(100).optional(),
     pinCode: z.string().trim().max(10).optional(),
-    location: z.object({ lat: z.number(), lng: z.number(), address: z.string().max(500).optional() }).optional(),
+    location: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), address: z.string().max(500).optional() }).optional(),
   }),
   expectedDate: z.string().max(40).optional(),
 });
@@ -95,26 +98,49 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   }));
 
   // 2. Shop: every order goes to an approved partner (the platform's own shop is one too)
-  const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<{
-    _id: unknown;
-    businessName?: string;
-    pricing?: { perPageBW: number; perPageColor: number; binding: number };
-    razorpayAccountId?: string;
-  } | null>();
+  const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<
+    (PartnerDeliveryFields & { pricing?: { perPageBW: number; perPageColor: number; binding: number }; razorpayAccountId?: string }) | null
+  >();
   if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
   const partnerPricing = partner.pricing ?? DEFAULT_PARTNER_PRICING;
 
-  // 3. Delivery charge, computed here
+  // 3. Delivery: only an option this shop really offers for this address, priced here
   let deliveryChargePaise = 0;
   let deliveryCharge: number | undefined;
+  let method: 'courier' | 'shop' | undefined;
+  let distance: number | undefined;
+  let recipientPhone: string | undefined;
   if (input.delivery.type === 'delivery') {
     const d = input.delivery;
     if (!d.recipientName || !d.recipientPhone || !d.address || !d.city || !d.state) {
       throw new CheckoutError('Please complete the delivery address');
     }
     if (!isValidPincode(d.pinCode)) throw new CheckoutError('Please enter a valid 6-digit pincode');
-    const quote = await getDeliveryQuote(d.pinCode, parcelWeightKg(quoteFiles));
-    deliveryCharge = tierCharge(quote, d.speed).deliveryCharge;
+    const phoneCheck = normalisePhoneInput(d.recipientPhone);
+    if (!phoneCheck.ok) throw new CheckoutError(`Recipient phone: ${phoneCheck.error}`);
+    recipientPhone = phoneCheck.phone;
+    const options = await getDeliveryOptions(partner, { pinCode: d.pinCode, weightKg: parcelWeightKg(quoteFiles), location: d.location });
+    if (d.speed === 'shop') {
+      if (!options.shop) {
+        throw new CheckoutError(
+          options.shopUnavailable === 'need_location'
+            ? 'Share your location so we can check the shop delivers to you'
+            : options.shopUnavailable === 'too_far'
+              ? 'This address is outside the shop’s delivery area. Choose courier delivery or pickup.'
+              : 'This shop doesn’t deliver itself. Choose courier delivery or pickup.'
+        );
+      }
+      method = 'shop';
+      deliveryCharge = options.shop.fee;
+      distance = options.shop.distanceKm;
+    } else {
+      const tier = options.courier.find((t) => t.id === (d.speed ?? 'standard'));
+      if (!tier) {
+        throw new CheckoutError(options.courier.length ? 'That delivery speed is no longer available. Please choose again.' : 'No courier delivers from this shop to your pincode. Choose pickup instead.');
+      }
+      method = 'courier';
+      deliveryCharge = tier.deliveryCharge;
+    }
     deliveryChargePaise = Math.round(deliveryCharge * 100);
   }
 
@@ -169,7 +195,11 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     },
     deliveryOption: {
       ...input.delivery,
+      ...(recipientPhone ? { recipientPhone } : {}),
       deliveryCharge,
+      method,
+      distance,
+      ...(method === 'shop' ? { handover: { code: newHandoverCode(), attempts: 0 } } : {}),
     },
     partnerId: String(partner._id),
     expectedDate: expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : undefined,
@@ -207,6 +237,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     orderId: order.orderId,
     totals,
     partner: { id: String(partner._id), accountId: partner.razorpayAccountId },
+    delivery: { amount: quote.delivery, byShop: method === 'shop' },
   });
   const result = await createLinkForPayment(payment, {
     description: `FunPrinting order ${order.orderId}`,

@@ -220,7 +220,7 @@ Copy `env.template` to `.env` and configure:
 | **Auth** | `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 | **Payments** | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` |
 | **Storage** | `STORAGE_PROVIDER` (oracle/cloudinary), `OCI_*` or `CLOUDINARY_*` credentials |
-| **Shipping** | `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD`, `SHIPROCKET_PICKUP_PINCODE` |
+| **Shipping** | `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD`, `SHIPROCKET_WEBHOOK_TOKEN` (see docs/DELIVERY.md) |
 | **Doc Conversion** | `CLOUDMERSIVE_API_KEY` |
 | **Print jobs** | `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `APP_BASE_URL` (see `docs/PRINT_JOBS.md`) |
 | **Email** | `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` |

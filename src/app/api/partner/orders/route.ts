@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { resolvePartnerRequest } from '@/lib/authz';
 import { withRequestLogger } from '@/lib/logger';
 import Order from '@/models/Order';
+import { forPartner } from '@/lib/partnerOrderView';
 import PrintJob, { type IPrintJob } from '@/models/PrintJob';
 import { event, syncOrderFromJob } from '@/lib/jobs/service';
 
@@ -63,7 +64,8 @@ export async function GET(request: NextRequest) {
     const visible = fromLegacyApp ? orders.filter((o) => jobByOrder.get(o.orderId)?.status !== 'pending_acceptance') : orders;
     const result = visible.map((o) => {
       const j = jobByOrder.get(o.orderId);
-      return j ? { ...o, job: { jobId: j.jobId, status: j.status, acceptBy: j.acceptBy, refundBy: j.refundBy, acceptanceMode: j.acceptanceMode } } : o;
+      const view = forPartner(o);
+      return j ? { ...view, job: { jobId: j.jobId, status: j.status, acceptBy: j.acceptBy, refundBy: j.refundBy, acceptanceMode: j.acceptanceMode } } : view;
     });
 
     if (Date.now() - lastSweep > 60_000) {

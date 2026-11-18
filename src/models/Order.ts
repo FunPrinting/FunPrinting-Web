@@ -96,7 +96,11 @@ export interface IOrder {
     pickupLocationId?: string;
     partnerId?: string;
     partnerDeliveryPoint?: string;
-    speed?: 'standard' | 'express' | 'sameday';
+    speed?: 'standard' | 'express' | 'sameday' | 'shop';
+    /** Who takes it to the customer: a Shiprocket courier, or the shop's own person. */
+    method?: 'courier' | 'shop';
+    /** Shop delivery: the customer tells the rider this code; the shop enters it to mark the order delivered. */
+    handover?: { code: string; attempts: number; verifiedAt?: Date };
     pickupLocation?: {
       _id: string;
       name: string;
@@ -129,6 +133,8 @@ export interface IOrder {
     trackingUrl?: string;    // Direct tracking URL
     status?: string;         // Latest Shiprocket status string
     lastTrackedAt?: Date;    // When we last fetched tracking info
+    bookingStartedAt?: Date; // lock while a booking request is in flight
+    bookedBy?: string;       // 'partner:<id>' or 'admin:<email>'
   };
   // QR dispatch verification fields
   verificationOtp?: string;       // 6-digit OTP for dispatch verification
@@ -261,7 +267,9 @@ const orderSchema = new mongoose.Schema<IOrder>({
     pickupLocationId: String,
     partnerId: String,
     partnerDeliveryPoint: String,
-    speed: { type: String, enum: ['standard', 'express', 'sameday'] },
+    speed: { type: String, enum: ['standard', 'express', 'sameday', 'shop'] },
+    method: { type: String, enum: ['courier', 'shop'] },
+    handover: { code: String, attempts: Number, verifiedAt: Date },
     pickupLocation: {
       _id: String,
       name: String,
@@ -339,6 +347,8 @@ const orderSchema = new mongoose.Schema<IOrder>({
     trackingUrl: String,
     status: String,
     lastTrackedAt: Date,
+    bookingStartedAt: Date,
+    bookedBy: String,
   },
   // QR dispatch verification
   verificationOtp: String,

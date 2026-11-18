@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { resolvePartnerRequest } from '@/lib/authz';
-import { checkPartnerTarget, checkPartnerTransition } from '@/lib/partnerOrderTransitions';
+import { checkPartnerTarget, checkPartnerTransition, MAX_HANDOVER_ATTEMPTS } from '@/lib/partnerOrderTransitions';
+import { forPartner } from '@/lib/partnerOrderView';
+import { timingSafeEqual } from 'node:crypto';
 import { syncJobFromOrderStatus } from '@/lib/jobs/service';
 import { withRequestLogger } from '@/lib/logger';
 import Order from '@/models/Order';
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       $or: [{ partnerId: partnerIdStr }, { 'deliveryOption.partnerId': partnerIdStr }],
     }).lean();
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
-    return NextResponse.json({ success: true, order });
+    return NextResponse.json({ success: true, order: forPartner(order) });
   } catch (error) {
     log.error({ err: error }, 'partner order fetch failed');
     return NextResponse.json({ success: false, error: 'Failed to fetch order' }, { status: 500 });
@@ -58,7 +60,7 @@ export async function PATCH(
 
     // Repeating the current status (reprint, double click, desktop auto-update) is a no-op
     if (order.status === status) {
-      return NextResponse.json({ success: true, order, unchanged: true });
+      return NextResponse.json({ success: true, order: forPartner(order), unchanged: true });
     }
 
     const check = checkPartnerTransition(order, status);
@@ -66,11 +68,42 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: check.error }, { status: 400 });
     }
 
+    // Shop delivery: the customer's handover code proves the order was handed over
+    let verifiedNow = false;
+    if (check.needsHandoverCode) {
+      const handover = order.deliveryOption?.handover;
+      const given = typeof body?.code === 'string' ? body.code.replace(/\D/g, '') : '';
+      if (!handover?.code) {
+        return NextResponse.json({ success: false, error: 'This order has no handover code. Please contact support.' }, { status: 409 });
+      }
+      if ((handover.attempts ?? 0) >= MAX_HANDOVER_ATTEMPTS) {
+        return NextResponse.json({ success: false, error: 'Too many wrong codes. Contact support to confirm the delivery.', code: 'handover_locked' }, { status: 423 });
+      }
+      if (!given) {
+        return NextResponse.json({ success: false, error: 'Ask the customer for their 4-digit delivery code', code: 'handover_required' }, { status: 400 });
+      }
+      const ok = given.length === handover.code.length && timingSafeEqual(Buffer.from(given), Buffer.from(handover.code));
+      if (!ok) {
+        const bumped = await Order.findOneAndUpdate(
+          { _id: order._id },
+          { $inc: { 'deliveryOption.handover.attempts': 1 } },
+          { new: true, projection: { 'deliveryOption.handover.attempts': 1 } }
+        ).lean<{ deliveryOption?: { handover?: { attempts?: number } } }>();
+        const left = Math.max(0, MAX_HANDOVER_ATTEMPTS - (bumped?.deliveryOption?.handover?.attempts ?? MAX_HANDOVER_ATTEMPTS));
+        log.warn({ orderId, partnerId: partnerIdStr, left }, 'wrong handover code');
+        return NextResponse.json(
+          { success: false, error: left ? `That code is not right. ${left} ${left === 1 ? 'try' : 'tries'} left.` : 'Too many wrong codes. Contact support to confirm the delivery.', code: left ? 'handover_wrong' : 'handover_locked', attemptsLeft: left },
+          { status: 400 }
+        );
+      }
+      verifiedNow = true;
+    }
+
     // Conditional on the status we validated against, so two concurrent updates
     // (e.g. desktop and mobile) cannot both apply. Payment fields are never touched.
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status, ...ownedBy },
-      { $set: { status, orderStatus: status } },
+      { $set: { status, orderStatus: status, ...(verifiedNow ? { 'deliveryOption.handover.verifiedAt': new Date() } : {}) } },
       { new: true }
     );
     if (!updated) {
@@ -86,7 +119,7 @@ export async function PATCH(
     after(() =>
       syncJobFromOrderStatus(orderId, status, label).catch((err) => log.error({ err, orderId }, 'job sync failed'))
     );
-    return NextResponse.json({ success: true, order: updated });
+    return NextResponse.json({ success: true, order: forPartner(updated) });
   } catch (error) {
     log.error({ err: error }, 'partner order status update failed');
     return NextResponse.json({ success: false, error: 'Failed to update order status' }, { status: 500 });

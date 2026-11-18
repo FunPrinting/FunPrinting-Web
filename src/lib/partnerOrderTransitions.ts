@@ -1,10 +1,13 @@
 /**
- * Fulfilment progression a partner may move an order through.
+ * Fulfilment progression a partner may move an order through. Only forward moves.
  *
- * Only forward moves are allowed. Targets are limited to statuses that exist in both
- * Order.status and Order.orderStatus enums ('out_for_delivery' is not one of them).
- * Payment-related states (pending_payment, cancelled, refunded) are never reachable
- * from here; Phase 3 replaces this with the full order state machine.
+ * What comes after "printed" depends on how the order reaches the customer:
+ * - pickup:          printed → ready_for_pickup → completed
+ * - shop delivery:   printed → dispatched (out for delivery) → delivered, which needs
+ *                    the customer's handover code
+ * - courier:         the shop stops at printed; booking the courier sets dispatched and
+ *                    the courier's tracking (or an admin) sets delivered
+ * Payment-related states (pending_payment, cancelled, refunded) are never reachable here.
  */
 export const STATUS_RANK: Readonly<Record<string, number>> = {
   paid: 0,
@@ -21,11 +24,32 @@ export const PARTNER_TARGET_STATUSES: ReadonlySet<string> = new Set([
   'printing',
   'printed',
   'ready_for_pickup',
+  'dispatched',
   'delivered',
   'completed',
 ]);
 
-export type TransitionCheck = { ok: true } | { ok: false; error: string };
+export type Fulfilment = 'pickup' | 'shop' | 'courier';
+
+export interface TransitionOrder {
+  status?: string | null;
+  paymentStatus?: string | null;
+  deliveryOption?: { type?: string | null; method?: string | null; handover?: { verifiedAt?: Date | string | null } | null } | null;
+}
+
+/** Orders saved before delivery methods existed count as courier deliveries. */
+export function fulfilmentOf(order: TransitionOrder): Fulfilment {
+  if (order.deliveryOption?.type !== 'delivery') return 'pickup';
+  return order.deliveryOption.method === 'shop' ? 'shop' : 'courier';
+}
+
+const ALLOWED_AFTER_PRINTING: Record<Fulfilment, ReadonlySet<string>> = {
+  pickup: new Set(['ready_for_pickup', 'completed']),
+  shop: new Set(['dispatched', 'delivered', 'completed']),
+  courier: new Set([]),
+};
+
+export type TransitionCheck = { ok: true; needsHandoverCode?: boolean } | { ok: false; error: string };
 
 /** Validates the requested target on its own, before the order is loaded. */
 export function checkPartnerTarget(target: unknown): TransitionCheck {
@@ -36,15 +60,14 @@ export function checkPartnerTarget(target: unknown): TransitionCheck {
   return { ok: true };
 }
 
-/** Validates moving a specific order to `target`. */
-export function checkPartnerTransition(
-  order: { status?: string | null; paymentStatus?: string | null },
-  target: string
-): TransitionCheck {
+/**
+ * Validates moving a specific order to `target`. For shop deliveries, reaching
+ * delivered/completed returns needsHandoverCode until the code has been accepted.
+ */
+export function checkPartnerTransition(order: TransitionOrder, target: string): TransitionCheck {
   const targetCheck = checkPartnerTarget(target);
   if (!targetCheck.ok) return targetCheck;
   if (order.paymentStatus !== 'completed') return { ok: false, error: 'Order is not paid' };
-
   const current = order.status ?? '';
   const currentRank = STATUS_RANK[current];
   if (currentRank === undefined) {
@@ -53,5 +76,19 @@ export function checkPartnerTransition(
   if (STATUS_RANK[target] <= currentRank) {
     return { ok: false, error: `Cannot move order from "${current}" to "${target}"` };
   }
-  return { ok: true };
+  const how = fulfilmentOf(order);
+  if (STATUS_RANK[target] > STATUS_RANK.printed && !ALLOWED_AFTER_PRINTING[how].has(target)) {
+    const hint =
+      how === 'courier'
+        ? 'This order goes by courier: book the courier pickup instead'
+        : how === 'pickup'
+          ? 'This is a pickup order: mark it ready for pickup'
+          : 'This order is delivered by your shop: mark it out for delivery, then delivered';
+    return { ok: false, error: hint };
+  }
+  const needsHandoverCode = how === 'shop' && STATUS_RANK[target] >= STATUS_RANK.delivered && !order.deliveryOption?.handover?.verifiedAt;
+  return { ok: true, needsHandoverCode };
 }
+
+/** Wrong codes allowed before the shop has to contact support. */
+export const MAX_HANDOVER_ATTEMPTS = 5;
