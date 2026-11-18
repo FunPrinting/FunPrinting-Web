@@ -55,7 +55,10 @@ Rules for new code:
 | `/api/orders/[id]` | GET, DELETE | user + owner | | |
 | `/api/orders/[id]/track` | GET | public | Shiprocket tracking by order id | Phase 3: owner check |
 | `/api/orders/verify/*` | POST | OTP / session | Pickup/delivery handover OTP | |
-| `/api/pricing`, `/api/pickup-locations`, `/api/delivery/rate`, `/api/partners/nearby` | GET | public | Read-only data for the order page | |
+| `/api/pricing`, `/api/pickup-locations`, `/api/partners/nearby` | GET | public | Read-only data for the order page (nearby shops: public fields only) | |
+| `/api/delivery/options` | GET | public, rate-limited | Pickup / shop delivery / courier options for one shop and address (docs/DELIVERY.md) | |
+| `/api/partner/orders/[orderId]/ship` | POST | partner | Shop books the courier pickup after printing | |
+| `/api/webhooks/courier-updates` | POST | `x-api-key` = `SHIPROCKET_WEBHOOK_TOKEN` | Shiprocket tracking; marks courier orders delivered | |
 | `/api/user/orders`, `/api/user/orders/[orderId]` | GET | session | Customer dashboard | |
 
 ### Print jobs (docs/PRINT_JOBS.md)
@@ -110,7 +113,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 | Error tracking | `errorTracking/server` (capture, grouping, throttling), `errorTracking/scrub` (privacy, fingerprint), `errorTracking/consoleHook`, `errorTracking/client` | Installed from `src/instrumentation.ts`; browser side via `components/ErrorReporter` |
 | Auth | `auth` (NextAuth config), `authz`, `cronAuth`, `templateAuth`, `otp-store`, `password-reset-store`, `email-verification` | `otp-store` is in-memory: Phase 4 moves it to Redis |
 | Payments | `payments/quote` (the only price calculation), `payments/money` (paise, fee), `payments/checkout`, `payments/templateCheckout`, `payments/links`, `payments/fulfil` (settle + idempotent side effects), `payments/webhooks`, `payments/reconcile`, `payments/refunds` (refunds, Route transfer release), `payments/signatures`, `payments/razorpayApi`, `payments/client` (browser) | See `docs/PAYMENTS.md` |
-| Uploads and delivery | `uploads/pageCount`, `uploads/receipt`, `delivery/rates` | |
+| Uploads and delivery | `uploads/pageCount`, `uploads/receipt`, `delivery/rates` (courier quotes), `delivery/options` (what a shop offers, pickup registration, handover code), `delivery/courier` (booking), `partnerOrderView` (hides the handover code from shops) | |
 | Pricing settings and payouts | `pricing` (Pricing model access), `razorpayPayouts` (creator payouts via RazorpayX), `orderUtils`, `orderStatePersistence` | |
 | Fulfilment | `jobs/service` (create, accept, claim, report, sync), `jobs/deadlines` (customer notice, 24 h refund, cancel), `jobs/assign`, `jobs/scheduler` (QStash), `jobs/emails`, `jobs/deliveryNumber`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | |
 | Email | `mailer` (one transport), `notificationService`, `invoiceEmail`, `invoiceGenerator`, `dispatch-email`, `adminNotifications` | |
