@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
+import { z } from 'zod';
 import Pricing from '@/models/Pricing';
 
 export async function GET(_request: NextRequest) {
@@ -32,89 +33,49 @@ export async function GET(_request: NextRequest) {
   }
 }
 
+const money = z.number().min(0).max(100000);
+const bodySchema = z.object({
+  pricing: z.object({
+    basePrices: z.object({ A4: money, A3: money }),
+    multipliers: z.object({ color: z.number().min(1).max(20), doubleSided: z.number().min(1).max(20) }),
+    additionalServices: z.object({ binding: money }),
+    templateCommissionPercent: z.number().min(0).max(50),
+  }),
+});
+
+/**
+ * PUT /api/admin/pricing: the prices the order page and checkout use.
+ * Only these fields are editable; the shop's own delivery fee and live courier rates replace the old distance table.
+ */
 export async function PUT(request: NextRequest) {
   const auth = await requireAdmin();
   if (auth instanceof NextResponse) return auth;
-
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }, { status: 400 });
+  }
+  const p = parsed.data.pricing;
   try {
     await connectDB();
-    
-    const body = await request.json();
-    const { pricing: newPricing, updatedBy } = body;
-    
-    console.log('Received pricing data:', JSON.stringify(newPricing, null, 2));
-    
-    // Validate required fields
-    if (!newPricing || !updatedBy) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Validate delivery charges structure
-    if (!newPricing.deliveryCharges?.delivery || typeof newPricing.deliveryCharges.delivery !== 'object') {
-      console.log('Delivery charges validation failed:', {
-        hasDeliveryCharges: !!newPricing.deliveryCharges,
-        deliveryType: typeof newPricing.deliveryCharges?.delivery,
-        deliveryValue: newPricing.deliveryCharges?.delivery
-      });
-      return NextResponse.json(
-        { success: false, error: 'Invalid delivery charges structure' },
-        { status: 400 }
-      );
-    }
-    
-    // Find existing pricing or create new one
-    let pricing = await Pricing.findOne();
-    
-    // Validate and clamp templateCommissionPercent
-    const templateCommissionPercent = Math.min(50, Math.max(0, Number(newPricing.templateCommissionPercent) || 20));
-    
-    if (pricing) {
-      // Update existing pricing with proper structure validation
-      pricing.basePrices = {
-        A4: newPricing.basePrices.A4,
-        A3: newPricing.basePrices.A3,
-      };
-      pricing.multipliers = {
-        color: newPricing.multipliers.color,
-        doubleSided: newPricing.multipliers.doubleSided,
-      };
-      pricing.deliveryCharges = {
-        pickup: newPricing.deliveryCharges.pickup,
-        delivery: newPricing.deliveryCharges.delivery,
-      };
-      pricing.additionalServices = {
-        binding: newPricing.additionalServices.binding,
-        resumeTemplate: newPricing.additionalServices.resumeTemplate,
-        minServiceFee: newPricing.additionalServices.minServiceFee,
-        minServiceFeePageLimit: newPricing.additionalServices.minServiceFeePageLimit,
-      };
-      pricing.templateCommissionPercent = templateCommissionPercent;
-      pricing.updatedBy = updatedBy;
-      pricing.updatedAt = new Date();
-      
-      await pricing.save();
-    } else {
-      // Create new pricing
-      pricing = await Pricing.create({
-        ...newPricing,
-        templateCommissionPercent,
-        updatedBy,
-      });
-    }
-    
-    return NextResponse.json({
-      success: true,
-      pricing,
-      message: 'Pricing updated successfully',
-    });
+    const pricing = await Pricing.findOneAndUpdate(
+      {},
+      {
+        $set: {
+          'basePrices.A4': p.basePrices.A4,
+          'basePrices.A3': p.basePrices.A3,
+          'multipliers.color': p.multipliers.color,
+          'multipliers.doubleSided': p.multipliers.doubleSided,
+          'additionalServices.binding': p.additionalServices.binding,
+          templateCommissionPercent: p.templateCommissionPercent,
+          updatedBy: auth.email,
+          updatedAt: new Date(),
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    return NextResponse.json({ success: true, pricing, message: 'Pricing updated successfully' });
   } catch (error) {
     console.error('Error updating pricing:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update pricing' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update pricing' }, { status: 500 });
   }
 }

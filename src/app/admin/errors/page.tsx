@@ -1,8 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AdminGoogleAuth from '@/components/admin/AdminGoogleAuth';
-import AdminNavigation from '@/components/admin/AdminNavigation';
+import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
+import { PageHeader } from '@/components/admin/PageHeader';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 
 type Status = 'open' | 'resolved' | 'ignored';
 type Source = 'server' | 'client' | 'wss' | 'desktop' | 'mobile';
@@ -13,7 +23,6 @@ interface ErrorSample {
   stack?: string;
   url?: string;
   method?: string;
-  route?: string;
   requestId?: string;
   userId?: string;
   partnerId?: string;
@@ -22,7 +31,6 @@ interface ErrorSample {
   digest?: string;
   context?: Record<string, unknown>;
 }
-
 interface ErrorGroupItem {
   _id: string;
   source: Source;
@@ -41,7 +49,6 @@ interface ErrorGroupItem {
   samples?: ErrorSample[];
 }
 
-const STATUS_TABS: Array<Status | 'all'> = ['open', 'resolved', 'ignored', 'all'];
 const SOURCES: Source[] = ['server', 'client', 'wss', 'desktop', 'mobile'];
 
 function timeAgo(iso: string): string {
@@ -52,290 +59,191 @@ function timeAgo(iso: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-function ErrorsContent() {
+export default function AdminErrorsPage() {
   const [status, setStatus] = useState<Status | 'all'>('open');
-  const [source, setSource] = useState<Source | ''>('');
-  const [level, setLevel] = useState<'' | 'error' | 'warning'>('');
+  const [source, setSource] = useState('all');
+  const [level, setLevel] = useState('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<ErrorGroupItem[]>([]);
+  const [items, setItems] = useState<ErrorGroupItem[] | null>(null);
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selected, setSelected] = useState<ErrorGroupItem | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setLoadError('');
     const params = new URLSearchParams({ status, page: String(page) });
-    if (source) params.set('source', source);
-    if (level) params.set('level', level);
+    if (source !== 'all') params.set('source', source);
+    if (level !== 'all') params.set('level', level);
     if (query.trim()) params.set('q', query.trim());
     try {
       const res = await fetch(`/api/admin/errors?${params}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
       setItems(data.items);
       setTotal(data.total);
       setPageSize(data.pageSize);
       setCounts(data.counts || {});
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Failed to load');
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'We couldn’t load the errors.');
     }
   }, [status, source, level, query, page]);
-
   useEffect(() => {
     void load();
   }, [load]);
 
   const openDetail = async (id: string) => {
     const res = await fetch(`/api/admin/errors/${id}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (data.success) setSelected(data.item);
+    else toast.error('We couldn’t open that error.');
   };
 
   const update = async (id: string, body: { status?: Status; note?: string }) => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/errors/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+      const res = await fetch(`/api/admin/errors/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'The update failed.');
       setSelected((s) => (s && s._id === id ? { ...s, ...data.item } : s));
+      toast.success(body.note !== undefined ? 'Note saved' : 'Updated');
       await load();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Update failed');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'The update failed.');
     } finally {
       setSaving(false);
     }
   };
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => {
-              setStatus(tab);
-              setPage(1);
-            }}
-            className={`rounded-full px-3 py-1 text-sm font-medium ${status === tab ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}`}
-          >
-            {tab[0].toUpperCase() + tab.slice(1)}
-            {tab !== 'all' && counts[tab] !== undefined ? ` (${counts[tab]})` : ''}
-          </button>
-        ))}
-        <select
-          aria-label="Source"
-          value={source}
-          onChange={(e) => {
-            setSource(e.target.value as Source | '');
-            setPage(1);
-          }}
-          className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
-        >
-          <option value="">All sources</option>
-          {SOURCES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Level"
-          value={level}
-          onChange={(e) => {
-            setLevel(e.target.value as '' | 'error' | 'warning');
-            setPage(1);
-          }}
-          className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
-        >
-          <option value="">Errors and warnings</option>
-          <option value="error">Errors</option>
-          <option value="warning">Warnings</option>
-        </select>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setPage(1);
-            void load();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search message or route"
-            className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
-          />
-          <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-1 text-sm font-semibold text-white">
-            Search
-          </button>
-        </form>
-      </div>
+    <>
+      <PageHeader title="Errors" description="Errors and warnings from the website, server and apps. Repeats are grouped, and a resolved error reopens if it happens again." />
 
-      {loadError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs value={status} onValueChange={(v) => reset(setStatus)(v as Status | 'all')}>
+            <TabsList>
+              {(['open', 'resolved', 'ignored', 'all'] as const).map((t) => (
+                <TabsTrigger key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}{t !== 'all' && counts[t] !== undefined ? ` (${counts[t]})` : ''}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Select value={source} onValueChange={reset(setSource)}>
+            <SelectTrigger className="w-36" aria-label="Source"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">All sources</SelectItem>{SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+          </Select>
+          <Select value={level} onValueChange={reset(setLevel)}>
+            <SelectTrigger className="w-44" aria-label="Level"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Errors and warnings</SelectItem><SelectItem value="error">Errors</SelectItem><SelectItem value="warning">Warnings</SelectItem></SelectContent>
+          </Select>
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); setPage(1); void load(); }}>
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search message or route" aria-label="Search" className="w-56" />
+            <Button type="submit">Search</Button>
+          </form>
+        </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
-            <tr>
-              <th className="px-3 py-2">Error</th>
-              <th className="px-3 py-2">Source</th>
-              <th className="px-3 py-2 text-right">Events</th>
-              <th className="px-3 py-2">Last seen</th>
-              <th className="px-3 py-2">First seen</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading ? (
-              <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-gray-500">Loading…</td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-gray-500">No errors here.</td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item._id} className="cursor-pointer hover:bg-gray-50" onClick={() => openDetail(item._id)}>
-                  <td className="max-w-xl px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${item.level === 'error' ? 'bg-red-500' : 'bg-amber-400'}`} aria-label={item.level} />
-                      <span className="font-medium text-gray-900">{item.name}</span>
-                      {item.regressedAt && item.status === 'open' && (
-                        <span className="rounded bg-red-100 px-1.5 text-xs font-medium text-red-700">regressed</span>
-                      )}
-                    </div>
-                    <div className="truncate text-gray-600" title={item.message}>{item.message}</div>
-                    {item.route && <div className="truncate text-xs text-gray-400">{item.route}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-gray-700">{item.source}</td>
-                  <td className="px-3 py-2 text-right font-mono">{item.count}</td>
-                  <td className="px-3 py-2 text-gray-700" title={item.lastSeenAt}>{timeAgo(item.lastSeenAt)}</td>
-                  <td className="px-3 py-2 text-gray-500" title={item.firstSeenAt}>{timeAgo(item.firstSeenAt)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+        {loadError ? <Alert variant="destructive"><AlertDescription>{loadError}</AlertDescription></Alert> : null}
 
-      <div className="flex items-center justify-between text-sm text-gray-600">
-        <span>{total} issue{total === 1 ? '' : 's'}</span>
-        <div className="flex gap-2">
-          <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded border px-2 py-1 disabled:opacity-40">Previous</button>
-          <span>Page {page} of {pages}</span>
-          <button type="button" disabled={page >= pages} onClick={() => setPage((p) => p + 1)} className="rounded border px-2 py-1 disabled:opacity-40">Next</button>
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>Error</TableHead><TableHead>Source</TableHead><TableHead className="text-right">Events</TableHead><TableHead>Last seen</TableHead><TableHead>First seen</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {items === null ? (
+                <TableRow><TableCell colSpan={5} className="py-10 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" aria-label="Loading" /></TableCell></TableRow>
+              ) : items.length === 0 ? (
+                <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Nothing here.</TableCell></TableRow>
+              ) : (
+                items.map((item) => (
+                  <TableRow key={item._id} className="cursor-pointer" onClick={() => openDetail(item._id)}>
+                    <TableCell className="max-w-xl whitespace-normal">
+                      <div className="flex items-center gap-2">
+                        <span className={`size-2 shrink-0 rounded-full ${item.level === 'error' ? 'bg-destructive' : 'bg-warning'}`} aria-label={item.level} />
+                        <span className="font-medium">{item.name}</span>
+                        {item.regressedAt && item.status === 'open' ? <Badge variant="destructive">Came back</Badge> : null}
+                      </div>
+                      <p className="truncate text-sm text-muted-foreground" title={item.message}>{item.message}</p>
+                      {item.route ? <p className="truncate text-xs text-muted-foreground">{item.route}</p> : null}
+                    </TableCell>
+                    <TableCell>{item.source}</TableCell>
+                    <TableCell className="text-right font-mono">{item.count}</TableCell>
+                    <TableCell title={item.lastSeenAt}>{timeAgo(item.lastSeenAt)}</TableCell>
+                    <TableCell className="text-muted-foreground" title={item.firstSeenAt}>{timeAgo(item.firstSeenAt)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>{total} {total === 1 ? 'error' : 'errors'}</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+            <span>Page {page} of {pages}</span>
+            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          </div>
         </div>
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setSelected(null)}>
-          <aside
-            role="dialog"
-            aria-label="Error details"
-            className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">{selected.name}</h2>
-                <p className="mt-1 break-words text-gray-700">{selected.message}</p>
-                <p className="mt-2 text-xs text-gray-500">
+      <Sheet open={Boolean(selected)} onOpenChange={(o) => !o && setSelected(null)}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+          {selected ? (
+            <>
+              <SheetHeader>
+                <SheetTitle>{selected.name}</SheetTitle>
+                <SheetDescription className="break-words">{selected.message}</SheetDescription>
+                <p className="text-xs text-muted-foreground">
                   {selected.source} · {selected.level} · {selected.count} events · first {new Date(selected.firstSeenAt).toLocaleString()} · last {new Date(selected.lastSeenAt).toLocaleString()}
                   {selected.lastRelease ? ` · release ${selected.lastRelease}` : ''}
                 </p>
-              </div>
-              <button type="button" onClick={() => setSelected(null)} className="text-gray-500 hover:text-gray-900" aria-label="Close">✕</button>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {(['resolved', 'ignored', 'open'] as Status[])
-                .filter((s) => s !== selected.status)
-                .map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => update(selected._id, { status: s })}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${s === 'resolved' ? 'bg-green-600 text-white' : 'border border-gray-300 text-gray-700'}`}
-                  >
-                    {s === 'resolved' ? 'Mark resolved' : s === 'ignored' ? 'Ignore' : 'Reopen'}
-                  </button>
-                ))}
-              <span className="self-center text-xs text-gray-500">
-                Status: {selected.status}
-                {selected.resolvedBy ? ` by ${selected.resolvedBy}` : ''}
-              </span>
-            </div>
-
-            <label className="mt-4 block text-sm font-medium text-gray-700">
-              Note
-              <textarea
-                defaultValue={selected.note || ''}
-                onBlur={(e) => {
-                  if (e.target.value !== (selected.note || '')) void update(selected._id, { note: e.target.value });
-                }}
-                rows={2}
-                placeholder="Cause, fix, ticket link…"
-                className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-sm"
-              />
-            </label>
-
-            <h3 className="mt-6 text-sm font-semibold text-gray-900">Recent events</h3>
-            {(selected.samples || []).map((sample, i) => (
-              <div key={i} className="mt-3 rounded-lg border border-gray-200 p-3 text-xs">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-600">
-                  <span>{new Date(sample.at).toLocaleString()}</span>
-                  {sample.method && sample.url && <span>{sample.method} {sample.url}</span>}
-                  {!sample.method && sample.url && <span>{sample.url}</span>}
-                  {sample.requestId && <span>request {sample.requestId}</span>}
-                  {sample.userId && <span>user {sample.userId}</span>}
-                  {sample.partnerId && <span>partner {sample.partnerId}</span>}
-                  {sample.digest && <span>digest {sample.digest}</span>}
-                  {sample.release && <span>release {sample.release}</span>}
+              </SheetHeader>
+              <div className="space-y-4 px-4 pb-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  {(['resolved', 'ignored', 'open'] as Status[]).filter((s) => s !== selected.status).map((s) => (
+                    <Button key={s} size="sm" variant={s === 'resolved' ? 'default' : 'outline'} disabled={saving} onClick={() => update(selected._id, { status: s })}>
+                      {s === 'resolved' ? 'Mark resolved' : s === 'ignored' ? 'Ignore' : 'Reopen'}
+                    </Button>
+                  ))}
+                  <span className="text-xs text-muted-foreground">Now {selected.status}{selected.resolvedBy ? ` (by ${selected.resolvedBy})` : ''}</span>
                 </div>
-                {sample.message !== selected.message && <p className="mt-1 break-words text-gray-800">{sample.message}</p>}
-                {sample.userAgent && <p className="mt-1 truncate text-gray-400" title={sample.userAgent}>{sample.userAgent}</p>}
-                {sample.context && Object.keys(sample.context).length > 0 && (
-                  <pre className="mt-2 overflow-x-auto rounded bg-gray-50 p-2">{JSON.stringify(sample.context, null, 2)}</pre>
-                )}
-                {sample.stack && <pre className="mt-2 max-h-64 overflow-auto rounded bg-gray-900 p-2 text-gray-100">{sample.stack}</pre>}
+                <div className="space-y-1.5">
+                  <label htmlFor="err-note" className="text-sm font-medium">Note</label>
+                  <Textarea id="err-note" key={selected._id} rows={2} defaultValue={selected.note || ''} placeholder="Cause, fix, ticket link" onBlur={(e) => e.target.value !== (selected.note || '') && void update(selected._id, { note: e.target.value })} />
+                </div>
+                <h3 className="text-sm font-semibold">Recent events</h3>
+                {(selected.samples || []).map((sample, i) => (
+                  <div key={i} className="space-y-2 rounded-lg border p-3 text-xs">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                      <span>{new Date(sample.at).toLocaleString()}</span>
+                      {sample.url ? <span>{sample.method ? `${sample.method} ` : ''}{sample.url}</span> : null}
+                      {sample.requestId ? <span>request {sample.requestId}</span> : null}
+                      {sample.userId ? <span>user {sample.userId}</span> : null}
+                      {sample.partnerId ? <span>shop {sample.partnerId}</span> : null}
+                      {sample.digest ? <span>digest {sample.digest}</span> : null}
+                      {sample.release ? <span>release {sample.release}</span> : null}
+                    </div>
+                    {sample.message !== selected.message ? <p className="break-words">{sample.message}</p> : null}
+                    {sample.userAgent ? <p className="truncate text-muted-foreground" title={sample.userAgent}>{sample.userAgent}</p> : null}
+                    {sample.context && Object.keys(sample.context).length ? <pre className="overflow-x-auto rounded bg-muted p-2">{JSON.stringify(sample.context, null, 2)}</pre> : null}
+                    {sample.stack ? <pre className="max-h-64 overflow-auto rounded bg-foreground p-2 text-background">{sample.stack}</pre> : null}
+                  </div>
+                ))}
               </div>
-            ))}
-          </aside>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function AdminErrorsPage() {
-  return (
-    <AdminGoogleAuth title="Errors" subtitle="Sign in with an admin account to review errors">
-      <div className="min-h-screen bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <AdminNavigation
-            title="Errors"
-            subtitle="Errors and warnings from the website, server and partner apps. Repeats are grouped; a resolved issue reopens if it happens again."
-            showBackButton
-          />
-          <ErrorsContent />
-        </div>
-      </div>
-    </AdminGoogleAuth>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
