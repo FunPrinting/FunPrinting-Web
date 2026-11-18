@@ -16,6 +16,10 @@ const bodySchema = z.object({ codeChallenge: z.string(), callback: z.string().ma
  * partner's signed-in browser. Returns a one-time code (60 s) for the app.
  */
 export async function POST(request: NextRequest) {
+  // JSON only: blocks cross-site form posts (text/plain), on top of the SameSite cookie
+  if (!(request.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
+    return NextResponse.json({ error: 'Content-Type must be application/json' }, { status: 415 });
+  }
   const sessionUser = await getSessionUser();
   if (!sessionUser) return NextResponse.json({ error: 'Please sign in' }, { status: 401 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));

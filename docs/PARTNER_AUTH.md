@@ -26,7 +26,7 @@ app                         browser (signed in)                  web API
 
 - **Callbacks** allowed: `http://localhost:4321/callback` / `http://127.0.0.1:4321/callback` (desktop), `funprintingpartner://…` (mobile), `exp://` in development only.
 - **Access token:** HS256 JWT signed with `PARTNER_JWT_SECRET`: `{ sub, partnerId, did, role, typ: 'partner_access' }`, 15 minutes. Send it as `Authorization: Bearer`; on the socket as `auth.token`.
-- **Refresh:** `POST /api/partner/device-auth/token` `{ grant_type: 'refresh_token', refresh_token }`. The refresh token **changes every time**; keep only the newest. Using an old one again signs the device out (it was probably copied).
+- **Refresh:** `POST /api/partner/device-auth/token` `{ grant_type: 'refresh_token', refresh_token }`. The refresh token **changes every time**; keep only the newest. Using an old one again signs the device out (it was probably copied), except within 60 seconds of the rotation: that is treated as a retry and answered `409 refresh_in_progress` (keep using the newest token).
 - **Apps should** refresh shortly before `expires_in`, and on a 401 refresh once and retry. When the socket closes at token expiry or receives `signed_out`, reconnect after refreshing, or show the sign-in screen.
 
 ## Devices

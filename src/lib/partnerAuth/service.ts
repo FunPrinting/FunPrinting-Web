@@ -27,6 +27,8 @@ import { logger } from '@/lib/logger';
 export const ACCESS_TTL_SECONDS = 15 * 60;
 export const REFRESH_TTL_MS = 30 * 24 * 3600_000;
 const CODE_TTL_MS = 60_000;
+/** A retry of a refresh that already succeeded (lost response) is not treated as theft. */
+const REFRESH_REUSE_GRACE_MS = 60_000;
 
 export class DeviceAuthError extends Error {
   constructor(message: string, public readonly status = 400, public readonly code = 'invalid_request') {
@@ -136,12 +138,16 @@ export async function refreshTokens(refreshToken: string, ip?: string): Promise<
   const now = new Date();
   const device = await PartnerDevice.findOneAndUpdate(
     { refreshTokenHash: hash, revokedAt: { $exists: false }, refreshExpiresAt: { $gt: now } },
-    { $set: { refreshTokenHash: sha256(next), previousRefreshTokenHash: hash, refreshExpiresAt: new Date(now.getTime() + REFRESH_TTL_MS), lastSeenAt: now, lastIp: ip } },
+    { $set: { refreshTokenHash: sha256(next), previousRefreshTokenHash: hash, rotatedAt: now, refreshExpiresAt: new Date(now.getTime() + REFRESH_TTL_MS), lastSeenAt: now, lastIp: ip } },
     { new: true }
   ).lean<IPartnerDevice | null>();
 
   if (!device) {
-    const reused = await PartnerDevice.findOne({ previousRefreshTokenHash: hash, revokedAt: { $exists: false } }).select('deviceId partnerId').lean<{ deviceId: string; partnerId: string } | null>();
+    const reused = await PartnerDevice.findOne({ previousRefreshTokenHash: hash, revokedAt: { $exists: false } }).select('deviceId partnerId rotatedAt').lean<{ deviceId: string; partnerId: string; rotatedAt?: Date } | null>();
+    if (reused && reused.rotatedAt && now.getTime() - new Date(reused.rotatedAt).getTime() < REFRESH_REUSE_GRACE_MS) {
+      // Most likely the app retried after losing the response; don't sign it out
+      throw new DeviceAuthError('This refresh token was just used. Use the newest refresh token.', 409, 'refresh_in_progress');
+    }
     if (reused) {
       await revokeDevice(reused.deviceId, 'refresh token reused (possible copy)');
       logger.warn({ deviceId: reused.deviceId, partnerId: reused.partnerId }, 'refresh token reuse: device revoked');

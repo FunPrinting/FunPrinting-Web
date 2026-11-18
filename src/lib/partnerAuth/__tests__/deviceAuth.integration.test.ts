@@ -89,11 +89,24 @@ describe('sign-in with code + PKCE', () => {
 });
 
 describe('refresh rotation', () => {
+  it('two simultaneous refreshes: one wins, the other is told to retry, nobody is signed out', async () => {
+    const first = await signIn();
+    const results = await Promise.allSettled([refreshTokens(first.refreshToken), refreshTokens(first.refreshToken)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(String((results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason.message)).toMatch(/just used/);
+    expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).revokedAt).toBeUndefined();
+  });
+
   it('rotates; reusing an old refresh token revokes the device', async () => {
     const first = await signIn();
     const second = await refreshTokens(first.refreshToken);
     expect(second.refreshToken).not.toBe(first.refreshToken);
     expect(second.deviceId).toBe(first.deviceId);
+    // A retry within the grace window is not treated as theft
+    await expect(refreshTokens(first.refreshToken)).rejects.toThrow(/just used/);
+    expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).revokedAt).toBeUndefined();
+    // Later reuse is
+    await PartnerDevice.updateOne({ deviceId: first.deviceId }, { $set: { rotatedAt: new Date(Date.now() - 120_000) } });
     await expect(refreshTokens(first.refreshToken)).rejects.toThrow(/sign in again/);
     expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).revokedReason).toMatch(/reused/);
     await expect(refreshTokens(second.refreshToken)).rejects.toThrow(/sign in again/);

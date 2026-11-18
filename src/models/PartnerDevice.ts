@@ -17,6 +17,7 @@ export interface IPartnerDevice {
   appVersion?: string;
   refreshTokenHash: string;
   previousRefreshTokenHash?: string;
+  rotatedAt?: Date; // when the refresh token last rotated (grace window for retries)
   refreshExpiresAt: Date;
   lastSeenAt: Date;
   lastIp?: string;
@@ -36,6 +37,7 @@ const deviceSchema = new Schema<IPartnerDevice>(
     appVersion: { type: String, maxlength: 40 },
     refreshTokenHash: { type: String, required: true },
     previousRefreshTokenHash: String,
+    rotatedAt: Date,
     refreshExpiresAt: { type: Date, required: true },
     lastSeenAt: { type: Date, required: true },
     lastIp: String,
