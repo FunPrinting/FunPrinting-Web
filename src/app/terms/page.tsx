@@ -1,132 +1,89 @@
-'use client';
-
 import Link from 'next/link';
-import { useAdminInfo } from '@/hooks/useAdminInfo';
+import { Callout, ContactBlock, LegalPage, LegalSection } from '@/components/legal/LegalPage';
+
+const SECTIONS = [
+  { id: 'service', title: 'What Fun Printing is' },
+  { id: 'using', title: 'Using the site' },
+  { id: 'prices', title: 'Prices and payment' },
+  { id: 'orders', title: 'Orders and print shops' },
+  { id: 'delivery', title: 'Pickup and delivery' },
+  { id: 'refunds', title: 'Cancellations, refunds and returns' },
+  { id: 'templates', title: 'Templates' },
+  { id: 'content', title: 'Your files' },
+  { id: 'liability', title: 'Liability' },
+  { id: 'changes', title: 'Changes and disputes' },
+  { id: 'contact', title: 'Contact' },
+];
 
 export default function TermsPage() {
-  const { adminInfo } = useAdminInfo();
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Terms and Conditions</h1>
-          
-          <div className="prose prose-lg max-w-none">
-            <p className="text-gray-600 mb-6">
-              <strong>Last updated:</strong> {new Date().toLocaleDateString()}
-            </p>
+    <LegalPage title="Terms and conditions" intro="Please read these terms before you order. By using Fun Printing you agree to them." sections={SECTIONS}>
+      <LegalSection id="service" n={1} title="What Fun Printing is">
+        <p>Fun Printing is an online marketplace. You upload documents, choose a print shop near you, and pay online. The shop prints your order, and you collect it or have it delivered.</p>
+        <p>The print shops are independent businesses. We run the website, take your payment, pass your order to the shop you chose, and help if something goes wrong. We do not print orders ourselves.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">1. Acceptance of Terms</h2>
-              <p className="text-gray-700 mb-4">
-                By accessing and using funPrinting services, you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
-              </p>
-            </section>
+      <LegalSection id="using" n={2} title="Using the site">
+        <p>You agree to:</p>
+        <ul>
+          <li>give correct details, including a phone number you can answer, because the shop and our team use it to contact you about your order;</li>
+          <li>upload only files you have the right to print, and nothing illegal or harmful;</li>
+          <li>keep your sign-in details private. You are responsible for what happens under your account;</li>
+          <li>collect or be available for your order as described in the <Link href="/shipping-delivery">shipping and delivery policy</Link>.</li>
+        </ul>
+        <p>We may refuse or cancel an order, with a refund, if it breaks these terms or the law.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">2. Service Description</h2>
-              <p className="text-gray-700 mb-4">
-                funPrinting provides printing services including but not limited to:
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Document printing (PDF, DOCX, JPG, JPEG, PNG)</li>
-                <li>Professional template generation</li>
-                <li>Assignment covers, resumes, lab reports, certificates</li>
-                <li>Pickup and delivery services</li>
-                <li>Payment processing through Razorpay</li>
-              </ul>
-            </section>
+      <LegalSection id="prices" n={3} title="Prices and payment">
+        <ul>
+          <li>Each shop sets its own prices. The price for your documents at each shop is shown before you choose.</li>
+          <li>The price comes from the shop’s rates and your options (paper size, colour, sides, copies, binding). After you upload, we count the pages ourselves. If our count differs from yours, the new price is shown and you decide whether to pay.</li>
+          <li>A processing fee of 3% is added and shown as its own line. Any delivery charge is shown too.</li>
+          <li>You pay online through Razorpay (UPI, cards, net banking and wallets). We never see your card details.</li>
+          <li>A payment link stays open for 30 minutes. Orders left unpaid for 24 hours are cancelled automatically. Nothing is charged for an unpaid order.</li>
+        </ul>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">3. User Responsibilities</h2>
-              <p className="text-gray-700 mb-4">You agree to:</p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Provide accurate and complete information</li>
-                <li>Ensure uploaded files are legal and appropriate</li>
-                <li>Not upload copyrighted material without permission</li>
-                <li>Pay all charges for services rendered</li>
-                <li>Collect orders within the specified timeframe</li>
-              </ul>
-            </section>
+      <LegalSection id="orders" n={4} title="Orders and print shops">
+        <p>After you pay, your order goes to the shop you chose. Some shops accept orders automatically; others accept each one by hand.</p>
+        <ul>
+          <li>If the shop declines your order, you are refunded straight away.</li>
+          <li>If the shop has not accepted after 10 minutes, we tell you and you can either get a refund now or keep waiting.</li>
+          <li>If the shop has not accepted 24 hours after you paid, you are refunded automatically.</li>
+        </ul>
+        <p>We do not move your order to a different shop. Time to print depends on the shop and how busy it is.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">4. Payment Terms</h2>
-              <p className="text-gray-700 mb-4">
-                All payments are processed securely through Razorpay. Payment is required at the time of order placement. Prices are subject to change without notice.
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Base price: ₹5 per A4 page</li>
-                <li>Color printing: Additional charges apply</li>
-                <li>Multiple copies: Price multiplied by number of copies</li>
-                <li>Delivery charges: As specified during checkout</li>
-              </ul>
-            </section>
+      <LegalSection id="delivery" n={5} title="Pickup and delivery">
+        <p>You can collect from the shop (free), or, where the shop offers it, have the order delivered by the shop or by courier. The options and charges are shown at checkout. Details are in the <Link href="/shipping-delivery">shipping and delivery policy</Link>.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">5. Order Processing</h2>
-              <p className="text-gray-700 mb-4">
-                Orders are processed in the order received. Processing time varies based on order volume and complexity. We reserve the right to refuse service for any reason.
-              </p>
-            </section>
+      <LegalSection id="refunds" n={6} title="Cancellations, refunds and returns">
+        <p>These are covered in the <Link href="/cancellation-refund">cancellation and refund policy</Link> and the <Link href="/return-policy">return policy</Link>, which form part of these terms.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">6. Intellectual Property</h2>
-              <p className="text-gray-700 mb-4">
-                Users retain ownership of their uploaded content. funPrinting does not claim ownership of user-generated content. Users are responsible for ensuring they have rights to print uploaded materials.
-              </p>
-            </section>
+      <LegalSection id="templates" n={7} title="Templates">
+        <p>Templates help you create documents such as resumes, covers and reports. Some are free and some are paid; the price is shown before you pay. A document is created from what you enter, so check it before you print. Template documents are personal to you and are not returnable once created.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">7. Privacy and Data Protection</h2>
-              <p className="text-gray-700 mb-4">
-                We are committed to protecting your privacy. Personal information is collected, used, and stored in accordance with our Privacy Policy. Payment information is processed securely through Razorpay.
-              </p>
-            </section>
+      <LegalSection id="content" n={8} title="Your files">
+        <p>Your files stay yours. By uploading, you let us store them and send them to the shop that prints your order, and nothing more. You are responsible for having the right to print them.</p>
+        <p>How we handle your information is described in the <Link href="/privacy">privacy policy</Link>.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Limitation of Liability</h2>
-              <p className="text-gray-700 mb-4">
-                funPrinting shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the service.
-              </p>
-            </section>
+      <LegalSection id="liability" n={9} title="Liability">
+        <p>We work to keep the service reliable but cannot promise it will always be available or error-free. To the extent the law allows, we are not liable for indirect, incidental or consequential loss. Nothing here limits rights you have under Indian consumer law.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Dispute Resolution</h2>
-              <p className="text-gray-700 mb-4">
-                Any disputes arising from these terms shall be resolved through mutual discussion. If resolution cannot be reached, disputes shall be subject to the jurisdiction of local courts.
-              </p>
-            </section>
+      <LegalSection id="changes" n={10} title="Changes and disputes">
+        <p>We may update these terms. The date at the top shows the latest version. Orders you have already paid for stay under the terms that applied when you paid.</p>
+        <p>If you have a problem, contact us first and we will try to sort it out. These terms are governed by the laws of India.</p>
+        <Callout>Questions about an order? Have the order number ready; it speeds everything up.</Callout>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Modifications</h2>
-              <p className="text-gray-700 mb-4">
-                We reserve the right to modify these terms at any time. Changes will be effective immediately upon posting. Continued use of the service constitutes acceptance of modified terms.
-              </p>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">11. Contact Information</h2>
-              <p className="text-gray-700 mb-4">
-                For questions about these terms, please contact us:
-              </p>
-              <ul className="list-none pl-6 text-gray-700 mb-4">
-                <li>Email: {adminInfo?.email || 'info@printservice.com'}</li>
-                <li>Phone: {adminInfo?.phone || '+91 98765 43210'}</li>
-                <li>Address: {adminInfo?.address ? `${adminInfo.address}, ${adminInfo.city}, ${adminInfo.state} ${adminInfo.pincode}` : 'College Campus'}</li>
-              </ul>
-            </section>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <Link 
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 transition-colors"
-            >
-              ← Back to Home
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
+      <LegalSection id="contact" n={11} title="Contact">
+        <ContactBlock hours />
+      </LegalSection>
+    </LegalPage>
   );
 }

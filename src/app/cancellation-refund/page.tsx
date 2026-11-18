@@ -1,182 +1,56 @@
-'use client';
-
 import Link from 'next/link';
-import { EmailIcon, PhoneIcon, ClockIcon } from '@/components/SocialIcons';
-import { useAdminInfo } from '@/hooks/useAdminInfo';
+import { Callout, ContactBlock, LegalPage, LegalSection } from '@/components/legal/LegalPage';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+const SECTIONS = [
+  { id: 'before', title: 'Before you pay' },
+  { id: 'automatic', title: 'Automatic refunds after you pay' },
+  { id: 'after', title: 'Once the shop has started' },
+  { id: 'quality', title: 'Problems with your prints' },
+  { id: 'how', title: 'How refunds are paid' },
+  { id: 'contact', title: 'Asking for a refund' },
+];
 
 export default function CancellationRefundPage() {
-  const { adminInfo } = useAdminInfo();
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Cancellation and Refund Policy</h1>
-          
-          <div className="prose prose-lg max-w-none">
-            <p className="text-gray-600 mb-6">
-              <strong>Last updated:</strong> {new Date().toLocaleDateString()}
-            </p>
+    <LegalPage title="Cancellation and refund policy" intro="When you can cancel, when you are refunded automatically, and how long a refund takes." sections={SECTIONS}>
+      <LegalSection id="before" n={1} title="Before you pay">
+        <p>You can cancel an order that is not paid yet from <Link href="/my-orders">My orders</Link>. Nothing is charged. A payment link stays open for 30 minutes, and orders left unpaid for 24 hours are cancelled automatically.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">1. Order Deletion</h2>
-              <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
-                <p className="text-blue-800 font-medium">Important Notice:</p>
-                <p className="text-blue-700">Pending payment orders can be deleted by the customer. Once payment is completed, orders cannot be deleted and refund requests must be made through customer support.</p>
-              </div>
-              
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Deletion Timeframes:</h3>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li><strong>Before Payment:</strong> Orders can be deleted by customer</li>
-                <li><strong>After Payment:</strong> Contact support for refund requests</li>
-                <li><strong>During Processing:</strong> Refund requests reviewed case-by-case</li>
-              </ul>
-            </section>
+      <LegalSection id="automatic" n={2} title="Automatic refunds after you pay">
+        <p>You do not need to ask for a refund in these cases. We start it for you, and it covers everything you paid, including the processing fee and delivery charge.</p>
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>What happens</TableHead><TableHead>What you get</TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow><TableCell>The shop declines your order</TableCell><TableCell>Refund starts immediately</TableCell></TableRow>
+            <TableRow><TableCell>The shop has not accepted after 10 minutes</TableCell><TableCell>We email you. Choose “Refund now” or “Keep waiting”</TableCell></TableRow>
+            <TableRow><TableCell>The shop has not accepted 24 hours after payment</TableCell><TableCell>Refund starts automatically</TableCell></TableRow>
+          </TableBody>
+        </Table>
+        <Callout>We do not move your order to another shop. You choose whether to wait or to be refunded.</Callout>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">2. Refund Eligibility</h2>
-              <div className="grid md:grid-cols-2 gap-6 mb-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-800 mb-2">✅ Eligible for Refund</h4>
-                  <ul className="text-sm text-green-700 space-y-1">
-                    <li>• Order deleted before payment completion</li>
-                    <li>• Technical issues on our end</li>
-                    <li>• Service unavailability</li>
-                    <li>• Payment processing errors</li>
-                  </ul>
-                </div>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-red-800 mb-2">❌ Not Eligible for Refund</h4>
-                  <ul className="text-sm text-red-700 space-y-1">
-                    <li>• Order already processed</li>
-                    <li>• Customer changed mind after processing</li>
-                    <li>• Incorrect file uploaded by customer</li>
-                    <li>• Customer not available for pickup</li>
-                  </ul>
-                </div>
-              </div>
-            </section>
+      <LegalSection id="after" n={3} title="Once the shop has started">
+        <p>After the shop has accepted your order and started printing, it can no longer be cancelled, because the paper and ink are already used. Contact us if something is wrong, and we will look at it case by case.</p>
+        <p><strong>Usually not refunded:</strong> a change of mind after printing starts, a wrong file or wrong options chosen by you, or an order that was not collected or could not be delivered because of wrong details or no answer.</p>
+        <p><strong>Usually refunded:</strong> a shop or technical error on our side, a service that could not be provided, and payment errors such as being charged twice for one order.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">3. Refund Process</h2>
-              <div className="bg-gray-50 rounded-lg p-6 mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Step-by-Step Refund Process:</h3>
-                <ol className="list-decimal pl-6 text-gray-700 space-y-2">
-                  <li><strong>Request Submission:</strong> Contact us via email or phone with order details</li>
-                  <li><strong>Verification:</strong> We verify the order status and eligibility</li>
-                  <li><strong>Approval:</strong> If eligible, refund is approved within 24 hours</li>
-                  <li><strong>Processing:</strong> Refund processed through Razorpay</li>
-                  <li><strong>Completion:</strong> Amount credited to original payment method</li>
-                </ol>
-              </div>
-              
-              <p className="text-gray-700 mb-4">
-                <strong>Refund Timeline:</strong> Refunds are typically processed within 3-7 business days, depending on your bank&apos;s processing time.
-              </p>
-            </section>
+      <LegalSection id="quality" n={4} title="Problems with your prints">
+        <p>If your prints are damaged, unclear or not what you ordered, contact us within 24 hours of receiving them, with photos. We will arrange a reprint at no extra cost, or a full refund if a reprint is not possible. See also the <Link href="/return-policy">return policy</Link>.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">4. Refund Methods</h2>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <p className="text-yellow-800 font-medium">Refund Method:</p>
-                <p className="text-yellow-700">Refunds are processed to the original payment method used for the transaction.</p>
-              </div>
-              
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li><strong>Credit/Debit Cards:</strong> Refunded to the same card</li>
-                <li><strong>UPI:</strong> Refunded to the same UPI ID</li>
-                <li><strong>Net Banking:</strong> Refunded to the same bank account</li>
-                <li><strong>Digital Wallets:</strong> Refunded to the same wallet</li>
-              </ul>
-            </section>
+      <LegalSection id="how" n={5} title="How refunds are paid">
+        <p>Refunds go back to the payment method you used (card, UPI, net banking or wallet) through Razorpay. After we start a refund, banks usually take 5 to 7 working days to show it. You can follow the status of an order in <Link href="/my-orders">My orders</Link>.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">5. Partial Refunds</h2>
-              <p className="text-gray-700 mb-4">
-                Partial refunds may be available in specific circumstances:
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Service partially completed due to technical issues</li>
-                <li>Partial order cancellation (multiple items)</li>
-                <li>Quality issues with partial order</li>
-              </ul>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">6. Quality Issues</h2>
-              <p className="text-gray-700 mb-4">
-                If you receive a printout with quality issues:
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Contact us within 24 hours of pickup</li>
-                <li>Provide photos of the quality issues</li>
-                <li>We will reprint at no additional cost</li>
-                <li>Full refund if reprint is not possible</li>
-              </ul>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">7. Contact for Cancellation/Refund</h2>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-blue-800 font-medium mb-2">To request cancellation or refund:</p>
-                <ul className="text-blue-700 space-y-1">
-                  <li className="flex items-center gap-2">
-                    <EmailIcon size={16} className="w-4 h-4" />
-                    Email: {adminInfo?.email || 'info@printservice.com'}
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <PhoneIcon size={16} className="w-4 h-4" />
-                    Phone: {adminInfo?.phone || '+91 98765 43210'}
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <ClockIcon size={16} className="w-4 h-4" />
-                    Business Hours: {adminInfo?.businessHours ? `${adminInfo.businessHours.monday} - ${adminInfo.businessHours.saturday}` : 'Mon-Sat: 9AM-6PM'}
-                  </li>
-                </ul>
-              </div>
-              
-              <p className="text-gray-700 mb-4">
-                <strong>Required Information:</strong> Please provide your order ID, name, phone number, and reason for cancellation/refund.
-              </p>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Dispute Resolution</h2>
-              <p className="text-gray-700 mb-4">
-                If you disagree with our refund decision:
-              </p>
-              <ol className="list-decimal pl-6 text-gray-700 mb-4">
-                <li>Contact our customer service team</li>
-                <li>Provide detailed explanation and evidence</li>
-                <li>We will review and respond within 48 hours</li>
-                <li>If unresolved, escalate to management</li>
-              </ol>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Policy Updates</h2>
-              <p className="text-gray-700 mb-4">
-                This cancellation and refund policy may be updated from time to time. Changes will be effective immediately upon posting on our website. Continued use of our services constitutes acceptance of any modifications.
-              </p>
-            </section>
-
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Legal Compliance</h2>
-              <p className="text-gray-700 mb-4">
-                This policy complies with Indian consumer protection laws and Razorpay&apos;s requirements. We are committed to fair and transparent refund practices.
-              </p>
-            </section>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <Link 
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 transition-colors"
-            >
-              ← Back to Home
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
+      <LegalSection id="contact" n={6} title="Asking for a refund">
+        <p>Send us your order number, the name and phone number on the order, and what went wrong. We reply as soon as we can. If you disagree with our decision, reply to our message and ask for it to be looked at again.</p>
+        <ContactBlock hours />
+      </LegalSection>
+    </LegalPage>
   );
 }
