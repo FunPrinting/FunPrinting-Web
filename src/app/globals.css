@@ -132,25 +132,6 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/*
- * Transitional brand alias: pages not yet moved to the tokens use blue-* for
- * actions. Mapping blue to indigo gives every page the same brand colour now.
- * Remove once no page uses blue-* (grep "blue-" in src).
- */
-@theme {
-  --color-blue-50: oklch(0.962 0.018 272.31);
-  --color-blue-100: oklch(0.93 0.034 272.79);
-  --color-blue-200: oklch(0.87 0.065 274.04);
-  --color-blue-300: oklch(0.785 0.115 274.71);
-  --color-blue-400: oklch(0.673 0.182 276.94);
-  --color-blue-500: oklch(0.585 0.233 277.12);
-  --color-blue-600: oklch(0.511 0.262 276.97);
-  --color-blue-700: oklch(0.457 0.24 277.02);
-  --color-blue-800: oklch(0.398 0.195 277.37);
-  --color-blue-900: oklch(0.359 0.144 278.7);
-  --color-blue-950: oklch(0.257 0.09 281.29);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
