@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "setup-admin": "node scripts/setup-admin.js",
     "setup-pricing": "node scripts/setup-pricing.js",
     "setup-sample-templates": "node scripts/setup-sample-templates.js",
