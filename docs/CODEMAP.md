@@ -103,7 +103,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 `/api/templates` (list; Word file and creator email only for the user's own), `create`, `public` (no Word file), `my-templates`, `[id]` (Word file for owner/admin), `[id]/update-file`, `[id]/earnings`, `generate-fill-pdf` (sign-in; PDF in the background with `after()`), `generation-status/[jobId]` (owner only), `generate-custom`, `download-filled` (sign-in). See `docs/DOCUMENTS.md`.
 
 ### Document tools
-`extract-placeholders` (sign-in), `generate-dynamic-form`, `parse-docx-structure` (page count preview, rate-limited). Uploads: `upload-file`, `upload-raw-file` (Word/PDF, 20 MB), `upload/verify` (all `requireUser`). Conversion and file downloads go through `src/lib/documents/` (`docs/DOCUMENTS.md`).
+`extract-placeholders` (sign-in), `generate-dynamic-form`, `parse-docx-structure` (page count preview, rate-limited). Uploads: `upload-file`, `upload-raw-file` (Word/PDF, 20 MB) (both `requireUser`). The order page counts PDF pages in the browser for the preview; the upload recounts. Conversion and file downloads go through `src/lib/documents/` (`docs/DOCUMENTS.md`).
 
 ## Library modules (`src/lib`)
 
@@ -113,6 +113,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 | Error tracking | `errorTracking/server` (capture, grouping, throttling), `errorTracking/scrub` (privacy, fingerprint), `errorTracking/consoleHook`, `errorTracking/client` | Installed from `src/instrumentation.ts`; browser side via `components/ErrorReporter` |
 | Auth | `auth` (NextAuth config), `authz`, `cronAuth`, `templateAuth`, `otp-store`, `password-reset-store`, `email-verification` | `otp-store` is in-memory: Phase 4 moves it to Redis |
 | Payments | `payments/quote` (the only price calculation), `payments/money` (paise, fee), `payments/checkout`, `payments/templateCheckout`, `payments/links`, `payments/fulfil` (settle + idempotent side effects), `payments/webhooks`, `payments/reconcile`, `payments/refunds` (refunds, Route transfer release), `payments/signatures`, `payments/razorpayApi`, `payments/client` (browser) | See `docs/PAYMENTS.md` |
+| Order page | `src/app/order/page.tsx` (state and payment), `src/components/order/*` (FileCard, FileDropzone, ShopPicker, DeliveryChooser, Segmented), `src/lib/order/files.ts` (pure model and price estimate, tested), `src/lib/order/client.ts` (page counts, uploads with progress), `src/lib/orderStatePersistence.ts` (draft across Google sign-in) | |
 | Uploads and delivery | `uploads/pageCount`, `uploads/receipt`, `delivery/rates` (courier quotes), `delivery/options` (what a shop offers, pickup registration, handover code), `delivery/courier` (booking), `partnerOrderView` (hides the handover code from shops) | |
 | Pricing settings and payouts | `pricing` (Pricing model access), `razorpayPayouts` (creator payouts via RazorpayX), `orderUtils`, `orderStatePersistence` | |
 | Fulfilment | `jobs/service` (create, accept, claim, report, sync), `jobs/deadlines` (customer notice, 24 h refund, cancel), `jobs/assign`, `jobs/scheduler` (QStash), `jobs/emails`, `jobs/deliveryNumber`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | |

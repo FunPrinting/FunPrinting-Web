@@ -12,7 +12,7 @@
  * Every order is printed by a partner shop and priced with that shop's rates, per file:
  *   (colourPages × perPageColor + bwPages × perPageBW) × (A3 ? 2 : 1) × (double ? 1.5 : 1) × copies
  *   + binding × copies when binding is chosen; rounded up to the rupee.
- * This is the formula the order page shows (PartnerMapSelector). Then delivery is
+ * The order page shows the same numbers (src/lib/order/files.ts estimateAtShop). Then delivery is
  * added, and the processing fee is added on top (see money.ts).
  */
 import { rupeesToPaise } from '@/lib/payments/money';
