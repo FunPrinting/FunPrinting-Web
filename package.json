@@ -11,7 +11,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "setup-admin": "node scripts/setup-admin.js",
-    "setup-pickup-locations": "node scripts/setup-pickup-locations.js",
     "setup-pricing": "node scripts/setup-pricing.js",
     "setup-sample-templates": "node scripts/setup-sample-templates.js",
     "setup-cloudmersive": "node scripts/setup-cloudmersive.js",

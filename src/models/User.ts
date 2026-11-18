@@ -13,7 +13,6 @@ export interface IUser {
   isActive: boolean;
   role?: 'customer' | 'partner' | 'admin';
   lastLogin?: Date;
-  defaultLocationId?: string; // Reference to PickupLocation
   // Optional payout details for creator monetization
   upiId?: string;
   bankDetails?: {
@@ -45,7 +44,6 @@ const userSchema = new mongoose.Schema<IUser>({
   isActive: { type: Boolean, required: true, default: true },
   role: { type: String, enum: ['customer', 'partner', 'admin'], default: 'customer' },
   lastLogin: { type: Date, required: false },
-  defaultLocationId: { type: String, required: false, trim: true },
   upiId: { type: String, required: false, trim: true },
   bankDetails: {
     accountHolderName: { type: String, required: false, trim: true },

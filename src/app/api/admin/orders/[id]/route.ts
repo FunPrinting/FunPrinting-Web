@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
-import { validateOrderStateTransition, logOrderEvent, OrderStatus } from '@/lib/orderUtils';
+import Partner from '@/models/Partner';
+import { logOrderEvent } from '@/lib/orderUtils';
+import { STATUS_RANK } from '@/lib/partnerOrderTransitions';
 
 export async function GET(
   request: NextRequest,
@@ -31,22 +33,17 @@ export async function GET(
     orderData.fileURLs = Array.isArray(orderData.fileURLs) ? orderData.fileURLs : [];
     orderData.originalFileNames = Array.isArray(orderData.originalFileNames) ? orderData.originalFileNames : [];
 
-    // Log file data for debugging
-    console.log('📋 Admin API - Order file data:', {
-      orderId: orderData.orderId,
-      hasFileURL: !!orderData.fileURL,
-      hasFileURLs: !!orderData.fileURLs,
-      fileURLsLength: orderData.fileURLs?.length || 0,
-      hasOriginalFileName: !!orderData.originalFileName,
-      hasOriginalFileNames: !!orderData.originalFileNames,
-      originalFileNamesLength: orderData.originalFileNames?.length || 0,
-      fileURLs: orderData.fileURLs,
-      originalFileNames: orderData.originalFileNames
-    });
+    // The shop that prints it (same fields the customer's order page shows)
+    let partnerInfo = null;
+    const partnerId = orderData.partnerId || orderData.deliveryOption?.partnerId;
+    if (partnerId && /^[0-9a-fA-F]{24}$/.test(String(partnerId))) {
+      const partner = await Partner.findById(partnerId).select('businessName phoneNumbers deliveryPoints address').lean();
+      if (partner) partnerInfo = partner;
+    }
 
     return NextResponse.json({
       success: true,
-      order: orderData,
+      order: { ...orderData, partnerInfo },
     });
   } catch (error) {
     console.error('Error fetching order:', error);
@@ -57,6 +54,11 @@ export async function GET(
   }
 }
 
+/**
+ * PATCH /api/admin/orders/[id] with { status }: set where a paid order is in fulfilment.
+ * Admins may move in either direction to correct a mistake; payment states
+ * (pending_payment, cancelled, refunded) are changed only by payments and the job's cancel action.
+ */
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -67,119 +69,41 @@ export async function PATCH(
   try {
     await connectDB();
     const { id } = await context.params;
-    const body = await request.json();
-    const { orderStatus } = body;
+    const body = await request.json().catch(() => ({}));
+    const target = typeof body?.status === 'string' ? body.status : '';
 
-    console.log(`🔄 Admin updating order ${id} status to: ${orderStatus}`);
-
-    if (!orderStatus) {
-      console.log('❌ No orderStatus provided in request body');
+    if (!target || target === 'paid' || STATUS_RANK[target] === undefined) {
       return NextResponse.json(
-        { success: false, error: 'Order status is required' },
+        { success: false, error: `Invalid status. Use one of: ${Object.keys(STATUS_RANK).filter((s) => s !== 'paid').join(', ')}` },
         { status: 400 }
       );
     }
 
-    // Get current order to validate state transition
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
-    const query = isObjectId ? { _id: id } : { orderId: id };
-    const currentOrder = await Order.findOne(query);
-    if (!currentOrder) {
-      console.log(`❌ Order ${id} not found`);
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      );
+    const query = /^[0-9a-fA-F]{24}$/.test(id) ? { _id: id } : { orderId: id };
+    const current = await Order.findOne(query).select('orderId status paymentStatus');
+    if (!current) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
-
-    console.log(`📋 Current order status: ${currentOrder.status}, orderStatus: ${currentOrder.orderStatus}`);
-
-    // Validate orderStatus values (different from status field)
-    const validOrderStatuses = ['pending', 'processing', 'printing', 'printed', 'dispatched', 'delivered'];
-    if (!validOrderStatuses.includes(orderStatus)) {
+    if (current.paymentStatus !== 'completed' || STATUS_RANK[current.status] === undefined) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid orderStatus: ${orderStatus}. Valid values are: ${validOrderStatuses.join(', ')}`
-        },
+        { success: false, error: `An order that is "${current.status}" cannot be moved through fulfilment` },
         { status: 400 }
       );
     }
 
-    // Map orderStatus to corresponding status field value
-    const statusMapping: Record<string, string> = {
-      'pending': 'processing',
-      'processing': 'processing',
-      'printing': 'printing',
-      'printed': 'printed',
-      'dispatched': 'dispatched',
-      'delivered': 'delivered'
-    };
-
-    const newStatus = statusMapping[orderStatus] || 'processing';
-
-    console.log(`🔄 Mapping orderStatus '${orderStatus}' to status '${newStatus}'`);
-
-    // Validate state transition for the status field with admin override
-    const currentStatus = currentOrder.status as OrderStatus || 'pending_payment';
-    const transition = validateOrderStateTransition(currentStatus, newStatus as OrderStatus, true); // Admin override enabled
-
-    if (!transition.allowed) {
-      logOrderEvent('invalid_state_transition', currentOrder.orderId, {
-        from: currentStatus,
-        to: newStatus,
-        reason: transition.reason
-      }, 'warn');
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid status transition: ${transition.reason}`
-        },
-        { status: 400 }
-      );
-    }
-
-    console.log(`🔓 Admin override enabled for transition: ${currentStatus} -> ${newStatus}`);
-
-    // Update order status
-    const updateFields: any = {
-      orderStatus,
-      status: newStatus,
-      updatedAt: new Date()
-    };
-    // Set printedAt when transitioning to 'printed'
-    if (orderStatus === 'printed') {
-      updateFields.printedAt = new Date();
-    }
-    const order = await Order.findOneAndUpdate(
-      query,
-      updateFields,
-      { new: true }
-    );
+    const update: Record<string, unknown> = { status: target, orderStatus: target, updatedAt: new Date() };
+    if (target === 'printed') update.printedAt = new Date();
+    const order = await Order.findOneAndUpdate(query, update, { new: true });
+    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
 
     const { syncJobFromOrderStatus } = await import('@/lib/jobs/service');
-    await syncJobFromOrderStatus(order.orderId, newStatus, `admin:${auth.email}`).catch((error) => console.error('Job sync failed:', error));
+    await syncJobFromOrderStatus(order.orderId, target, `admin:${auth.email}`).catch((error) => console.error('Job sync failed:', error));
 
-    logOrderEvent('status_updated', order.orderId, {
-      from: currentStatus,
-      to: newStatus,
-      orderStatus: orderStatus,
-      updatedBy: 'admin'
-    });
-
-    console.log(`✅ Order ${order.orderId} status updated successfully: ${currentStatus} -> ${newStatus} (orderStatus: ${orderStatus})`);
-
-    return NextResponse.json({
-      success: true,
-      order,
-    });
+    logOrderEvent('status_updated', order.orderId, { from: current.status, to: target, updatedBy: `admin:${auth.email}` });
+    return NextResponse.json({ success: true, order });
   } catch (error) {
     console.error('Error updating order:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update order' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 });
   }
 }
 

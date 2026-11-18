@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   Building2,
-  CheckCircle2,
   Download,
   ExternalLink,
   FileImage,
@@ -13,9 +12,7 @@ import {
   Loader2,
   MapPin,
   Package,
-  Phone,
   Printer,
-  Trash2,
   Truck,
   User,
 } from 'lucide-react';
@@ -28,14 +25,9 @@ import { OrderProgress, StatusBadge } from '@/components/orders/OrderStatus';
 export interface OrderDetailViewProps {
   order: any;
   mode?: 'admin' | 'user';
-  isUpdating?: boolean;
-  isPrinting?: boolean;
   isShipping?: boolean;
-  onUpdateStatus?: (newStatus: string) => void;
-  onSendToPrintQueue?: () => void;
-  onDeleteOrder?: () => void;
+  /** Admin only: books the courier for a courier delivery. */
   onShipOrder?: () => void;
-  onMarkAsPrinted?: () => void;
 }
 
 type ColorMode = 'color' | 'bw' | 'mixed';
@@ -242,14 +234,8 @@ function addressText(a: any) {
 export function OrderDetailView({
   order,
   mode = 'admin',
-  isUpdating = false,
-  isPrinting = false,
   isShipping = false,
-  onUpdateStatus,
-  onSendToPrintQueue,
-  onDeleteOrder,
   onShipOrder,
-  onMarkAsPrinted,
 }: OrderDetailViewProps) {
   const files = useMemo(() => (order ? filesOf(order) : []), [order]);
   const [selected, setSelected] = useState(0);
@@ -431,27 +417,6 @@ export function OrderDetailView({
           </CardContent>
         </Card>
 
-        {admin && onUpdateStatus && onSendToPrintQueue && onDeleteOrder ? (
-          <Card>
-            <CardHeader><CardTitle className="text-base">Actions</CardTitle></CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={onSendToPrintQueue} disabled={isPrinting || isUpdating || order.paymentStatus !== 'completed' || !hasFiles} className="sm:col-span-2">
-                {isPrinting ? <Loader2 className="animate-spin" /> : <Printer />}Send to the shop’s print queue
-              </Button>
-              <Button variant="outline" onClick={() => onUpdateStatus('processing')} disabled={order.orderStatus === 'processing' || isUpdating}>Mark processing</Button>
-              <Button variant="outline" onClick={() => onUpdateStatus('printing')} disabled={order.orderStatus === 'printing' || isUpdating}>Mark printing</Button>
-              {onMarkAsPrinted ? (
-                <Button variant="outline" onClick={onMarkAsPrinted} disabled={order.orderStatus !== 'printing' || isUpdating}><CheckCircle2 />Mark printed</Button>
-              ) : null}
-              <Button variant="outline" onClick={() => onUpdateStatus('dispatched')} disabled={order.orderStatus === 'dispatched' || isUpdating}>Mark dispatched</Button>
-              <Button variant="outline" onClick={() => onUpdateStatus('delivered')} disabled={order.orderStatus === 'delivered' || isUpdating}>Mark delivered</Button>
-              {customer.phone ? (
-                <Button asChild variant="outline"><a href={`tel:${customer.phone}`}><Phone />Call customer</a></Button>
-              ) : null}
-              <Button variant="destructive" onClick={onDeleteOrder} disabled={isUpdating} className="sm:col-span-2"><Trash2 />Delete order</Button>
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
     </div>
   );
