@@ -208,3 +208,26 @@ export function validatePhoneNumberLength(phone: string): { valid: boolean; erro
   return { valid: true };
 }
 
+
+/**
+ * Normalises what people type: "98765 43210", "098765 43210" and "+91 98765 43210"
+ * all become "+919876543210". Numbers without a country code are taken as Indian.
+ * Returns the E.164 number, or an error to show.
+ */
+export function normalisePhoneInput(input: unknown): { ok: true; phone: string } | { ok: false; error: string } {
+  if (typeof input !== 'string' || !input.trim()) return { ok: false, error: 'Phone number is required' };
+  const raw = input.trim();
+  let digits = raw.replace(/[^\d+]/g, '');
+  if (!digits.startsWith('+')) {
+    digits = digits.replace(/^0+/, '');
+    if (/^[6-9]\d{9}$/.test(digits)) digits = `+91${digits}`;
+    else if (/^91[6-9]\d{9}$/.test(digits)) digits = `+${digits}`;
+    else return { ok: false, error: 'Enter a 10-digit mobile number, or include the country code (e.g. +91)' };
+  }
+  if (digits.startsWith('+91') && !/^\+91[6-9]\d{9}$/.test(digits)) return { ok: false, error: 'Enter a valid 10-digit Indian mobile number' };
+  const format = validatePhoneNumber(digits);
+  if (!format.valid) return { ok: false, error: format.error || 'Invalid phone number' };
+  const length = validatePhoneNumberLength(digits);
+  if (!length.valid) return { ok: false, error: length.error || 'Invalid phone number' };
+  return { ok: true, phone: digits };
+}

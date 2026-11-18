@@ -26,7 +26,11 @@ const User = mongoose.model('User', userSchema);
 async function setupAuth() {
   try {
     // Connect to MongoDB
-    const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/print-service';
+    const MONGODB_URI = process.env.MONGODB_URI;
+    if (!MONGODB_URI) {
+      console.error('❌ MONGODB_URI is not set');
+      process.exit(1);
+    }
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
 

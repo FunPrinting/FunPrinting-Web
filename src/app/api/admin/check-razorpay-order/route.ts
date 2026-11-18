@@ -1,39 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkSpecificOrderFromRazorpay } from '@/lib/razorpayFallback';
+import { requireAdmin } from '@/lib/authz';
+import connectDB from '@/lib/mongodb';
+import Payment from '@/models/Payment';
+import { syncPaymentFromRazorpay } from '@/lib/payments/reconcile';
+import { runFulfilment } from '@/lib/payments/fulfil';
 
+export const runtime = 'nodejs';
+
+/**
+ * POST /api/admin/check-razorpay-order — { referenceId } or { orderId }
+ * Re-checks the payment with Razorpay and retries any unfinished fulfilment.
+ */
 export async function POST(request: NextRequest) {
-  try {
-    const { razorpayOrderId, orderId } = await request.json();
-    
-    if (!razorpayOrderId) {
-      return NextResponse.json(
-        { success: false, error: 'Razorpay order ID is required' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`🔍 Manual check for Razorpay order: ${razorpayOrderId}`);
-    
-    const success = await checkSpecificOrderFromRazorpay(razorpayOrderId);
-    
-    if (success) {
-      return NextResponse.json({
-        success: true,
-        message: `Order ${orderId || 'N/A'} status updated successfully via Razorpay fallback`,
-        razorpayOrderId
-      });
-    } else {
-      return NextResponse.json({
-        success: false,
-        message: 'No successful payment found for this Razorpay order',
-        razorpayOrderId
-      });
-    }
-  } catch (error) {
-    console.error('❌ Error checking Razorpay order:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to check Razorpay order' },
-      { status: 500 }
-    );
+  const admin = await requireAdmin();
+  if (admin instanceof NextResponse) return admin;
+  const body = await request.json().catch(() => ({}));
+  const referenceId = typeof body.referenceId === 'string' ? body.referenceId : undefined;
+  const orderId = typeof body.orderId === 'string' ? body.orderId : undefined;
+  if (!referenceId && !orderId) {
+    return NextResponse.json({ success: false, error: 'referenceId or orderId is required' }, { status: 400 });
   }
+
+  await connectDB();
+  const payment = referenceId
+    ? await Payment.findOne({ referenceId }).lean<{ referenceId: string } | null>()
+    : await Payment.findOne({ orderId }).sort({ createdAt: -1 }).lean<{ referenceId: string } | null>();
+  if (!payment) return NextResponse.json({ success: false, error: 'No payment found' }, { status: 404 });
+
+  const status = await syncPaymentFromRazorpay(payment.referenceId, 'admin');
+  const fulfilment = status === 'paid' ? await runFulfilment(payment.referenceId) : null;
+  return NextResponse.json({ success: true, referenceId: payment.referenceId, status, fulfilment });
 }

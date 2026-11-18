@@ -3,58 +3,29 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { Loader2 } from 'lucide-react';
 
+/** After sign-in: password setup (Google accounts), then profile completion, then My orders. */
 export default function CheckProfilePage() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
   useEffect(() => {
-    const checkProfile = async () => {
-      if (status === 'loading') return;
-      
-      if (!session) {
-        router.push('/auth/signin');
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/user/check-profile-complete');
-        const data = await response.json();
-        
-        if (data.success) {
-          // First check if user needs to set up password (Google OAuth users or users without password)
-          if (!data.hasPassword && (data.provider === 'google' || !data.provider)) {
-            router.push('/auth/setup-password');
-            return;
-          }
-          
-          // Then check if profile is complete
-          if (!data.isComplete) {
-            router.push('/complete-profile');
-          } else {
-            router.push('/my-orders');
-          }
-        } else {
-          router.push('/my-orders');
-        }
-      } catch (error) {
-        console.error('Error checking profile:', error);
-        router.push('/my-orders');
-      }
-    };
-
-    checkProfile();
+    if (status === 'loading') return;
+    if (!session) return router.push('/auth/signin');
+    fetch('/api/user/check-profile-complete')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.success) return router.push('/my-orders');
+        if (!data.hasPassword && (data.provider === 'google' || !data.provider)) return router.push('/auth/setup-password');
+        router.push(data.isComplete ? '/my-orders' : '/complete-profile');
+      })
+      .catch(() => router.push('/my-orders'));
   }, [session, status, router]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Checking your profile...</p>
-      </div>
+    <div className="grid min-h-[60vh] place-items-center" role="status">
+      <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-5 animate-spin" aria-hidden />Checking your profile…</div>
     </div>
   );
 }
-
-
-

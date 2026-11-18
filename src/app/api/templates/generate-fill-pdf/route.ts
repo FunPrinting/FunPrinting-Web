@@ -1,222 +1,70 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
 import { fillDocxTemplate } from '@/lib/docxProcessor';
 import { uploadFile } from '@/lib/storage';
-import { convertDocxToPdfSync } from '@/lib/renderPdfService';
-import { convertDocxToPdf as cloudmersiveDocxToPdf } from '@/lib/cloudmersive';
-import {
-  convertDocxToPdfViaConvertAPI,
-  convertDocxToPdfViaILovePDF,
-} from '@/lib/freeConverters';
-import { convertDocxToPdf as libreOfficeDocxToPdf, isLibreOfficeAvailable } from '@/lib/libreoffice';
-import { v4 as uuidv4 } from 'uuid';
 import { jobStore } from '@/lib/jobStore';
 import { generationRateLimit, getClientIdentifier, checkRateLimit } from '@/lib/ratelimit';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireUser } from '@/lib/authz';
+import { checkTemplateAccess, releaseTemplateGeneration, type TemplateAccess } from '@/lib/payments/templateAccess';
+import { withRequestLogger, logger } from '@/lib/logger';
+import { docxToPdf, ConversionError } from '@/lib/documents/convert';
+import { FileFetchError } from '@/lib/documents/fileUrls';
+import { loadTemplateDocx, TemplateError } from '@/lib/documents/templates';
 
-/**
- * Background PDF conversion — runs after the API response is sent
- * Updates job status in Redis when done
- */
-async function convertToPdfInBackground(
-  jobId: string,
-  filledBuffer: Buffer,
-  wordUrl: string
-) {
-  let pdfUrl: string | undefined;
-  let status: 'completed' | 'failed' = 'completed';
-  let error: string | undefined;
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
-  // ── 1. Cloudmersive (primary, 800 total free) ────────────────────
-  if (process.env.CLOUDMERSIVE_API_KEY) {
-    console.log(`📄 [BG] Job ${jobId}: Converting to PDF via Cloudmersive...`);
-    try {
-      const pdfBuffer = await cloudmersiveDocxToPdf(filledBuffer);
-      pdfUrl = await uploadFile(pdfBuffer, `filled-documents/${jobId}`, 'application/pdf');
-      console.log(`✅ [BG] Job ${jobId}: PDF uploaded (Cloudmersive):`, pdfUrl);
-    } catch (err) {
-      console.error(`❌ [BG] Job ${jobId}: Cloudmersive failed:`, err);
-    }
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/** Converts the filled document to PDF after the response is sent; the client polls generation-status. */
+async function convertInBackground(jobId: string, userId: string, filled: Buffer, wordUrl: string, createdAt: number) {
+  try {
+    const { pdf, provider } = await docxToPdf(filled);
+    const pdfUrl = await uploadFile(pdf, `filled-documents/${jobId}`, 'application/pdf');
+    await jobStore.set(jobId, { jobId, userId, wordUrl, pdfUrl, status: 'completed', createdAt });
+    logger.info({ jobId, provider }, 'template PDF ready');
+  } catch (err) {
+    const error = err instanceof ConversionError ? 'PDF conversion is unavailable right now. You can still download the Word document.' : 'PDF conversion failed. You can still download the Word document.';
+    logger.error({ jobId, err: err instanceof Error ? err.message : err, attempts: err instanceof ConversionError ? err.attempts : undefined }, 'template PDF conversion failed');
+    await jobStore.set(jobId, { jobId, userId, wordUrl, status: 'failed', error, createdAt });
   }
-
-  // ── 2. ConvertAPI (250 / month free) ────────────────────────────
-  if (!pdfUrl && process.env.CONVERTAPI_SECRET) {
-    console.log(`📄 [BG] Job ${jobId}: Falling back to ConvertAPI...`);
-    try {
-      const pdfBuffer = await convertDocxToPdfViaConvertAPI(filledBuffer);
-      pdfUrl = await uploadFile(pdfBuffer, `filled-documents/${jobId}`, 'application/pdf');
-      console.log(`✅ [BG] Job ${jobId}: PDF uploaded (ConvertAPI):`, pdfUrl);
-    } catch (err) {
-      console.error(`❌ [BG] Job ${jobId}: ConvertAPI failed:`, err);
-    }
-  }
-
-  // ── 3. iLovePDF (250 / month free) ──────────────────────────────
-  if (!pdfUrl && process.env.ILOVEPDF_PUBLIC_KEY && process.env.ILOVEPDF_SECRET_KEY) {
-    console.log(`📄 [BG] Job ${jobId}: Falling back to iLovePDF...`);
-    try {
-      const pdfBuffer = await convertDocxToPdfViaILovePDF(filledBuffer);
-      pdfUrl = await uploadFile(pdfBuffer, `filled-documents/${jobId}`, 'application/pdf');
-      console.log(`✅ [BG] Job ${jobId}: PDF uploaded (iLovePDF):`, pdfUrl);
-    } catch (err) {
-      console.error(`❌ [BG] Job ${jobId}: iLovePDF failed:`, err);
-    }
-  }
-
-  // ── 4. LibreOffice CLI (self-hosted, free) ───────────────────────
-  if (!pdfUrl) {
-    const hasLibreOffice = await isLibreOfficeAvailable();
-    if (hasLibreOffice) {
-      console.log(`📄 [BG] Job ${jobId}: Falling back to LibreOffice CLI...`);
-      try {
-        const pdfBuffer = await libreOfficeDocxToPdf(filledBuffer);
-        pdfUrl = await uploadFile(pdfBuffer, `filled-documents/${jobId}`, 'application/pdf');
-        console.log(`✅ [BG] Job ${jobId}: PDF uploaded (LibreOffice CLI):`, pdfUrl);
-      } catch (err) {
-        console.error(`❌ [BG] Job ${jobId}: LibreOffice CLI failed:`, err);
-      }
-    }
-  }
-
-  // ── 5. Fly.io render service (paid, last resort) ─────────────────
-  if (!pdfUrl) {
-    console.log(`📄 [BG] Job ${jobId}: Falling back to Fly.io (last resort)...`);
-    try {
-      const conversionResult = await convertDocxToPdfSync(wordUrl, 60000, 3);
-      if (conversionResult.success && conversionResult.pdfBuffer) {
-        const pdfBuffer = Buffer.from(conversionResult.pdfBuffer, 'base64');
-        pdfUrl = await uploadFile(pdfBuffer, `filled-documents/${jobId}`, 'application/pdf');
-        console.log(`✅ [BG] Job ${jobId}: PDF uploaded (Fly.io):`, pdfUrl);
-      } else {
-        status = 'failed';
-        error = conversionResult.error || 'All PDF conversion methods failed';
-      }
-    } catch (flyError) {
-      status = 'failed';
-      error = flyError instanceof Error ? flyError.message : 'Fly.io fallback failed';
-      console.error(`❌ [BG] Job ${jobId}: Fly.io also failed:`, flyError);
-    }
-  }
-
-  // Update job in Redis with final status
-  const existingJob = await jobStore.get(jobId);
-  await jobStore.set(jobId, {
-    jobId,
-    wordUrl,
-    pdfUrl,
-    status: pdfUrl ? 'completed' : status,
-    error: pdfUrl ? undefined : error,
-    createdAt: existingJob?.createdAt || Date.now(),
-  });
-
-  console.log(`✅ [BG] Job ${jobId}: Final status = ${pdfUrl ? 'completed' : status}`);
 }
 
 /**
- * Generate filled Word document and kick off async PDF conversion
- * Returns immediately with jobId — client polls generation-status for updates
+ * POST /api/templates/generate-fill-pdf { templateId, formData, paymentRef? }
+ * Fills the template's Word file, returns its URL and a jobId at once, and converts
+ * it to PDF in the background (poll /api/templates/generation-status/<jobId>).
  */
 export async function POST(request: NextRequest) {
-  // Rate limit check
-  const clientId = getClientIdentifier(request);
-  const rateLimitResponse = await checkRateLimit(generationRateLimit, clientId);
-  if (rateLimitResponse) return rateLimitResponse;
+  const limited = await checkRateLimit(generationRateLimit, getClientIdentifier(request));
+  if (limited) return limited;
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const log = withRequestLogger(request, { userId: user.id });
 
-  // Authentication check — only signed-in users can generate documents
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json(
-      { success: false, error: 'Authentication required. Please sign in to generate documents.' },
-      { status: 401 }
-    );
-  }
-
+  let counted: TemplateAccess | null = null;
   try {
-    console.log('📝 Template fill with PDF conversion request received');
-
-    const { templateId, formData } = await request.json();
-
-    console.log('[GENERATE-FILL] Received formData keys:', Object.keys(formData || {}));
-
+    const body = await request.json().catch(() => ({}));
+    const { templateId, paymentRef } = body;
+    const access = await checkTemplateAccess(templateId, body.formData, paymentRef);
+    if (access instanceof NextResponse) return access;
+    counted = access;
+    const formData = access.formData;
     if (!templateId || !formData) {
-      return NextResponse.json(
-        { success: false, error: 'templateId and formData are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'templateId and formData are required' }, { status: 400 });
     }
 
-    // Generate unique job ID
+    const { template, docx } = await loadTemplateDocx(templateId);
+    const filled = await fillDocxTemplate(docx, formData);
     const jobId = uuidv4();
+    const wordUrl = await uploadFile(filled, `filled-documents/${jobId}`, DOCX_MIME);
+    const createdAt = Date.now();
+    await jobStore.set(jobId, { jobId, userId: user.id, wordUrl, status: 'processing', createdAt });
 
-    // Step 1: Generate Word document
-    console.log('📄 Step 1: Generating Word document...');
+    // after() keeps the function alive until the conversion finishes
+    after(() => convertInBackground(jobId, user.id, filled, wordUrl, createdAt));
+    log.info({ jobId, templateId }, 'template document generated');
 
-    // Fetch template details
-    const origin = new URL(request.url).origin;
-    const templateUrl = `${origin}/api/admin/save-template?id=${encodeURIComponent(templateId)}`;
-
-    const templateRes = await fetch(templateUrl);
-    if (!templateRes.ok) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch template details' },
-        { status: templateRes.status === 404 ? 404 : 500 }
-      );
-    }
-
-    const templateJson = await templateRes.json();
-    if (!templateJson.success || !templateJson.data?.template?.wordUrl) {
-      return NextResponse.json(
-        { success: false, error: 'Template or wordUrl not found' },
-        { status: 404 }
-      );
-    }
-
-    const template = templateJson.data.template as { name: string; wordUrl: string; formSchema?: any[]; placeholders?: string[] };
-    console.log(`✅ Template found: ${template.name}`);
-
-    // Fetch the DOCX file
-    const sourceRes = await fetch(template.wordUrl);
-    if (!sourceRes.ok) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch source DOCX' },
-        { status: sourceRes.status === 404 ? 404 : 500 }
-      );
-    }
-
-    const sourceBuffer = Buffer.from(await sourceRes.arrayBuffer());
-    console.log(`✅ DOCX file fetched: ${sourceBuffer.length} bytes`);
-
-    // Fill the DOCX with form data
-    console.log('🔄 Filling DOCX template with form data...');
-    const filledBuffer = await fillDocxTemplate(sourceBuffer, formData);
-    console.log(`✅ DOCX template filled: ${filledBuffer.length} bytes`);
-
-    // Upload filled Word document to cloud storage
-    console.log('☁️ Uploading filled Word document to storage...');
-    const wordUrl = await uploadFile(
-      filledBuffer,
-      `filled-documents/${jobId}`,
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    );
-    console.log('✅ Filled Word document uploaded:', wordUrl);
-
-    // Store job in Redis as 'processing' BEFORE starting PDF conversion
-    await jobStore.set(jobId, {
-      jobId,
-      wordUrl,
-      status: 'processing',
-      createdAt: Date.now(),
-    });
-    console.log(`✅ Job stored in Redis: ${jobId}, status: processing`);
-
-    // Step 2: Kick off PDF conversion in the background (fire-and-forget)
-    // This runs after the response is sent — client polls generation-status for updates
-    convertToPdfInBackground(jobId, filledBuffer, wordUrl).catch((err) => {
-      console.error(`❌ [BG] Unhandled error in background PDF conversion for job ${jobId}:`, err);
-    });
-
-    // Return immediately with jobId — client will poll for status
-    // Include templateName so the client can use it for download filenames
     return NextResponse.json({
       success: true,
       jobId,
@@ -225,16 +73,13 @@ export async function POST(request: NextRequest) {
       status: 'processing',
       message: 'Document generated. PDF conversion in progress...',
     });
-
   } catch (error) {
-    console.error('❌ Error generating document:', error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to generate document'
-      },
-      { status: 500 }
-    );
+    // A failed attempt must not use up one of the buyer's generations
+    if (counted) await releaseTemplateGeneration(counted).catch((err) => log.error({ err }, 'could not release template generation'));
+    if (error instanceof TemplateError || error instanceof FileFetchError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    }
+    log.error({ err: error }, 'template generation failed');
+    return NextResponse.json({ success: false, error: 'Failed to generate document' }, { status: 500 });
   }
 }

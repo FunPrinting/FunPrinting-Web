@@ -1,18 +1,5 @@
-import nodemailer from 'nodemailer';
+import { getMailTransporter } from '@/lib/mailer';
 
-// Configure email transporter using existing environment variables
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_HOST_USER ,
-    pass: process.env.EMAIL_HOST_PASSWORD || 'hagbaiwzqltgfflz',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
 
 /**
  * Send OTP email for order dispatch/delivery verification
@@ -68,7 +55,7 @@ export async function sendDispatchOtpEmail(
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await getMailTransporter().sendMail(mailOptions);
     console.log(`✅ Dispatch OTP email sent to ${email} for order ${orderId}`);
     return true;
   } catch (error) {

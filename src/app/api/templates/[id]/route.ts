@@ -4,7 +4,7 @@ import DynamicTemplate from '@/models/DynamicTemplate';
 import User from '@/models/User';
 import { getCurrentUser, canViewTemplate, canEditTemplate, canDeleteTemplate, isAdminUser } from '@/lib/templateAuth';
 import { generateFormSchema } from '@/lib/docxProcessor';
-import fs from 'fs';
+import { TEMPLATE_CATEGORIES } from '@/lib/templates';
 
 // GET: Get template details (if public or owned by user)
 export async function GET(
@@ -34,8 +34,8 @@ export async function GET(
       );
     }
 
-    // Check if user can view this template
-    const canView = await canViewTemplate(id, userId);
+    const isAdmin = userId ? await isAdminUser() : false;
+    const canView = await canViewTemplate(id, userId, isAdmin);
     if (!canView) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: You do not have permission to view this template' },
@@ -43,8 +43,12 @@ export async function GET(
       );
     }
 
+    // The Word file is the paid product: only its owner (or an admin) gets the URL
+    const canEdit = userId ? await canEditTemplate(id, userId, isAdmin) : false;
     // Generate form schema from placeholders
-    const formSchema = template.formSchema || generateFormSchema(template.placeholders);
+    const formSchema = template.formSchema?.length
+      ? template.formSchema
+      : Object.entries(generateFormSchema(template.placeholders)).map(([key, value]) => ({ key, ...value }));
 
     return NextResponse.json({
       success: true,
@@ -55,12 +59,11 @@ export async function GET(
         description: template.description,
         category: template.category,
         pdfUrl: template.pdfUrl,
-        wordUrl: template.wordUrl,
+        ...(canEdit ? { wordUrl: template.wordUrl, createdByEmail: template.createdByEmail } : {}),
         placeholders: template.placeholders,
         formSchema,
         isPublic: template.isPublic,
         createdByType: template.createdByType,
-        createdByEmail: template.createdByEmail,
         createdByName: template.createdByName,
         isPaid: template.isPaid || false,
         price: template.price || 0,
@@ -119,12 +122,6 @@ export async function PUT(
     const body = await request.json();
     const { name, description, category, placeholders, formSchema, isPublic, isPaid, price, allowFreeDownload } = body;
 
-    // #region agent log
-    const logPath = 'c:\\Users\\kings\\OneDrive\\Desktop\\New folder\\.cursor\\debug.log';
-    try {
-      fs.appendFileSync(logPath, JSON.stringify({location:'api/templates/[id]/route.ts:118',message:'PUT request body received',data:{body,extractedFields:{isPaid,price,allowFreeDownload}},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})+'\n');
-    } catch(_e) {}
-    // #endregion
 
     await connectDB();
     
@@ -137,41 +134,54 @@ export async function PUT(
       );
     }
 
-    // Update template fields
-    if (name !== undefined) template.name = name;
-    if (description !== undefined) template.description = description;
+    // Validate before changing anything
+    if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 100)) {
+      return NextResponse.json({ success: false, error: 'Give the template a name of up to 100 characters.' }, { status: 400 });
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 500)) {
+      return NextResponse.json({ success: false, error: 'The description can be up to 500 characters.' }, { status: 400 });
+    }
+    if (category !== undefined && !TEMPLATE_CATEGORIES.some((c) => c.value === category)) {
+      return NextResponse.json({ success: false, error: 'Choose a valid category.' }, { status: 400 });
+    }
+    // Price rules apply only when the request changes the price or paid flag,
+    // so an admin can still toggle visibility on an old template with odd data
+    const changesMoney = isPaid !== undefined || price !== undefined;
+    const nextPrice = price === undefined ? template.price || 0 : Number(price);
+    const nextPaid = isPaid === undefined ? !!template.isPaid : !!isPaid;
+    if (changesMoney) {
+      if (!Number.isFinite(nextPrice) || nextPrice < 0 || nextPrice > 10000) {
+        return NextResponse.json({ success: false, error: 'The price can be at most ₹10,000.' }, { status: 400 });
+      }
+      if (nextPaid && nextPrice <= 0) {
+        return NextResponse.json({ success: false, error: 'Paid templates require a valid price greater than 0' }, { status: 400 });
+      }
+      // Switching to paid needs somewhere to send the creator's money
+      if (nextPaid && !template.isPaid) {
+        const creator = template.createdByUserId
+          ? await User.findById(template.createdByUserId).select('upiId bankDetails')
+          : await User.findOne({ email: String(template.createdByEmail || '').toLowerCase() }).select('upiId bankDetails');
+        if (!(creator?.upiId || creator?.bankDetails?.accountNumber)) {
+          const whose = creator && String(creator._id) === userId ? 'your' : 'the creator’s';
+          return NextResponse.json({ success: false, error: `Set up ${whose} payout details before making this template paid` }, { status: 400 });
+        }
+      }
+    }
+
+    if (name !== undefined) template.name = name.trim();
+    if (description !== undefined) template.description = description.trim();
     if (category !== undefined) template.category = category;
     if (placeholders !== undefined) template.placeholders = placeholders;
     if (formSchema !== undefined) template.formSchema = formSchema;
-    
-    // Update monetization fields
     if (isPublic !== undefined) template.isPublic = !!isPublic;
-    if (isPaid !== undefined) {
-      // Validate paid templates have valid price and payout info
-      if (isPaid && (price === undefined || price <= 0)) {
-        return NextResponse.json(
-          { success: false, error: 'Paid templates require a valid price greater than 0' },
-          { status: 400 }
-        );
-      }
-      template.isPaid = !!isPaid;
+    if (changesMoney) {
+      template.isPaid = nextPaid;
+      template.price = nextPaid ? nextPrice : 0;
     }
-    if (price !== undefined) template.price = Math.max(0, Number(price) || 0);
     if (allowFreeDownload !== undefined) template.allowFreeDownload = allowFreeDownload !== false;
-
-    // #region agent log
-    try {
-      fs.appendFileSync(logPath, JSON.stringify({location:'api/templates/[id]/route.ts:152',message:'Before save - template monetization fields',data:{templateIsPaid:template.isPaid,templatePrice:template.price,templateAllowFreeDownload:template.allowFreeDownload},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})+'\n');
-    } catch(_e) {}
-    // #endregion
 
     await template.save();
 
-    // #region agent log
-    try {
-      fs.appendFileSync(logPath, JSON.stringify({location:'api/templates/[id]/route.ts:154',message:'After save - template monetization fields',data:{templateIsPaid:template.isPaid,templatePrice:template.price,templateAllowFreeDownload:template.allowFreeDownload},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})+'\n');
-    } catch(_e) {}
-    // #endregion
 
     return NextResponse.json({
       success: true,

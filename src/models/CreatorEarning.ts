@@ -8,7 +8,7 @@ export interface ICreatorEarning {
   razorpayPaymentId?: string;
   amount: number; // Amount to be paid to creator (INR)
   platformShareAmount?: number; // Platform earnings for this order (for reporting)
-  status: 'pending' | 'processing' | 'paid' | 'failed';
+  status: 'pending' | 'processing' | 'paid' | 'failed' | 'cancelled';
   payoutMethod?: 'upi' | 'bank';
   payoutDestination?: string; // e.g. UPI ID or masked account details
   notes?: string;
@@ -46,7 +46,7 @@ const creatorEarningSchema = new mongoose.Schema<ICreatorEarning>({
   },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'paid', 'failed'],
+    enum: ['pending', 'processing', 'paid', 'failed', 'cancelled'],
     default: 'pending',
     required: true,
   },

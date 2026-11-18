@@ -149,7 +149,7 @@ startxref
     console.log('\n📋 Next steps:');
     console.log('1. Test the full integration: npm run test-integration');
     console.log('2. Start the development server: npm run dev');
-    console.log('3. Test in browser: http://localhost:3000/admin/templates/dynamic/upload');
+    console.log('3. Test in browser: http://localhost:3000/templates/create');
 
   } catch (error) {
     console.error('❌ Test failed with error:', error.message);

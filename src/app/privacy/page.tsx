@@ -1,106 +1,77 @@
-'use client';
-
 import Link from 'next/link';
-import { useAdminInfo } from '@/hooks/useAdminInfo';
+import { ContactBlock, LegalPage, LegalSection } from '@/components/legal/LegalPage';
+
+const SECTIONS = [
+  { id: 'collect', title: 'What we collect' },
+  { id: 'use', title: 'How we use it' },
+  { id: 'share', title: 'Who else sees it' },
+  { id: 'ads', title: 'Advertising and cookies' },
+  { id: 'keep', title: 'How long we keep it' },
+  { id: 'security', title: 'Security' },
+  { id: 'rights', title: 'Your choices' },
+  { id: 'contact', title: 'Contact' },
+];
 
 export default function PrivacyPage() {
-  const { adminInfo } = useAdminInfo();
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Privacy Policy</h1>
-          
-          <div className="prose prose-lg max-w-none">
-            <p className="text-gray-600 mb-6">
-              <strong>Last updated:</strong> {new Date().toLocaleDateString()}
-            </p>
+    <LegalPage title="Privacy policy" intro="This explains what Fun Printing collects when you use the site, why, and who it is shared with." sections={SECTIONS}>
+      <LegalSection id="collect" n={1} title="What we collect">
+        <ul>
+          <li><strong>Account:</strong> your name, email address and phone number. If you sign in with Google, we receive your name and email from Google. Passwords are stored in scrambled (hashed) form, never as plain text.</li>
+          <li><strong>Orders:</strong> the files you upload, your print options, and for delivery the recipient’s name, phone number and address.</li>
+          <li><strong>Payments:</strong> Razorpay handles your payment details. We keep the payment reference, amount and status, not your card or UPI details.</li>
+          <li><strong>Technical records:</strong> logs and error reports that help us keep the service working and secure.</li>
+        </ul>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">1. Information We Collect</h2>
-              <p className="text-gray-700 mb-4">
-                We collect information you provide directly to us, such as when you create an account, place an order, or contact us for support.
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Personal information (name, email, phone number)</li>
-                <li>Student information (roll number, hostel details)</li>
-                <li>Payment information (processed securely through Razorpay)</li>
-                <li>Order details and preferences</li>
-                <li>Communication records</li>
-              </ul>
-            </section>
+      <LegalSection id="use" n={2} title="How we use it">
+        <ul>
+          <li>to take, print, deliver, refund and support your orders;</li>
+          <li>to contact you about an order by email or phone;</li>
+          <li>to prevent fraud and misuse, and to fix problems;</li>
+          <li>to meet legal and accounting duties.</li>
+        </ul>
+        <p>We do not sell your information.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">2. How We Use Your Information</h2>
-              <p className="text-gray-700 mb-4">We use the information we collect to:</p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Process and fulfill your orders</li>
-                <li>Provide customer support</li>
-                <li>Send order updates and notifications</li>
-                <li>Improve our services</li>
-                <li>Comply with legal obligations</li>
-              </ul>
-            </section>
+      <LegalSection id="share" n={3} title="Who else sees it">
+        <p>We share information only as needed to deliver your order:</p>
+        <ul>
+          <li><strong>The print shop you choose</strong> sees your files, print options, name and phone number, and your address if the shop delivers.</li>
+          <li><strong>Couriers</strong> (through Shiprocket and its courier partners) receive the recipient’s name, phone number and address for courier deliveries.</li>
+          <li><strong>Razorpay</strong> processes payments and refunds.</li>
+          <li><strong>Cloudinary</strong> and our other storage providers store uploaded files.</li>
+          <li><strong>Google</strong> provides sign-in and advertising (see below).</li>
+          <li><strong>Email services</strong> send you order emails and invoices.</li>
+          <li><strong>Authorities</strong>, where the law requires it.</li>
+        </ul>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">3. Information Sharing</h2>
-              <p className="text-gray-700 mb-4">
-                We do not sell, trade, or otherwise transfer your personal information to third parties except as described in this policy.
-              </p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Payment processors (Razorpay) for secure transactions</li>
-                <li>Cloud storage providers (Cloudinary) for file storage</li>
-                <li>Legal authorities when required by law</li>
-              </ul>
-            </section>
+      <LegalSection id="ads" n={4} title="Advertising and cookies">
+        <p>We use a cookie to keep you signed in. The site also shows ads from Google AdSense. Google and its partners may use cookies to show ads and measure them. You can manage this in <a href="https://adssettings.google.com" target="_blank" rel="noopener noreferrer">Google’s ad settings</a>.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">4. Data Security</h2>
-              <p className="text-gray-700 mb-4">
-                We implement appropriate security measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction.
-              </p>
-            </section>
+      <LegalSection id="keep" n={5} title="How long we keep it">
+        <p>We keep your account while you use it, and order and payment records for as long as we need them to handle disputes, refunds and tax or accounting rules.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">5. Data Retention</h2>
-              <p className="text-gray-700 mb-4">
-                We retain your personal information for as long as necessary to provide our services and comply with legal obligations.
-              </p>
-            </section>
+      <LegalSection id="security" n={6} title="Security">
+        <p>Traffic to the site is encrypted, passwords are hashed, and payment details go to Razorpay, not through our servers. We share your files only with the shop that prints your order and with our support team. No online service is perfectly secure, so use a strong, unique password.</p>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">6. Your Rights</h2>
-              <p className="text-gray-700 mb-4">You have the right to:</p>
-              <ul className="list-disc pl-6 text-gray-700 mb-4">
-                <li>Access your personal information</li>
-                <li>Correct inaccurate information</li>
-                <li>Request deletion of your data</li>
-                <li>Opt-out of marketing communications</li>
-              </ul>
-            </section>
+      <LegalSection id="rights" n={7} title="Your choices">
+        <p>You can see and change your name and phone number on your <Link href="/profile">profile</Link>. You can also ask us to:</p>
+        <ul>
+          <li>give you a copy of the information we hold about you;</li>
+          <li>correct anything that is wrong;</li>
+          <li>delete your account and personal data. We may keep records we are legally required to keep, such as payment records.</li>
+        </ul>
+      </LegalSection>
 
-            <section className="mb-8">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">7. Contact Us</h2>
-              <p className="text-gray-700 mb-4">
-                If you have questions about this privacy policy, please contact us:
-              </p>
-              <ul className="list-none pl-6 text-gray-700 mb-4">
-                <li>Email: {adminInfo?.email || 'info@printservice.com'}</li>
-                <li>Phone: {adminInfo?.phone || '+91 98765 43210'}</li>
-              </ul>
-            </section>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <Link 
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 transition-colors"
-            >
-              ← Back to Home
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
+      <LegalSection id="contact" n={8} title="Contact">
+        <p>For any privacy question or request:</p>
+        <ContactBlock />
+      </LegalSection>
+    </LegalPage>
   );
 }

@@ -1,24 +1,39 @@
+import 'server-only';
 import mongoose from 'mongoose';
+import { EnvError } from '@/lib/env';
+import { logger } from '@/lib/logger';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/print-service';
-
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
-}
+/**
+ * Shared mongoose connection.
+ *
+ * On serverless platforms each warm instance reuses one connection. Concurrent callers
+ * during a cold start share the same pending promise instead of opening several.
+ */
+type Cache = { promise: Promise<typeof mongoose> | null };
+const globalForMongoose = globalThis as unknown as { __fpMongoose?: Cache };
+const cache: Cache = globalForMongoose.__fpMongoose ?? { promise: null };
+globalForMongoose.__fpMongoose = cache;
 
 async function connectDB() {
-  try {
-    if (mongoose.connection.readyState === 1) {
-      return mongoose.connection;
-    }
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
 
-    await mongoose.connect(MONGODB_URI, {
+  if (!cache.promise) {
+    // Only the database URI is needed here; the full env is checked once at startup
+    // (src/instrumentation.ts), so an unrelated missing variable can't break DB access.
+    const MONGODB_URI = process.env.MONGODB_URI?.trim();
+    if (!MONGODB_URI) throw new EnvError(['MONGODB_URI is required']);
+    cache.promise = mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
+  }
+
+  try {
+    await cache.promise;
     return mongoose.connection;
   } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
+    cache.promise = null; // allow the next request to retry
+    logger.error({ err: error }, 'MongoDB connection failed');
     throw error;
   }
 }

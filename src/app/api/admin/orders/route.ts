@@ -1,288 +1,97 @@
 import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
-import PrintJob from '@/models/PrintJob';
-import { sendPrintJobFromOrder, generateDeliveryNumber } from '@/lib/printerClient';
+import { orderPartnerShare } from '@/lib/payments/money';
+import { ORDER_STATUS } from '@/lib/orderStatus';
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const PAYMENT_VALUES = new Set(['pending', 'completed', 'failed', 'refunded']);
+/** Orders that count towards revenue: paid, and not cancelled or refunded afterwards. */
+const REVENUE_FILTER = { paymentStatus: 'completed', status: { $nin: ['cancelled', 'refunded'] } };
+const LIST_FIELDS =
+  'orderId orderType customerInfo studentInfo deliveryOption.type deliveryOption.method deliveryOption.deliveryCharge deliveryOption.pickupLocation.name deliveryOption.partnerId status paymentStatus amount createdAt partnerId shiprocket.awbCode shiprocket.courierName';
 
 /**
- * Helper function to process orders with completed payment but pending status
+ * GET /api/admin/orders: one page of orders plus dashboard numbers.
+ * Query: page, limit, name, dateFrom, dateTo, partnerId, status, payment.
+ * Financials follow the real split (see partnerShareOf): the platform keeps whatever the shop does not get.
  */
-async function processCompletedPaymentOrders() {
-  try {
-    // Find orders with completed payment but pending order status
-    const pendingOrders = await Order.find({
-      paymentStatus: 'completed',
-      orderStatus: 'pending',
-      orderType: 'file',
-      fileURL: { $exists: true, $ne: null, $nin: [null, ''] }
-    }).sort({ createdAt: -1 });
-
-    console.log(`🔍 Checking for orders with completed payment...`);
-    console.log(`📊 Found ${pendingOrders.length} orders matching criteria`);
-
-    if (pendingOrders.length === 0) {
-      // Log why no orders were found
-      const totalCompleted = await Order.countDocuments({ paymentStatus: 'completed' });
-      const totalPending = await Order.countDocuments({ orderStatus: 'pending' });
-      const totalFileOrders = await Order.countDocuments({ orderType: 'file' });
-      console.log(`📊 Stats: ${totalCompleted} completed payments, ${totalPending} pending orders, ${totalFileOrders} file orders`);
-      return { processed: 0, skipped: 0, failed: 0 };
-    }
-
-    console.log(`🔄 Found ${pendingOrders.length} orders with completed payment but pending status`);
-    console.log(`📋 Order IDs: ${pendingOrders.map(o => o.orderId).join(', ')}`);
-
-    // Determine printer index
-    let printerUrls: string[] = [];
-    const urlsEnv = process.env.PRINTER_API_URLS;
-    if (urlsEnv) {
-      const trimmed = urlsEnv.trim();
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        try {
-          printerUrls = JSON.parse(trimmed);
-          if (!Array.isArray(printerUrls)) printerUrls = [];
-        } catch {
-          const urlMatch = trimmed.match(/\[(.*?)\]/);
-          if (urlMatch && urlMatch[1]) {
-            printerUrls = [urlMatch[1].trim()];
-          }
-        }
-      } else {
-        printerUrls = trimmed.split(',').map(url => url.trim()).filter(url => url.length > 0);
-        if (printerUrls.length === 0 && trimmed.length > 0) {
-          printerUrls = [trimmed];
-        }
-      }
-      printerUrls = printerUrls.map(url => url.replace(/\/+$/, ''));
-    }
-    const printerIndex = printerUrls.length > 0 ? 1 : 1;
-
-    let processed = 0;
-    let skipped = 0;
-    let failed = 0;
-    const failedOrders: Array<{ orderId: string; error: string }> = [];
-
-    for (const order of pendingOrders) {
-      try {
-        // Check if print job already exists
-        const existingPrintJob = await PrintJob.findOne({ orderId: order._id.toString() });
-
-        if (existingPrintJob && existingPrintJob.status !== 'pending') {
-          // Print job exists and is not pending, just update order status
-          await Order.findByIdAndUpdate(order._id, {
-            $set: {
-              orderStatus: 'processing',
-              status: 'processing'
-            }
-          });
-          skipped++;
-          console.log(`⏭️ Skipped order ${order.orderId} - print job already exists`);
-          continue;
-        }
-
-        // Generate delivery number if not present
-        let deliveryNumber = order.deliveryNumber;
-        if (!deliveryNumber) {
-          deliveryNumber = generateDeliveryNumber(printerIndex);
-        }
-
-        // Send print job to printer API
-        console.log(`🖨️ Sending print job for order: ${order.orderId}`);
-        console.log(`📄 File URL: ${order.fileURL}`);
-        console.log(`🖨️ Printer URL: ${printerUrls[printerIndex - 1] || 'Not configured'}`);
-
-        const printJobResult = await sendPrintJobFromOrder(order, printerIndex);
-
-        console.log(`📊 Print job result for ${order.orderId}:`, {
-          success: printJobResult.success,
-          message: printJobResult.message,
-          error: printJobResult.error,
-          jobId: printJobResult.jobId,
-          deliveryNumber: printJobResult.deliveryNumber
-        });
-
-        // Update delivery number from printer API response if provided
-        if (printJobResult.deliveryNumber) {
-          deliveryNumber = printJobResult.deliveryNumber;
-        }
-
-        // Only update order status if print job was successfully sent
-        // If it failed, keep it as pending so it can be retried
-        if (printJobResult.success) {
-          await Order.findByIdAndUpdate(order._id, {
-            $set: {
-              orderStatus: 'processing',
-              status: 'processing',
-              deliveryNumber
-            }
-          });
-        } else {
-          // Keep order as pending if print job failed
-          const errorMessage = printJobResult.error || printJobResult.message || 'Unknown error';
-          console.warn(`⚠️ Print job failed for order ${order.orderId}, keeping status as pending for retry`);
-          console.warn(`⚠️ Error: ${errorMessage}`);
-          failedOrders.push({
-            orderId: order.orderId,
-            error: errorMessage
-          });
-        }
-
-        // Create or update print job record
-        if (!existingPrintJob) {
-          const estimatedDuration = Math.ceil(
-            ((order.printingOptions.pageCount || 1) * order.printingOptions.copies * 0.5) +
-            (order.printingOptions.color === 'color' ? (order.printingOptions.pageCount || 1) * 0.3 : 0)
-          );
-
-          const newPrintJob = new PrintJob({
-            orderId: order._id.toString(),
-            orderNumber: order.orderId,
-            customerName: order.customerInfo.name,
-            customerEmail: order.customerInfo.email,
-            fileURL: order.fileURL,
-            fileName: order.originalFileName || 'document.pdf',
-            fileType: order.fileType || 'application/pdf',
-            printingOptions: order.printingOptions,
-            priority: 'normal',
-            estimatedDuration,
-            status: printJobResult.success ? 'printing' : 'pending'
-          });
-
-          await newPrintJob.save();
-        } else {
-          // Update existing print job
-          await PrintJob.findByIdAndUpdate(existingPrintJob._id, {
-            $set: {
-              status: printJobResult.success ? 'printing' : 'pending'
-            }
-          });
-        }
-
-        if (printJobResult.success) {
-          processed++;
-          console.log(`✅ Processed order ${order.orderId} - Status: processing, Delivery: ${deliveryNumber}`);
-        } else {
-          failed++;
-          console.error(`❌ Failed to send print job for order ${order.orderId}: ${printJobResult.error || printJobResult.message}`);
-        }
-      } catch (error: any) {
-        failed++;
-        const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
-        console.error(`❌ Error processing order ${order.orderId}:`, error);
-        failedOrders.push({
-          orderId: order.orderId,
-          error: errorMessage
-        });
-      }
-    }
-
-    return { processed, skipped, failed, failedOrders };
-  } catch (error) {
-    console.error('Error in processCompletedPaymentOrders:', error);
-    return { processed: 0, skipped: 0, failed: 0, failedOrders: [] };
-  }
-}
-
 export async function GET(request: Request) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
-
     const url = new URL(request.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '10')));
-    const skip = (page - 1) * limit;
-    const nameSearch = url.searchParams.get('name') || '';
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
+    const name = (url.searchParams.get('name') || '').trim().slice(0, 100);
     const dateFrom = url.searchParams.get('dateFrom') || '';
     const dateTo = url.searchParams.get('dateTo') || '';
     const partnerId = url.searchParams.get('partnerId') || '';
+    const status = url.searchParams.get('status') || '';
+    const payment = url.searchParams.get('payment') || '';
 
-    console.log(`🔍 ADMIN API - Fetching orders page ${page} (limit ${limit}) at ${new Date().toISOString()}`);
-
-    // Build search filter
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const searchFilter: Record<string, any> = {};
-
-    if (partnerId) {
-      if (!searchFilter.$and) searchFilter.$and = [];
-      searchFilter.$and.push({
-        $or: [
-          { partnerId: partnerId },
-          { 'deliveryOption.partnerId': partnerId }
-        ]
-      });
+    const filter: Record<string, unknown> = {};
+    const and: Record<string, unknown>[] = [];
+    if (partnerId) and.push({ $or: [{ partnerId }, { 'deliveryOption.partnerId': partnerId }] });
+    if (name) {
+      const rx = { $regex: escapeRegex(name), $options: 'i' };
+      and.push({ $or: [{ 'studentInfo.name': rx }, { 'customerInfo.name': rx }, { orderId: rx }] });
     }
-
-    if (nameSearch.trim()) {
-      const nameRegex = { $regex: nameSearch.trim(), $options: 'i' };
-      if (!searchFilter.$and) searchFilter.$and = [];
-      searchFilter.$and.push({
-        $or: [
-          { 'studentInfo.name': nameRegex },
-          { 'customerInfo.name': nameRegex },
-        ]
-      });
+    if (and.length) filter.$and = and;
+    if (status && status in ORDER_STATUS) filter.status = status;
+    if (PAYMENT_VALUES.has(payment)) filter.paymentStatus = payment;
+    const created: Record<string, Date> = {};
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to = dateTo ? new Date(dateTo) : null;
+    if (from && !Number.isNaN(from.getTime())) created.$gte = from;
+    if (to && !Number.isNaN(to.getTime())) {
+      to.setHours(23, 59, 59, 999);
+      created.$lte = to;
     }
+    if (Object.keys(created).length) filter.createdAt = created;
 
-    if (dateFrom || dateTo) {
-      searchFilter.createdAt = {};
-      if (dateFrom) {
-        searchFilter.createdAt.$gte = new Date(dateFrom);
-      }
-      if (dateTo) {
-        // Include the entire end day
-        const endDate = new Date(dateTo);
-        endDate.setHours(23, 59, 59, 999);
-        searchFilter.createdAt.$lte = endDate;
-      }
-    }
-
-    // Get total count and paginated orders in parallel
-    const [totalCount, orders, pendingCount, printingCount, dispatchedCount, paymentPendingCount] = await Promise.all([
-      Order.countDocuments(searchFilter),
-      Order.find(searchFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Order.countDocuments({ orderStatus: 'pending' }),
-      Order.countDocuments({ orderStatus: 'printing' }),
-      Order.countDocuments({ orderStatus: 'dispatched' }),
-      Order.countDocuments({ paymentStatus: 'pending' }),
+    const [totalCount, orders, counts, revenueRows] = await Promise.all([
+      Order.countDocuments(filter),
+      Order.find(filter).select(LIST_FIELDS).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Order.aggregate<{ _id: string; n: number }>([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+      Order.find({ ...filter, ...REVENUE_FILTER }).select('amount deliveryOption.type deliveryOption.method deliveryOption.deliveryCharge').lean(),
     ]);
 
-    // Phase 12: Calculate Financial Metrics (Total GMV, Platform 10%, Partner 90%)
-    // To ensure accurate financials, we must calculate this across ALL matching completed orders, not just the paginated slice
-    const allFinancials = await Order.find({ ...searchFilter, paymentStatus: 'completed' }).select('amount');
-    const totalGMV = allFinancials.reduce((sum, order) => sum + (order.amount || 0), 0);
-    const platformRevenue = Math.round(totalGMV * 0.10);
-    const partnerPayouts = Math.round(totalGMV * 0.90);
-
-    const totalPages = Math.ceil(totalCount / limit);
-
-    console.log(`🔍 ADMIN API - Fetched ${orders.length} of ${totalCount} orders (page ${page}/${totalPages}) at ${new Date().toISOString()}`);
+    const byStatus = Object.fromEntries(counts.map((c) => [c._id, c.n])) as Record<string, number>;
+    const n = (...keys: string[]) => keys.reduce((sum, k) => sum + (byStatus[k] || 0), 0);
+    let totalSales = 0;
+    let partnerPayouts = 0;
+    for (const o of revenueRows) {
+      totalSales += Number(o.amount) || 0;
+      partnerPayouts += orderPartnerShare(o);
+    }
+    totalSales = Math.round(totalSales * 100) / 100;
+    partnerPayouts = Math.round(partnerPayouts * 100) / 100;
 
     return NextResponse.json({
       success: true,
       orders,
-      timestamp: new Date().toISOString(),
-      count: orders.length,
       totalCount,
       page,
-      financials: {
-        totalGMV,
-        platformRevenue,
-        partnerPayouts
-      },
       limit,
-      totalPages,
+      totalPages: Math.ceil(totalCount / limit),
       statusCounts: {
-        pending: pendingCount,
-        printing: printingCount,
-        dispatched: dispatchedCount,
-        paymentPending: paymentPendingCount,
+        awaitingPayment: n('pending_payment'),
+        waitingForShop: n('paid'),
+        inProgress: n('processing', 'printing', 'printed', 'ready_for_pickup'),
+        onTheWay: n('dispatched'),
+      },
+      financials: {
+        totalSales,
+        partnerPayouts,
+        platformRevenue: Math.round((totalSales - partnerPayouts) * 100) / 100,
       },
     });
   } catch (error) {
     console.error('Error fetching orders:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch orders' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch orders' }, { status: 500 });
   }
 }

@@ -1,121 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
-import { shipOrder, isShiprocketConfigured } from '@/lib/shiprocket';
+import { bookCourier, CourierError } from '@/lib/delivery/courier';
+import { withRequestLogger } from '@/lib/logger';
 
 /**
- * POST /api/admin/orders/[id]/ship
- * 
- * Ship an order via Shiprocket (admin-only).
- * Creates a Shiprocket order, assigns AWB, and updates the local order record.
+ * POST /api/admin/orders/[id]/ship — book the Shiprocket courier for a courier-delivery
+ * order, from the shop's own pickup address. Same logic the shop's apps use.
  */
-export async function POST(
-    request: NextRequest,
-    context: { params: Promise<{ id: string }> }
-) {
-    try {
-        // Check Shiprocket configuration
-        if (!isShiprocketConfigured()) {
-            return NextResponse.json(
-                { success: false, error: 'Shiprocket is not configured. Please set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD environment variables.' },
-                { status: 503 }
-            );
-        }
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+  const log = withRequestLogger(request);
+  try {
+    await connectDB();
+    const { id } = await context.params;
+    const ref = /^[0-9a-fA-F]{24}$/.test(id) ? await Order.findById(id).select('orderId').lean<{ orderId: string } | null>() : { orderId: id };
+    if (!ref) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
 
-        await connectDB();
-        const { id } = await context.params;
-
-        // Get the order
-        const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
-        const query = isObjectId ? { _id: id } : { orderId: id };
-        const order = await Order.findOne(query);
-        if (!order) {
-            return NextResponse.json(
-                { success: false, error: 'Order not found' },
-                { status: 404 }
-            );
-        }
-
-        // Validate order state
-        if (order.paymentStatus !== 'completed') {
-            return NextResponse.json(
-                { success: false, error: 'Order payment must be completed before shipping' },
-                { status: 400 }
-            );
-        }
-
-        if (order.deliveryOption?.type !== 'delivery') {
-            return NextResponse.json(
-                { success: false, error: 'Only delivery orders can be shipped via Shiprocket (not pickup orders)' },
-                { status: 400 }
-            );
-        }
-
-        // Check if already shipped
-        if (order.shiprocket?.awbCode) {
-            return NextResponse.json(
-                { success: false, error: `Order already shipped. AWB: ${order.shiprocket.awbCode}, Courier: ${order.shiprocket.courierName}` },
-                { status: 400 }
-            );
-        }
-
-        console.log(`🚀 Admin shipping order ${order.orderId} via Shiprocket`);
-
-        // Ship via Shiprocket (create order + assign AWB)
-        const result = await shipOrder(order.toObject());
-
-        if (!result.success && !result.shiprocketOrderId) {
-            return NextResponse.json(
-                { success: false, error: result.error || 'Failed to ship order' },
-                { status: 500 }
-            );
-        }
-
-        // Update order with Shiprocket data
-        const updateData: Record<string, any> = {
-            'shiprocket.orderId': result.shiprocketOrderId,
-            'shiprocket.shipmentId': result.shipmentId,
-            'shiprocket.lastTrackedAt': new Date(),
-        };
-
-        if (result.awbCode) {
-            updateData['shiprocket.awbCode'] = result.awbCode;
-            updateData['shiprocket.courierName'] = result.courierName;
-            updateData['shiprocket.trackingUrl'] = result.trackingUrl;
-            updateData['shiprocket.status'] = 'SHIPPED';
-            // Also update order status to dispatched
-            updateData['orderStatus'] = 'dispatched';
-            updateData['status'] = 'dispatched';
-        }
-
-        const updatedOrder = await Order.findOneAndUpdate(
-            query,
-            { $set: updateData },
-            { new: true }
-        );
-
-        console.log(`✅ Order ${order.orderId} shipped successfully`);
-
-        return NextResponse.json({
-            success: true,
-            message: result.awbCode
-                ? `Order shipped successfully! AWB: ${result.awbCode}, Courier: ${result.courierName}`
-                : `Order created in Shiprocket (ID: ${result.shiprocketOrderId}) but AWB not yet assigned.`,
-            shiprocket: {
-                orderId: result.shiprocketOrderId,
-                shipmentId: result.shipmentId,
-                awbCode: result.awbCode,
-                courierName: result.courierName,
-                trackingUrl: result.trackingUrl,
-            },
-            order: updatedOrder,
-            warning: result.error, // Partial success warning (e.g., AWB not assigned)
-        });
-    } catch (error: any) {
-        console.error('❌ Ship order API error:', error);
-        return NextResponse.json(
-            { success: false, error: error.message || 'Internal server error' },
-            { status: 500 }
-        );
-    }
+    const result = await bookCourier(ref.orderId, `admin:${auth.email}`);
+    return NextResponse.json({ success: true, message: `Courier booked: ${result.courierName}, AWB ${result.awbCode}`, shiprocket: result, order: result.order });
+  } catch (error) {
+    if (error instanceof CourierError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    log.error({ err: error }, 'admin courier booking failed');
+    return NextResponse.json({ success: false, error: 'Could not book the courier' }, { status: 500 });
+  }
 }

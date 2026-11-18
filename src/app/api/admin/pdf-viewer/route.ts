@@ -1,181 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import Order from '@/models/Order';
+import Order, { IOrder } from '@/models/Order';
 import { getFileTypeFromFilename } from '@/lib/fileTypeDetection';
+import { requireUser, isAdminSession, canAccessOrder } from '@/lib/authz';
+import { fetchTrustedFile, FileFetchError, MAX_FILE_BYTES } from '@/lib/documents/fileUrls';
 
+export const runtime = 'nodejs';
+
+/** Shown in the browser; everything else downloads. SVG and HTML could run scripts on our site. */
+const INLINE_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp']);
+
+function contentDisposition(kind: 'inline' | 'attachment', name: string) {
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_').slice(0, 150) || 'document';
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name.slice(0, 150))}`;
+}
+
+/**
+ * GET /api/admin/pdf-viewer?url=&orderId=&filename=
+ * Streams an order file from our storage for previewing.
+ * - Customers: only files of their own order (orderId required).
+ * - Admins: any file, but still only from our storage.
+ */
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
+  const { searchParams } = new URL(request.url);
+  const fileUrl = searchParams.get('url');
+  const orderId = searchParams.get('orderId');
+  const filename = (searchParams.get('filename') || 'document').slice(0, 200);
+  if (!fileUrl) return NextResponse.json({ error: 'File URL is required' }, { status: 400 });
+
   try {
-    const { searchParams } = new URL(request.url);
-    const pdfUrl = searchParams.get('url');
-    const orderId = searchParams.get('orderId');
-    const filename = searchParams.get('filename') || 'document';
-
-    if (!pdfUrl) {
-      return NextResponse.json({ error: 'File URL is required' }, { status: 400 });
-    }
-
-    console.log('📄 File Viewer: Fetching from URL:', pdfUrl);
-
-    // If orderId is provided, get file type from database
-    let fileType = 'application/octet-stream';
-    let originalFileName = filename;
-    
+    let order: IOrder | null = null;
     if (orderId) {
-      try {
-        await connectDB();
-        const order = await Order.findOne({ orderId });
-        
-        if (order) {
-          // Try to get fileType from database
-          if (order.fileType) {
-            fileType = order.fileType;
-            originalFileName = order.originalFileName || filename;
-            console.log('📄 File Viewer: Found file type from database:', fileType);
-          } else {
-            // Fallback: detect from filename or originalFileNames
-            if (order.originalFileNames && Array.isArray(order.originalFileNames) && order.originalFileNames.length > 0) {
-              // Multi-file: detect from first file or find matching file
-              const fileIndex = order.fileURLs?.findIndex((url: string) => url === pdfUrl) ?? 0;
-              const detectedFileName = order.originalFileNames[fileIndex] || order.originalFileNames[0];
-              fileType = getFileTypeFromFilename(detectedFileName, pdfUrl);
-              originalFileName = detectedFileName;
-              console.log('📄 File Viewer: Detected file type from originalFileNames:', fileType);
-            } else if (order.originalFileName) {
-              fileType = getFileTypeFromFilename(order.originalFileName, pdfUrl);
-              originalFileName = order.originalFileName;
-              console.log('📄 File Viewer: Detected file type from originalFileName:', fileType);
-            } else {
-              // Last resort: detect from filename parameter
-              fileType = getFileTypeFromFilename(filename, pdfUrl);
-              console.log('📄 File Viewer: Detected file type from filename parameter:', fileType);
-            }
-          }
-          console.log('📄 File Viewer: Using filename:', originalFileName);
-        } else {
-          // No order found, detect from filename parameter
-          fileType = getFileTypeFromFilename(filename, pdfUrl);
-          console.log('📄 File Viewer: Order not found, detected file type from filename:', fileType);
-        }
-      } catch (dbError) {
-        console.error('📄 File Viewer: Error fetching order from database:', dbError);
-        // Fallback: detect from filename parameter
-        fileType = getFileTypeFromFilename(filename, pdfUrl);
-        console.log('📄 File Viewer: Detected file type from filename (fallback):', fileType);
-      }
-    } else {
-      // No orderId, detect from filename parameter
-      fileType = getFileTypeFromFilename(filename, pdfUrl);
-      console.log('📄 File Viewer: No orderId, detected file type from filename:', fileType);
+      await connectDB();
+      order = await Order.findOne({ orderId }).lean<IOrder>();
+    }
+    if (!isAdminSession(auth)) {
+      if (!order || !canAccessOrder(auth, order)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      const allowed = [order.fileURL, ...(order.fileURLs || []), order.filledPdfUrl, order.filledDocxUrl, order.templateData?.generatedPDF].filter(Boolean);
+      if (!allowed.includes(fileUrl)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Fetch the file from Cloudinary with better error handling
-    let response: Response;
-    try {
-      response = await fetch(pdfUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': '*/*',
-        },
-      });
-    } catch (fetchError: any) {
-      console.error('❌ File Viewer: Error fetching file from URL:', fetchError);
-      console.error('❌ File Viewer: URL was:', pdfUrl);
-      return NextResponse.json({ 
-        error: 'Failed to fetch file from URL',
-        details: fetchError?.message || 'Unknown fetch error'
-      }, { status: 500 });
+    // File name and type from the order when we have it
+    let name = filename;
+    if (order) {
+      const index = order.fileURLs?.findIndex((u: string) => u === fileUrl) ?? -1;
+      name = (index >= 0 ? order.originalFileNames?.[index] : undefined) || order.originalFileName || filename;
     }
-    
-    if (!response.ok) {
-      console.error('❌ File Viewer: Failed to fetch file, status:', response.status);
-      console.error('❌ File Viewer: Response status text:', response.statusText);
-      console.error('❌ File Viewer: URL was:', pdfUrl);
-      const errorText = await response.text().catch(() => 'Could not read error response');
-      console.error('❌ File Viewer: Error response body:', errorText.substring(0, 200));
-      return NextResponse.json({ 
-        error: 'Failed to fetch file',
-        status: response.status,
-        details: response.statusText
-      }, { status: response.status >= 500 ? 500 : 404 });
-    }
+    const fileType = (order?.fileType && !order.fileURLs?.length ? order.fileType : getFileTypeFromFilename(name, fileUrl)).toLowerCase();
 
-    // Convert response to arrayBuffer with error handling
-    let fileBuffer: ArrayBuffer;
-    try {
-      fileBuffer = await response.arrayBuffer();
-      console.log('✅ File Viewer: Successfully fetched file, size:', fileBuffer.byteLength, 'bytes');
-    } catch (arrayBufferError: any) {
-      console.error('❌ File Viewer: Error converting response to arrayBuffer:', arrayBufferError);
-      console.error('❌ File Viewer: Response status was:', response.status);
-      console.error('❌ File Viewer: URL was:', pdfUrl);
-      return NextResponse.json({ 
-        error: 'Failed to process file data',
-        details: arrayBufferError?.message || 'Unknown arrayBuffer error'
-      }, { status: 500 });
-    }
-
-    // Determine if this is an image file that can be displayed inline
-    const isImage = fileType.startsWith('image/');
-    const isPDF = fileType === 'application/pdf';
-    const isText = fileType.startsWith('text/');
-    
-    // For images, we can serve them directly
-    if (isImage) {
-      return new NextResponse(fileBuffer, {
-        status: 200,
-        headers: {
-          'Content-Type': fileType,
-          'Content-Disposition': `inline; filename="${originalFileName}"`,
-          'Content-Length': fileBuffer.byteLength.toString(),
-          'Cache-Control': 'public, max-age=3600',
-          'X-Frame-Options': 'SAMEORIGIN',
-        },
-      });
-    }
-    
-    // For PDFs, serve with PDF content type
-    if (isPDF) {
-      return new NextResponse(fileBuffer, {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `inline; filename="${originalFileName}"`,
-          'Content-Length': fileBuffer.byteLength.toString(),
-          'Cache-Control': 'public, max-age=3600',
-          'X-Frame-Options': 'SAMEORIGIN',
-        },
-      });
-    }
-    
-    // For text files, serve as text
-    if (isText) {
-      const textContent = new TextDecoder().decode(fileBuffer);
-      return new NextResponse(textContent, {
-        status: 200,
-        headers: {
-          'Content-Type': fileType,
-          'Content-Disposition': `inline; filename="${originalFileName}"`,
-          'Cache-Control': 'public, max-age=3600',
-          'X-Frame-Options': 'SAMEORIGIN',
-        },
-      });
-    }
-    
-    // For other files (docx, xlsx, etc.), try to serve inline for preview
-    // but some browsers may still download them
-    return new NextResponse(fileBuffer, {
+    const { buffer } = await fetchTrustedFile(fileUrl, { maxBytes: MAX_FILE_BYTES });
+    const inline = INLINE_TYPES.has(fileType);
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type': fileType,
-        'Content-Disposition': `inline; filename="${originalFileName}"`,
-        'Content-Length': fileBuffer.byteLength.toString(),
-        'Cache-Control': 'public, max-age=3600',
+        'Content-Type': inline ? fileType : 'application/octet-stream',
+        'Content-Disposition': contentDisposition(inline ? 'inline' : 'attachment', name),
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'SAMEORIGIN',
       },
     });
-
   } catch (error) {
-    console.error('❌ File Viewer: Error serving file:', error);
+    if (error instanceof FileFetchError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

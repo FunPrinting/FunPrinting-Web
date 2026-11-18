@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
+import { requireUser, canAccessOrder } from '@/lib/authz';
+import Payment from '@/models/Payment';
+import { cancelPaymentLink } from '@/lib/payments/razorpayApi';
+import { syncPaymentFromRazorpay } from '@/lib/payments/reconcile';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -26,6 +33,15 @@ export async function DELETE(
       );
     }
 
+    // Only the order owner or an admin may access this order.
+    // Respond 404 (not 403) so order IDs cannot be probed.
+    if (!canAccessOrder(auth, order)) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
     console.log(`📋 Found order: ${order.orderId}, paymentStatus: ${order.paymentStatus}, status: ${order.status}`);
 
     // Only allow deletion of pending payment orders
@@ -37,14 +53,28 @@ export async function DELETE(
       );
     }
 
-    // Delete the order
-    await Order.findOneAndDelete(query);
-    
-    console.log(`✅ Order ${order.orderId} deleted by user`);
-    
+    // Close any open payment link first, so the cancelled order can't be paid
+    const open = await Payment.find({ orderId: order.orderId, status: 'created' }).select('referenceId razorpay.paymentLinkId').lean<Array<{ _id: unknown; referenceId: string; razorpay: { paymentLinkId?: string } }>>();
+    for (const attempt of open) {
+      try {
+        if (attempt.razorpay.paymentLinkId) await cancelPaymentLink(attempt.razorpay.paymentLinkId);
+        await Payment.updateOne({ _id: attempt._id as never, status: 'created' }, { $set: { status: 'cancelled' } });
+      } catch {
+        // Razorpay refuses to cancel a link that was just paid
+        const status = await syncPaymentFromRazorpay(attempt.referenceId, 'return').catch(() => null);
+        if (status === 'paid') {
+          return NextResponse.json({ success: false, error: 'This order was just paid, so it can no longer be cancelled.' }, { status: 409 });
+        }
+      }
+    }
+
+    // Kept (not deleted) so a payment that still arrives finds its order and is reviewed
+    await Order.updateOne({ _id: order._id, status: 'pending_payment' }, { $set: { status: 'cancelled', paymentStatus: 'failed' } });
+    console.log(`✅ Order ${order.orderId} cancelled by user`);
+
     return NextResponse.json({
       success: true,
-      message: 'Order deleted successfully'
+      message: 'Order cancelled'
     });
 
   } catch (error) {
@@ -60,6 +90,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
@@ -71,6 +104,15 @@ export async function GET(
     const order = await Order.findOne(query);
     
     if (!order) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
+    // Only the order owner or an admin may access this order.
+    // Respond 404 (not 403) so order IDs cannot be probed.
+    if (!canAccessOrder(auth, order)) {
       return NextResponse.json(
         { success: false, error: 'Order not found' },
         { status: 404 }

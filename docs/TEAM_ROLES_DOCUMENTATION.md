@@ -287,7 +287,6 @@
 - src/app/my-orders/page.tsx
 - src/app/templates/page.tsx
 - src/app/templates/fill/**
-- src/app/templates/custom/**
 - src/app/orders/[id]/**
 ```
 

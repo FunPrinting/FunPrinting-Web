@@ -1,391 +1,152 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import AdminNavigation from '@/components/admin/AdminNavigation';
-import LoadingSpinner from '@/components/admin/LoadingSpinner';
-import AdminGoogleAuth from '@/components/admin/AdminGoogleAuth';
-import NotificationProvider from '@/components/admin/NotificationProvider';
-import { showSuccess, showError } from '@/lib/adminNotifications';
-import { buttonClasses } from '@/lib/adminUtils';
+import { useCallback, useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
+import { PageHeader } from '@/components/admin/PageHeader';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-interface CreatorEarning {
+interface Creator { name?: string; email?: string; upiId?: string; bankDetails?: { bankName?: string; accountNumber?: string; ifscCode?: string } }
+interface Earning {
   _id: string;
-  creatorUserId: {
-    _id: string;
-    name: string;
-    email: string;
-  } | string;
+  creatorUserId: Creator | string | null;
   templateId: string;
-  templateName?: string; // Template name fetched from API
+  templateName?: string;
   orderId: string;
-  razorpayPaymentId?: string;
   amount: number;
   platformShareAmount?: number;
   status: 'pending' | 'processing' | 'paid' | 'failed';
-  payoutMethod?: 'upi' | 'bank';
-  payoutDestination?: string;
   notes?: string;
   createdAt: string;
-  updatedAt: string;
 }
+interface Summary { totalEarnings: number; pendingEarnings: number; paidEarnings: number; platformEarnings: number; totalCount: number; pendingCount: number; paidCount: number }
 
-interface EarningsSummary {
-  totalEarnings: number;
-  pendingEarnings: number;
-  paidEarnings: number;
-  platformEarnings: number;
-  totalCount: number;
-  pendingCount: number;
-  paidCount: number;
-}
-
-function AdminCreatorEarningsContent() {
-  const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
-  const [earnings, setEarnings] = useState<CreatorEarning[]>([]);
-  const [summary, setSummary] = useState<EarningsSummary>({
-    totalEarnings: 0,
-    pendingEarnings: 0,
-    paidEarnings: 0,
-    platformEarnings: 0,
-    totalCount: 0,
-    pendingCount: 0,
-    paidCount: 0,
-  });
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [processing, setProcessing] = useState<string | null>(null);
-  const [markingPaid, setMarkingPaid] = useState<string | null>(null);
-  const [transactionId, setTransactionId] = useState<string>('');
-
-  const fetchEarnings = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter !== 'all') {
-        params.set('status', statusFilter);
-      }
-      
-      const response = await fetch(`/api/admin/creator-earnings?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setEarnings(data.earnings || []);
-        setSummary(data.summary || {
-          totalEarnings: 0,
-          pendingEarnings: 0,
-          paidEarnings: 0,
-          platformEarnings: 0,
-          totalCount: 0,
-          pendingCount: 0,
-          paidCount: 0,
-        });
-      } else {
-        showError('Failed to fetch earnings');
-      }
-    } catch (error) {
-      console.error('Error fetching earnings:', error);
-      showError('An error occurred while fetching earnings');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [statusFilter]);
-
-  useEffect(() => {
-    fetchEarnings();
-  }, [fetchEarnings]);
-
-  const handleProcessPayout = async (earningId: string) => {
-    setProcessing(earningId);
-    try {
-      const response = await fetch('/api/admin/creator-earnings/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ earningId }),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        showSuccess('Payout processed successfully!');
-        fetchEarnings();
-      } else {
-        showError(data.error || 'Failed to process payout');
-      }
-    } catch (error) {
-      showError('An error occurred while processing payout');
-    } finally {
-      setProcessing(null);
-    }
-  };
-
-  const handleMarkAsPaid = async (earningId: string) => {
-    setMarkingPaid(earningId);
-    try {
-      const response = await fetch('/api/admin/creator-earnings/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          earningId, 
-          markAsPaid: true,
-          transactionId: transactionId || undefined,
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        showSuccess('Marked as paid successfully!');
-        setTransactionId('');
-        fetchEarnings();
-      } else {
-        showError(data.error || 'Failed to mark as paid');
-      }
-    } catch (error) {
-      showError('An error occurred');
-    } finally {
-      setMarkingPaid(null);
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      processing: 'bg-blue-100 text-blue-800',
-      paid: 'bg-green-100 text-green-800',
-      failed: 'bg-red-100 text-red-800',
-    };
-    return badges[status] || 'bg-gray-100 text-gray-800';
-  };
-
-  const getCreatorInfo = (earning: CreatorEarning) => {
-    if (typeof earning.creatorUserId === 'object' && earning.creatorUserId !== null) {
-      const creator = earning.creatorUserId as any;
-      return {
-        name: creator.name,
-        email: creator.email,
-        upiId: creator.upiId,
-        bankDetails: creator.bankDetails,
-      };
-    }
-    return {
-      name: 'Unknown',
-      email: String(earning.creatorUserId),
-      upiId: undefined,
-      bankDetails: undefined,
-    };
-  };
-
-  if (isLoading) {
-    return <LoadingSpinner message="Loading creator earnings..." size="large" />;
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <AdminNavigation
-            title="Creator Earnings"
-            showBackButton
-            backUrl="/admin"
-            actions={
-              <button
-                onClick={() => router.push('/admin')}
-                className={buttonClasses.secondary}
-              >
-                Back to Dashboard
-              </button>
-            }
-          />
-
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg p-4">
-              <p className="text-sm text-blue-600 font-medium">Total Creator Earnings</p>
-              <p className="text-2xl font-bold text-blue-800">₹{summary.totalEarnings.toLocaleString()}</p>
-              <p className="text-xs text-blue-500">{summary.totalCount} transactions</p>
-            </div>
-            <div className="bg-gradient-to-br from-yellow-50 to-orange-100 rounded-lg p-4">
-              <p className="text-sm text-yellow-600 font-medium">Pending Payouts</p>
-              <p className="text-2xl font-bold text-yellow-800">₹{summary.pendingEarnings.toLocaleString()}</p>
-              <p className="text-xs text-yellow-500">{summary.pendingCount} pending</p>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg p-4">
-              <p className="text-sm text-green-600 font-medium">Paid Out</p>
-              <p className="text-2xl font-bold text-green-800">₹{summary.paidEarnings.toLocaleString()}</p>
-              <p className="text-xs text-green-500">{summary.paidCount} completed</p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-pink-100 rounded-lg p-4">
-              <p className="text-sm text-purple-600 font-medium">Platform Earnings</p>
-              <p className="text-2xl font-bold text-purple-800">₹{summary.platformEarnings.toLocaleString()}</p>
-              <p className="text-xs text-purple-500">Commission collected</p>
-            </div>
-          </div>
-
-          {/* Filter */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="paid">Paid</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-
-          {/* Earnings Table */}
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Creator
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Template
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Payout To
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Platform
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {earnings.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                      No earnings found
-                    </td>
-                  </tr>
-                ) : (
-                  earnings.map((earning) => {
-                    const creator = getCreatorInfo(earning);
-                    return (
-                      <tr key={earning._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{creator.name}</div>
-                          <div className="text-sm text-gray-500">{creator.email}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {earning.templateName || 'Unknown Template'}
-                          </div>
-                          <div className="text-xs text-gray-500 font-mono">{earning.templateId}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {creator.upiId ? (
-                            <div>
-                              <div className="text-xs text-gray-500">UPI:</div>
-                              <div className="text-sm font-mono text-blue-600 select-all">{creator.upiId}</div>
-                            </div>
-                          ) : creator.bankDetails?.accountNumber ? (
-                            <div className="text-xs">
-                              <div className="text-gray-500">{creator.bankDetails.bankName || 'Bank'}</div>
-                              <div className="font-mono">{creator.bankDetails.accountNumber}</div>
-                              <div className="text-gray-500">IFSC: {creator.bankDetails.ifscCode}</div>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-red-500">No payout info</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-green-600">₹{earning.amount}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-blue-600">₹{earning.platformShareAmount || 0}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${getStatusBadge(earning.status)}`}>
-                            {earning.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(earning.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm">
-                          {(earning.status === 'pending' || earning.status === 'failed') && (
-                            <div className="space-y-2">
-                              {markingPaid === earning._id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="text"
-                                    placeholder="Transaction ID (optional)"
-                                    value={transactionId}
-                                    onChange={(e) => setTransactionId(e.target.value)}
-                                    className="border border-gray-300 rounded px-2 py-1 text-xs w-32"
-                                  />
-                                  <button
-                                    onClick={() => handleMarkAsPaid(earning._id)}
-                                    className="text-green-600 hover:text-green-800 font-medium text-xs"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button
-                                    onClick={() => { setMarkingPaid(null); setTransactionId(''); }}
-                                    className="text-gray-500 hover:text-gray-700 text-xs"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setMarkingPaid(earning._id)}
-                                  className="text-green-600 hover:text-green-800 font-medium"
-                                >
-                                  ✓ Mark as Paid
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {earning.status === 'paid' && (
-                            <span className="text-gray-400 text-xs">Completed</span>
-                          )}
-                          {earning.status === 'processing' && (
-                            <span className="text-blue-500 text-xs">In Progress...</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
+const STATUS_LABEL: Record<Earning['status'], string> = { pending: 'To pay', processing: 'Being paid', paid: 'Paid', failed: 'Failed' };
+const creatorOf = (e: Earning): Creator => (e.creatorUserId && typeof e.creatorUserId === 'object' ? e.creatorUserId : { email: String(e.creatorUserId ?? 'Unknown') });
 
 export default function AdminCreatorEarningsPage() {
+  const [earnings, setEarnings] = useState<Earning[] | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [paying, setPaying] = useState<Earning | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const res = await fetch(`/api/admin/creator-earnings${filter === 'all' ? '' : `?status=${filter}`}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'We couldn’t load the earnings.');
+      setEarnings(data.earnings ?? []);
+      setSummary(data.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'We couldn’t load the earnings.');
+    }
+  }, [filter]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const markPaid = async (transactionId?: string) => {
+    if (!paying) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/creator-earnings/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ earningId: paying._id, markAsPaid: true, transactionId: transactionId || undefined }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'We couldn’t mark it as paid.');
+      toast.success('Marked as paid');
+      setPaying(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'We couldn’t mark it as paid.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stats: Array<[string, string, string]> = summary
+    ? [
+        ['All earnings', rupees(summary.totalEarnings), `${summary.totalCount} sales`],
+        ['Still to pay', rupees(summary.pendingEarnings), `${summary.pendingCount} waiting`],
+        ['Paid out', rupees(summary.paidEarnings), `${summary.paidCount} done`],
+        ['Kept by Fun Printing', rupees(summary.platformEarnings), 'Commission on template sales'],
+      ]
+    : [];
+
   return (
-    <AdminGoogleAuth 
-      title="Creator Earnings"
-      subtitle="Manage and track creator template earnings"
-    >
-      <NotificationProvider>
-        <AdminCreatorEarningsContent />
-      </NotificationProvider>
-    </AdminGoogleAuth>
+    <>
+      <PageHeader title="Creator payouts" description="What template creators have earned. Pay them to the UPI ID or bank account shown, then mark the row as paid." />
+      {error ? <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+      <section aria-label="Summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map(([label, value, hint]) => (
+          <Card key={label} className="gap-1"><CardHeader className="pb-0"><CardDescription>{label}</CardDescription></CardHeader><CardContent><p className="text-2xl font-semibold tabular-nums">{value}</p><p className="mt-1 text-xs text-muted-foreground">{hint}</p></CardContent></Card>
+        ))}
+      </section>
+
+      <div className="mt-6 flex items-center gap-3">
+        <Select value={filter} onValueChange={(v) => { setEarnings(null); setFilter(v); }}>
+          <SelectTrigger className="w-44" aria-label="Status"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {(Object.keys(STATUS_LABEL) as Earning['status'][]).map((s) => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-lg border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>Creator</TableHead><TableHead>Template</TableHead><TableHead>Pay to</TableHead><TableHead className="text-right">They earn</TableHead><TableHead className="text-right">We keep</TableHead><TableHead>Status</TableHead><TableHead>Date</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
+            {earnings === null ? (
+              <TableRow><TableCell colSpan={8} className="py-10 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" aria-label="Loading" /></TableCell></TableRow>
+            ) : earnings.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">No earnings yet.</TableCell></TableRow>
+            ) : (
+              earnings.map((e) => {
+                const c = creatorOf(e);
+                return (
+                  <TableRow key={e._id}>
+                    <TableCell><p className="text-sm font-medium">{c.name || '—'}</p><p className="text-xs text-muted-foreground">{c.email}</p></TableCell>
+                    <TableCell><p className="text-sm">{e.templateName || 'Deleted template'}</p><p className="font-mono text-xs text-muted-foreground">{e.orderId}</p></TableCell>
+                    <TableCell>
+                      {c.upiId ? <span className="select-all font-mono text-sm">{c.upiId}</span> : c.bankDetails?.accountNumber ? (
+                        <div className="text-xs"><p>{c.bankDetails.bankName || 'Bank'}</p><p className="select-all font-mono">{c.bankDetails.accountNumber}</p><p className="text-muted-foreground">IFSC {c.bankDetails.ifscCode}</p></div>
+                      ) : <span className="text-sm text-destructive">No payout details</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{rupees(e.amount)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{rupees(e.platformShareAmount || 0)}</TableCell>
+                    <TableCell><Badge variant={e.status === 'paid' ? 'secondary' : e.status === 'failed' ? 'destructive' : 'outline'}>{STATUS_LABEL[e.status]}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{new Date(e.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</TableCell>
+                    <TableCell className="text-right">{e.status === 'pending' || e.status === 'failed' ? <Button size="sm" variant="outline" onClick={() => setPaying(e)}>Mark as paid</Button> : null}</TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ConfirmDialog
+        open={Boolean(paying)}
+        onOpenChange={(o) => !o && setPaying(null)}
+        title="Mark this payout as paid?"
+        description={paying ? `${rupees(paying.amount)} to ${creatorOf(paying).name || creatorOf(paying).email}. Only do this after you have sent the money.` : undefined}
+        confirmLabel="Mark as paid"
+        busy={busy}
+        reason={{ label: 'Transaction ID (optional)', minLength: 0, maxLength: 100 }}
+        onConfirm={markPaid}
+      />
+    </>
   );
 }
-

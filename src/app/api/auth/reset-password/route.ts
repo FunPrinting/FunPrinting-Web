@@ -1,33 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { passwordError } from '@/lib/passwordRules';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import bcrypt from 'bcryptjs';
 import { passwordResetStore } from '@/lib/password-reset-store';
-
-// Password validation function
-function validatePassword(password: string): { valid: boolean; error?: string } {
-  if (password.length < 8) {
-    return { valid: false, error: 'Password must be at least 8 characters long' };
-  }
-  
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one uppercase letter' };
-  }
-  
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one lowercase letter' };
-  }
-  
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one number' };
-  }
-  
-  if (!/[!@#$%^&*]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one special character (!@#$%^&*)' };
-  }
-  
-  return { valid: true };
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,10 +24,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate password strength
-    const validation = validatePassword(password);
-    if (!validation.valid) {
+    const weak = passwordError(password);
+    if (weak) {
       return NextResponse.json(
-        { success: false, error: validation.error },
+        { success: false, error: weak },
         { status: 400 }
       );
     }

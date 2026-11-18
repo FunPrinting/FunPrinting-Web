@@ -1,108 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import NewOrder from '@/models/NewOrder';
 import Order from '@/models/Order';
-import { uploadFile } from '@/lib/storage';
-import { v4 as uuidv4 } from 'uuid';
+import { requireUser, isAdminSession } from '@/lib/authz';
 
-export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const templateId = formData.get('templateId') as string;
-    const formDataJson = formData.get('formData') as string;
-
-    if (!file || !templateId || !formDataJson) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    await connectDB();
-
-    // Generate unique order ID
-    const orderId = uuidv4();
-
-    console.log('📄 Creating order with auto-uploaded PDF...');
-    console.log('📄 PDF file size:', file.size, 'bytes');
-    console.log('📄 Template ID:', templateId);
-
-    // Upload PDF to cloud storage
-    const pdfBuffer = Buffer.from(await file.arrayBuffer());
-    const pdfUrl = await uploadFile(
-      pdfBuffer,
-      `orders/${orderId}`,
-      'application/pdf'
-    );
-
-    console.log('✅ PDF uploaded to cloud storage:', pdfUrl);
-
-    // Parse form data
-    const parsedFormData = JSON.parse(formDataJson);
-
-    // Create new order with auto-uploaded PDF
-    const order = new NewOrder({
-      id: orderId,
-      templateId: templateId,
-      templateName: `Personalized Document - ${templateId}`,
-      formData: parsedFormData,
-      pdfUrl: pdfUrl,
-      status: 'pending',
-      totalAmount: 0, // Free for now, can be calculated based on template
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-
-    await order.save();
-
-    console.log('✅ Order created successfully:', orderId);
-    console.log('📄 PDF auto-uploaded for order:', pdfUrl);
-
-    return NextResponse.json({
-      success: true,
-      orderId: orderId,
-      pdfUrl: pdfUrl,
-      message: 'Order created successfully with auto-uploaded PDF'
-    });
-
-  } catch (error) {
-    console.error('Error creating order:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create order' },
-      { status: 500 }
-    );
-  }
-}
+/**
+ * GET /api/orders
+ * Returns the signed-in user's orders (matched on customerInfo.email).
+ * The `email` query param is only honoured for admins; for everyone else
+ * the session email is used, so users cannot list other people's orders.
+ *
+ * (The unused POST handler that created NewOrder documents was removed.)
+ */
+let lastSweep = 0;
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
 
-    // Get email from query parameters
     const { searchParams } = new URL(request.url);
-    const email = searchParams.get('email');
+    const requestedEmail = searchParams.get('email')?.trim().toLowerCase();
+    const email = isAdminSession(auth) && requestedEmail ? requestedEmail : auth.email;
 
-    if (!email) {
-      return NextResponse.json(
-        { success: false, error: 'Email parameter is required' },
-        { status: 400 }
-      );
+    // Case-insensitive exact match: some legacy orders store mixed-case emails
+    const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const orders = await Order.find({
+      'customerInfo.email': { $regex: `^${escaped}$`, $options: 'i' },
+    }).sort({ createdAt: -1 });
+
+    // Print job deadlines also run on customer traffic (throttled), not only on cron
+    if (Date.now() - lastSweep > 60_000) {
+      lastSweep = Date.now();
+      after(async () => {
+        const { sweepDeadlines } = await import('@/lib/jobs/deadlines');
+        await sweepDeadlines(20).catch(() => undefined);
+      });
     }
-
-    console.log('🔍 Searching orders for email:', email);
-
-    // Search orders by email address
-    const orders = await Order.find({ 'customerInfo.email': email })
-      .sort({ createdAt: -1 });
-
-    console.log('📋 Found orders:', orders.length);
 
     return NextResponse.json({
       success: true,
       orders: orders
     });
-
   } catch (error) {
     console.error('Error fetching orders:', error);
     return NextResponse.json(

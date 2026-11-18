@@ -1,67 +1,64 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import Partner from '@/models/Partner';
+import { getSessionUser } from '@/lib/authz';
 
-export async function GET(request: Request) {
+/**
+ * GET /api/partner/desktop-token
+ *
+ * Issues a device token for the partner desktop/mobile apps.
+ * Only existing partners get a token: users are never auto-upgraded and Partner
+ * documents are never created here.
+ *
+ * Token claims: { sub: User._id, partnerId: Partner._id, role, typ: 'partner_device' }.
+ * The WSS joins room partner_<partnerId>, which matches the Partner._id stored on orders.
+ */
+export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let role = (session.user as any).role;
-    let partnerId = (session.user as any).id;
-    
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) {
+      console.error('❌ NEXTAUTH_SECRET is not set; cannot issue partner device tokens');
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
+
     await connectDB();
 
-    // Resiliency: If partnerId is a legacy Google Provider ID instead of a valid MongoDB ObjectId
-    const isValidHex = /^[0-9a-fA-F]{24}$/.test(partnerId);
-    if (!partnerId || !isValidHex) {
-      const dbUser = await User.findOne({ email: session.user.email });
-      if (dbUser) {
-        partnerId = dbUser._id.toString();
-        role = dbUser.role;
-      } else {
-        return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
-      }
-    }
-    
-    if (role !== 'partner' && role !== 'admin') {
-      // Auto-upgrade user to partner when they log in via the app
-      await User.findByIdAndUpdate(partnerId, { role: 'partner' });
-      role = 'partner';
-      console.log(`User ${partnerId} auto-upgraded to partner.`);
+    // Resolve the DB user (session id may be a legacy provider id)
+    const isValidHex = /^[0-9a-fA-F]{24}$/.test(sessionUser.id);
+    const dbUser = isValidHex
+      ? await User.findById(sessionUser.id)
+      : await User.findOne({ email: sessionUser.email });
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
     }
 
-    // Ensure they have a formal Partner document so they appear on the Admin Dashboard
-    const existingPartner = await Partner.findOne({ userId: partnerId });
-    if (!existingPartner && role === 'partner') {
-      const userDoc = await User.findById(partnerId);
-      await Partner.create({
-        userId: partnerId,
-        businessName: userDoc?.name ? `${userDoc.name}'s Print Shop` : 'New Franchise Partner',
-        location: { type: 'Point', coordinates: [77.2090, 28.6139] },
-        address: { street: 'Update in Settings', city: 'Update in Settings', state: 'Update in Settings', zipCode: '000000' },
-        isActive: true,
-        isOnline: false,
-        servicesOffered: { printing: true, binding: false, cashOnDelivery: true },
-        earnings: { totalRevenue: 0, pendingPayout: 0 }
-      });
-      console.log(`Created new Partner profile for ${partnerId}`);
+    const userId = dbUser._id.toString();
+    const userRole: string = dbUser.role || 'customer';
+    const partner = await Partner.findOne({ userId });
+
+    // A token needs a Partner document (its _id is the routing key for print jobs)
+    if (!partner) {
+      return NextResponse.json({ error: 'not_a_partner', applyUrl: '/partner' }, { status: 403 });
+    }
+    // ...and that partner must be approved by an admin
+    if (!partner.isActive) {
+      return NextResponse.json({ error: 'partner_pending_approval', applyUrl: '/partner/dashboard' }, { status: 403 });
     }
 
-    const secret = process.env.NEXTAUTH_SECRET || 'fallback-secret-for-development';
+    const role: 'partner' | 'admin' = userRole === 'admin' ? 'admin' : 'partner';
+    const partnerId = partner._id.toString();
 
-    // Sign a raw JWT token that the WebSocket server (wss/index.js) can read
     const token = jwt.sign(
-      { sub: partnerId, partnerId, role },
+      { sub: userId, partnerId, role, typ: 'partner_device' },
       secret,
-      { expiresIn: '365d' } // Long-lived token for desktop app
+      { algorithm: 'HS256', expiresIn: '30d' }
     );
 
     return NextResponse.json({ success: true, partnerId, token });

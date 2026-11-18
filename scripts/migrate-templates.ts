@@ -11,7 +11,7 @@
  */
 
 import mongoose from 'mongoose';
-import connectDB from '../src/lib/mongodb';
+import connectDB from './lib/db';
 import DynamicTemplate from '../src/models/DynamicTemplate';
 import User from '../src/models/User';
 
@@ -44,9 +44,10 @@ async function migrateTemplates() {
           updates.isPublic = false; // Default to private
           
           // Try to find admin user
+          const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
           const adminUser = await User.findOne({ 
             $or: [
-              { email: 'adityapandey.dev.in@gmail.com' },
+              ...(adminEmail ? [{ email: adminEmail }] : []),
               { role: 'admin' }
             ]
           });

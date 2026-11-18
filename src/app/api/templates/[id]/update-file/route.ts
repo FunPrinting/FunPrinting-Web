@@ -63,23 +63,16 @@ export async function POST(
       );
     }
 
-    // Validate file type
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword'
-    ];
-    
-    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.docx')) {
+    if (!/\.docx$/i.test(file.name)) {
       return NextResponse.json(
         { success: false, error: 'Only DOCX files are allowed' },
         { status: 400 }
       );
     }
 
-    // Validate file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
+    if (file.size > 20 * 1024 * 1024) {
       return NextResponse.json(
-        { success: false, error: 'File size must be less than 50MB' },
+        { success: false, error: 'File size must be less than 20MB' },
         { status: 400 }
       );
     }
@@ -89,6 +82,10 @@ export async function POST(
     // Convert file to buffer
     const bytes = await file.arrayBuffer();
     const docxBuffer = Buffer.from(bytes);
+    // A .docx is a ZIP archive: check the magic bytes, not just the name
+    if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
+      return NextResponse.json({ success: false, error: 'That file is not a valid .docx document' }, { status: 400 });
+    }
 
     // Extract placeholders from new file
     console.log('🔍 Extracting placeholders from new file...');

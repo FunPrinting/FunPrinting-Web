@@ -1,137 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
-import Order from '@/models/Order';
-import { generateFormSchema } from '@/lib/docxProcessor';
-import { getCurrentUser } from '@/lib/templateAuth';
+import Payment from '@/models/Payment';
 import User from '@/models/User';
+import { getCurrentUser } from '@/lib/templateAuth';
 
-export async function GET(_request: NextRequest) {
+/**
+ * GET /api/templates: templates the visitor can use, for the browse page.
+ * Public templates, plus the signed-in user's own. Sends only what a card needs: no
+ * Word file URLs, form schemas or creator emails.
+ */
+export async function GET() {
   try {
     await connectDB();
-
-    // Get current user from session
     const session = await getCurrentUser();
-    let userId = null;
-    let userEmail = null;
+    const me = session?.email ? await User.findOne({ email: session.email.toLowerCase() }).select('email favoriteTemplateIds').lean<{ _id: unknown; email: string; favoriteTemplateIds?: string[] } | null>() : null;
+    const userId = me ? String(me._id) : null;
 
-    if (session?.email) {
-      const user = await User.findOne({ email: session.email.toLowerCase() });
-      if (user) {
-        userId = user._id.toString();
-        userEmail = user.email.toLowerCase();
-      }
-    }
-
-    // Build query: public templates OR user's own templates
-    const query: any = {
-      $or: [
-        { isPublic: true }
-      ]
+    const query = {
+      $or: [{ isPublic: true }, ...(me ? [{ createdByUserId: userId }, { createdByEmail: me.email.toLowerCase() }] : [])],
     };
-
-    // Add user's own templates if authenticated
-    if (userId || userEmail) {
-      const userQuery: any[] = [];
-      if (userId) {
-        userQuery.push({ createdByUserId: userId });
-      }
-      if (userEmail) {
-        userQuery.push({ createdByEmail: userEmail });
-      }
-      if (userQuery.length > 0) {
-        query.$or.push({ $or: userQuery });
-      }
-    }
-
-    // Get templates matching the query
     const templates = await DynamicTemplate.find(query)
-      .select('id name description category placeholders pdfUrl wordUrl formSchema isPublic createdByType createdByEmail createdByName createdAt updatedAt')
-      .sort({ createdAt: -1 });
+      .select('id name description category isPublic isPaid price allowFreeDownload createdByType createdByName createdByUserId createdByEmail createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Get purchase counts for all templates
-    const purchaseCounts = await Order.aggregate([
-      {
-        $match: {
-          orderType: 'template',
-          paymentStatus: 'completed',
-          templateId: { $exists: true, $ne: null }
-        }
-      },
-      {
-        $group: {
-          _id: '$templateId',
-          count: { $sum: 1 }
-        }
-      }
+    // Purchases are paid Payment records (a partly refunded purchase still counts)
+    const counts = await Payment.aggregate<{ _id: string; count: number }>([
+      { $match: { purpose: 'template', status: { $in: ['paid', 'partially_refunded'] }, templateId: { $exists: true, $ne: null } } },
+      { $group: { _id: '$templateId', count: { $sum: 1 } } },
     ]);
+    const bought = new Map(counts.map((c) => [c._id, c.count]));
 
-    // Create a map of templateId -> purchaseCount
-    const purchaseCountMap = new Map<string, number>();
-    purchaseCounts.forEach((item: { _id: string; count: number }) => {
-      purchaseCountMap.set(item._id, item.count);
-    });
+    const byPurchases = templates.map((t) => ({ id: t.id, count: bought.get(t.id) ?? 0 })).filter((t) => t.count > 0).sort((a, b) => b.count - a.count).slice(0, 3);
+    const rank = new Map(byPurchases.map((t, i) => [t.id, i + 1]));
+    const favourites = new Set(me?.favoriteTemplateIds ?? []);
 
-    // Sort templates by purchase count to determine ranks
-    const templatesWithCounts = templates.map(template => ({
-      template,
-      purchaseCount: purchaseCountMap.get(template.id) || 0
-    })).sort((a, b) => b.purchaseCount - a.purchaseCount);
-
-    // Assign ranks (1, 2, 3) to top templates
-    const rankMap = new Map<string, number>();
-    templatesWithCounts.forEach((item, index) => {
-      if (index < 3 && item.purchaseCount > 0) {
-        rankMap.set(item.template.id, index + 1);
-      }
-    });
-
-    // Get user's favorite template IDs if authenticated
-    let favoriteTemplateIds: string[] = [];
-    if (userId) {
-      const user = await User.findById(userId);
-      if (user && user.favoriteTemplateIds) {
-        favoriteTemplateIds = user.favoriteTemplateIds;
-      }
-    } else if (userEmail) {
-      const user = await User.findOne({ email: userEmail });
-      if (user && user.favoriteTemplateIds) {
-        favoriteTemplateIds = user.favoriteTemplateIds;
-      }
-    }
-
-    // Generate form schemas for each template and add purchase count, rank, and favorite status
-    const templatesWithSchemas = templates.map(template => ({
-      id: template.id,
-      _id: template._id.toString(),
-      name: template.name,
-      description: template.description,
-      category: template.category,
-      placeholders: template.placeholders,
-      formSchema: template.formSchema || generateFormSchema(template.placeholders),
-      pdfUrl: template.pdfUrl,
-      wordUrl: template.wordUrl,
-      isPublic: template.isPublic,
-      createdByType: template.createdByType,
-      createdByEmail: template.createdByEmail,
-      createdByName: template.createdByName,
-      createdAt: template.createdAt,
-      updatedAt: template.updatedAt,
-      purchaseCount: purchaseCountMap.get(template.id) || 0,
-      rank: rankMap.get(template.id) || null,
-      isFavorite: favoriteTemplateIds.includes(template.id)
-    }));
+    const mine = (t: { createdByUserId?: unknown; createdByEmail?: string }) =>
+      Boolean((userId && t.createdByUserId && String(t.createdByUserId) === userId) || (me && t.createdByEmail?.toLowerCase() === me.email.toLowerCase()));
 
     return NextResponse.json({
       success: true,
-      templates: templatesWithSchemas
+      templates: templates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        isPublic: t.isPublic,
+        isPaid: Boolean(t.isPaid),
+        price: t.price || 0,
+        createdByType: t.createdByType,
+        createdByName: t.createdByName,
+        createdAt: t.createdAt,
+        isMine: mine(t),
+        purchaseCount: bought.get(t.id) ?? 0,
+        rank: rank.get(t.id) ?? null,
+        isFavorite: favourites.has(t.id),
+      })),
     });
-
   } catch (error) {
     console.error('Error fetching templates:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch templates' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch templates' }, { status: 500 });
   }
 }

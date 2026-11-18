@@ -6,8 +6,8 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
-import Order from '@/models/Order';
-import connectDB from '@/lib/mongodb';
+import Order from '../src/models/Order';
+import connectDB from './lib/db';
 
 async function run() {
   try {

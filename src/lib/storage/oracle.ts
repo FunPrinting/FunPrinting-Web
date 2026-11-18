@@ -10,13 +10,15 @@
  * - Full API access
  */
 
-import * as oci from 'oci-sdk';
+import * as objectstorage from 'oci-objectstorage';
+import * as common from 'oci-common';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import type { StorageProvider } from '../storage';
 
 export class OracleProvider implements StorageProvider {
-  private objectStorageClient: oci.objectstorage.ObjectStorageClient;
+  private objectStorageClient: objectstorage.ObjectStorageClient;
   private namespace: string;
   private bucketName: string;
   private region: string;
@@ -48,7 +50,7 @@ export class OracleProvider implements StorageProvider {
 
     // Initialize OCI configuration
     const provider = this.createConfigurationProvider();
-    this.objectStorageClient = new oci.objectstorage.ObjectStorageClient({
+    this.objectStorageClient = new objectstorage.ObjectStorageClient({
       authenticationDetailsProvider: provider,
     });
 
@@ -61,7 +63,7 @@ export class OracleProvider implements StorageProvider {
   /**
    * Create OCI configuration provider from environment variables
    */
-  private createConfigurationProvider(): oci.common.SimpleAuthenticationDetailsProvider {
+  private createConfigurationProvider(): common.SimpleAuthenticationDetailsProvider {
     const tenancyId = process.env.OCI_TENANCY_OCID!;
     const userId = process.env.OCI_USER_OCID!;
     const fingerprint = process.env.OCI_FINGERPRINT!;
@@ -89,13 +91,13 @@ export class OracleProvider implements StorageProvider {
       );
     }
 
-    return new oci.common.SimpleAuthenticationDetailsProvider(
+    return new common.SimpleAuthenticationDetailsProvider(
       tenancyId,
       userId,
       fingerprint,
       privateKey,
       null,
-      oci.common.Region.fromRegionId(this.region)
+      common.Region.fromRegionId(this.region)
     );
   }
 
@@ -104,7 +106,7 @@ export class OracleProvider implements StorageProvider {
    */
   private async ensureBucketExists(): Promise<void> {
     try {
-      const getBucketRequest: oci.objectstorage.requests.GetBucketRequest = {
+      const getBucketRequest: objectstorage.requests.GetBucketRequest = {
         namespaceName: this.namespace,
         bucketName: this.bucketName,
       };
@@ -115,11 +117,11 @@ export class OracleProvider implements StorageProvider {
       if (error.statusCode === 404) {
         // Bucket doesn't exist, create it
         console.log(`📦 Creating Oracle bucket: ${this.bucketName}`);
-        const createBucketRequest: oci.objectstorage.requests.CreateBucketRequest = {
+        const createBucketRequest: objectstorage.requests.CreateBucketRequest = {
           createBucketDetails: {
             name: this.bucketName,
             compartmentId: process.env.OCI_COMPARTMENT_OCID || process.env.OCI_TENANCY_OCID!,
-            publicAccessType: oci.objectstorage.models.CreateBucketDetails.PublicAccessType.NoPublicAccess,
+            publicAccessType: objectstorage.models.CreateBucketDetails.PublicAccessType.NoPublicAccess,
           },
           namespaceName: this.namespace,
         };
@@ -151,7 +153,7 @@ export class OracleProvider implements StorageProvider {
       const objectName = `${folder}/document_${timestamp}_${randomId}`;
 
       // Prepare upload request
-      const putObjectRequest: oci.objectstorage.requests.PutObjectRequest = {
+      const putObjectRequest: objectstorage.requests.PutObjectRequest = {
         namespaceName: this.namespace,
         bucketName: this.bucketName,
         putObjectBody: buffer,
@@ -188,14 +190,14 @@ export class OracleProvider implements StorageProvider {
   private async generateFileUrl(objectName: string): Promise<string> {
     try {
       // Try to create a pre-authenticated request (valid for 1 year)
-      const createPreauthenticatedRequestDetails: oci.objectstorage.models.CreatePreauthenticatedRequestDetails = {
+      const createPreauthenticatedRequestDetails: objectstorage.models.CreatePreauthenticatedRequestDetails = {
         name: `par_${Date.now()}`,
         objectName: objectName,
-        accessType: oci.objectstorage.models.CreatePreauthenticatedRequestDetails.AccessType.ObjectRead,
+        accessType: objectstorage.models.CreatePreauthenticatedRequestDetails.AccessType.ObjectRead,
         timeExpires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
       };
 
-      const createParRequest: oci.objectstorage.requests.CreatePreauthenticatedRequestRequest = {
+      const createParRequest: objectstorage.requests.CreatePreauthenticatedRequestRequest = {
         namespaceName: this.namespace,
         bucketName: this.bucketName,
         createPreauthenticatedRequestDetails: createPreauthenticatedRequestDetails,
@@ -252,7 +254,7 @@ export class OracleProvider implements StorageProvider {
         }
       }
 
-      const deleteObjectRequest: oci.objectstorage.requests.DeleteObjectRequest = {
+      const deleteObjectRequest: objectstorage.requests.DeleteObjectRequest = {
         namespaceName: this.namespace,
         bucketName: this.bucketName,
         objectName: actualObjectName,

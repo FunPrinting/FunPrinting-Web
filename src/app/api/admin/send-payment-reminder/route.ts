@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { sendPaymentReminderToCustomer, sendPaymentReminderToAdmin } from '@/lib/notificationService';
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { orderId, sendToCustomer = true, sendToAdmin = true } = await request.json();
 

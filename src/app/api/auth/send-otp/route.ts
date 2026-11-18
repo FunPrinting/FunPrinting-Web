@@ -1,25 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+import { getMailTransporter, isMailConfigured } from '@/lib/mailer';
 import { otpStore } from '@/lib/otp-store';
+import { otpSendRateLimit, checkRateLimit, getClientIdentifier } from '@/lib/ratelimit';
 
-// Configure email transporter using existing environment variables
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.EMAIL_PORT || '587'),
-  secure: false, // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_HOST_USER ,
-    pass: process.env.EMAIL_HOST_PASSWORD || 'hagbaiwzqltgfflz',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
 
 export async function POST(request: NextRequest) {
   try {
-    const { email } = await request.json();
-    
+    const body = await request.json();
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+
     if (!email) {
       return NextResponse.json(
         { success: false, error: 'Email is required' },
@@ -27,17 +17,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Rate limit by IP and by email (5 per 10 minutes each)
+    const ipLimited = await checkRateLimit(otpSendRateLimit, `ip:${getClientIdentifier(request)}`, { failClosed: true });
+    if (ipLimited) return ipLimited;
+    const emailLimited = await checkRateLimit(otpSendRateLimit, `email:${email}`, { failClosed: true });
+    if (emailLimited) return emailLimited;
+
+    if (!isMailConfigured()) {
+      console.error('❌ send-otp: email is not configured (EMAIL_HOST_USER / EMAIL_HOST_PASSWORD missing)');
+      return NextResponse.json(
+        { success: false, error: 'Failed to send OTP' },
+        { status: 500 }
+      );
+    }
+
     // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 1000000).toString();
     
     // Store OTP with timestamp (expires in 10 minutes)
     otpStore.set(email, otp);
-    console.log(`🔐 OTP stored for ${email}: ${otp}`);
-    console.log(`📊 Current OTP store size: ${otpStore.getStoreSize()}`);
 
     // Email content
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'your-email@gmail.com',
+      from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER,
       to: email,
       subject: 'Print Service - Email Verification OTP',
       html: `
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Send email
-    await transporter.sendMail(mailOptions);
+    await getMailTransporter().sendMail(mailOptions);
 
     return NextResponse.json({
       success: true,

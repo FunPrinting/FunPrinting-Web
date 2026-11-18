@@ -1,339 +1,163 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
+import { useState } from 'react';
+import { CheckCircle2, Clock, Loader2, Mail, MapPin, Phone } from 'lucide-react';
 import { useAdminInfo } from '@/hooks/useAdminInfo';
-import { DocumentIcon, TruckIcon } from '@/components/SocialIcons';
+import { CONTACT_TOPICS, type ContactTopic } from '@/lib/contactTopics';
+import { PhoneNotice } from '@/components/PhoneNotice';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+
+const FAQ = [
+  { q: 'How do I track my order?', a: <>Open <Link href="/my-orders" className="text-primary hover:underline">My orders</Link> after signing in. Each order shows its steps and, for courier deliveries, a tracking link.</> },
+  { q: 'Which payment methods work?', a: 'UPI, cards, net banking and wallets, through Razorpay.' },
+  { q: 'Can I cancel an order?', a: <>Unpaid orders can be cancelled in My orders. If the shop does not accept a paid order you are refunded. See the <Link href="/cancellation-refund" className="text-primary hover:underline">refund policy</Link>.</> },
+  { q: 'Which files can I print?', a: 'PDF, Word documents and images (JPG, PNG, WebP and more), up to 50 MB each.' },
+  { q: 'I run a print shop. Can I join?', a: <>Yes. See the <Link href="/partner" className="text-primary hover:underline">partner program</Link>.</> },
+];
+
+function Detail({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground"><Icon className="size-4" aria-hidden /></span>
+      <div className="text-sm">
+        <p className="font-medium">{title}</p>
+        <div className="text-muted-foreground">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function ContactPage() {
   const { adminInfo, loading } = useAdminInfo();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    subject: '',
-    message: ''
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [form, setForm] = useState({ name: '', email: '', phone: '', topic: '' as ContactTopic | '', message: '', website: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    
-    // Simulate form submission
-    setTimeout(() => {
-      setSubmitStatus('success');
-      setIsSubmitting(false);
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        subject: '',
-        message: ''
-      });
-    }, 2000);
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) setSent(true);
+      else setError(data.error || 'We couldn’t send your message. Please try again.');
+    } catch {
+      setError('We couldn’t reach the server. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const h = adminInfo?.businessHours;
+  const address = adminInfo?.address ? [adminInfo.address, adminInfo.city, [adminInfo.state, adminInfo.pincode].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Contact Us</h1>
-          <p className="text-xl text-gray-600">
-            We&apos;re here to help! Get in touch with us for any questions or support.
-          </p>
-        </div>
+    <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+      <h1 className="text-3xl font-semibold">Contact us</h1>
+      <p className="mt-2 text-muted-foreground">Questions about an order, a payment or a delivery? Send us a message. Have your order number ready.</p>
 
-        <div className="grid lg:grid-cols-2 gap-12">
-          {/* Contact Information */}
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-6">Get in Touch</h2>
-            
-            <div className="space-y-6">
-              <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Phone</h3>
-                  <p className="text-gray-600">{adminInfo?.phone || '+91 98765 43210'}</p>
-                  <p className="text-sm text-gray-500">
-                    {adminInfo?.businessHours ? `${adminInfo.businessHours.monday} - ${adminInfo.businessHours.saturday}` : 'Mon-Sat: 9AM-6PM'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Email</h3>
-                  <p className="text-gray-600">{adminInfo?.email || 'info@printservice.com'}</p>
-                  <p className="text-sm text-gray-500">We respond within 24 hours</p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Address</h3>
-                  <p className="text-gray-600">
-                    {adminInfo?.address ? (
-                      <>
-                        {adminInfo.address}<br />
-                        {adminInfo.city}, {adminInfo.state} - {adminInfo.pincode}<br />
-                        {adminInfo.country}
-                      </>
-                    ) : (
-                      <>
-                        [Your Business Address]<br />
-                        [City, State] - [PIN Code]<br />
-                        India
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Business Hours</h3>
-                  <p className="text-gray-600">
-                    {adminInfo?.businessHours ? (
-                      <>
-                        Monday: {adminInfo.businessHours.monday}<br />
-                        Tuesday: {adminInfo.businessHours.tuesday}<br />
-                        Wednesday: {adminInfo.businessHours.wednesday}<br />
-                        Thursday: {adminInfo.businessHours.thursday}<br />
-                        Friday: {adminInfo.businessHours.friday}<br />
-                        Saturday: {adminInfo.businessHours.saturday}<br />
-                        Sunday: {adminInfo.businessHours.sunday}
-                      </>
-                    ) : (
-                      <>
-                        Monday - Saturday: 9:00 AM - 6:00 PM<br />
-                        Sunday: Closed
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Support</h3>
-              <div className="space-y-3">
-                <Link 
-                  href="/cancellation-refund"
-                  className="block text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <DocumentIcon size={16} className="w-4 h-4" />
-                    Cancellation & Refund Policy
-                  </span>
-                </Link>
-                <Link 
-                  href="/shipping-delivery"
-                  className="block text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <TruckIcon size={16} className="w-4 h-4" />
-                    Shipping & Delivery Policy
-                  </span>
-                </Link>
-                <Link 
-                  href="/terms"
-                  className="block text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  <span className="flex items-center gap-1">
-                    <DocumentIcon size={16} className="w-4 h-4" />
-                    Terms & Conditions
-                  </span>
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Contact Form */}
-          <div className="form-container">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Send us a Message</h2>
-            
-            {submitStatus === 'success' && (
-              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-800">Thank you! Your message has been sent successfully. We&apos;ll get back to you soon.</p>
-              </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-5">
+        <Card className="h-fit lg:col-span-2">
+          <CardHeader><CardTitle>Reach us</CardTitle></CardHeader>
+          <CardContent className="space-y-5">
+            {loading ? (
+              [0, 1, 2].map((i) => <Skeleton key={i} className="h-10" />)
+            ) : (
+              <>
+                {adminInfo?.phone ? <Detail icon={Phone} title="Phone"><a href={`tel:${adminInfo.phone}`} className="hover:text-foreground">{adminInfo.phone}</a></Detail> : null}
+                {adminInfo?.email ? <Detail icon={Mail} title="Email"><a href={`mailto:${adminInfo.email}`} className="break-all hover:text-foreground">{adminInfo.email}</a></Detail> : null}
+                {address ? <Detail icon={MapPin} title="Address">{address}</Detail> : null}
+                {h ? (
+                  <Detail icon={Clock} title="Hours">
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-3">
+                      {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((d) => (
+                        <div key={d} className="contents"><dt className="capitalize">{d}</dt><dd>{h[d] || 'Closed'}</dd></div>
+                      ))}
+                    </dl>
+                  </Detail>
+                ) : null}
+                {!adminInfo?.phone && !adminInfo?.email ? <p className="text-sm text-muted-foreground">Use the form to reach us.</p> : null}
+              </>
             )}
+          </CardContent>
+        </Card>
 
-            <form onSubmit={handleSubmit} className="form-section">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="name" className="form-label">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    required
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    className="form-input"
-                    placeholder="Enter your full name"
-                  />
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Send a message</CardTitle>
+            <CardDescription>We’ll reply to the email address you enter.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {sent ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center" role="status">
+                <CheckCircle2 className="size-10 text-success" aria-hidden />
+                <p className="font-medium">Message sent</p>
+                <p className="max-w-sm text-sm text-muted-foreground">Thank you. We’ll reply to {form.email} as soon as we can.</p>
+                <Button variant="outline" onClick={() => { setSent(false); setForm({ name: '', email: '', phone: '', topic: '', message: '', website: '' }); }}>Send another</Button>
+              </div>
+            ) : (
+              <form className="space-y-4" onSubmit={submit}>
+                {error ? <Alert variant="destructive" role="alert"><AlertDescription>{error}</AlertDescription></Alert> : null}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Your name</Label>
+                    <Input id="name" autoComplete="name" required maxLength={100} value={form.name} onChange={set('name')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" type="email" autoComplete="email" required value={form.email} onChange={set('email')} />
+                  </div>
                 </div>
-
-                <div>
-                  <label htmlFor="phone" className="form-label">
-                    Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    id="phone"
-                    name="phone"
-                    required
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    className="form-input"
-                    placeholder="Enter your phone number"
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Mobile number</Label>
+                    <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" required placeholder="98765 43210" value={form.phone} onChange={set('phone')} aria-describedby="phone-hint" />
+                    <PhoneNotice id="phone-hint" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="topic">What is it about?</Label>
+                    <select id="topic" required value={form.topic} onChange={set('topic')} className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                      <option value="" disabled>Choose a topic</option>
+                      {Object.entries(CONTACT_TOPICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label htmlFor="email" className="form-label">
-                  Email Address *
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-                  placeholder="Enter your email address"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="subject" className="form-label">
-                  Subject *
-                </label>
-                <select
-                  id="subject"
-                  name="subject"
-                  required
-                  value={formData.subject}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-                >
-                  <option value="">Select a subject</option>
-                  <option value="general">General Inquiry</option>
-                  <option value="order">Order Status</option>
-                  <option value="payment">Payment Issue</option>
-                  <option value="refund">Refund Request</option>
-                  <option value="technical">Technical Support</option>
-                  <option value="feedback">Feedback</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="message" className="form-label">
-                  Message *
-                </label>
-                <textarea
-                  id="message"
-                  name="message"
-                  required
-                  rows={5}
-                  value={formData.message}
-                  onChange={handleInputChange}
-                  className="form-textarea"
-                  placeholder="Please describe your inquiry in detail..."
-                />
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="form-button form-button-primary px-12 py-4 text-lg"
-                >
-                  {isSubmitting ? 'Sending...' : 'Send Message'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        {/* FAQ Section */}
-        <div className="mt-16 bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-6">Frequently Asked Questions</h2>
-          
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">How do I track my order?</h3>
-              <p className="text-gray-600">You can track your order by visiting the &quot;My Orders&quot; page and entering your order ID or phone number.</p>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">What payment methods do you accept?</h3>
-              <p className="text-gray-600">We accept all major payment methods including UPI, credit/debit cards, net banking, and digital wallets through Razorpay.</p>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Can I delete my order?</h3>
-              <p className="text-gray-600">Pending payment orders can be deleted before payment is completed. Once payment is completed, please contact us for refund requests.</p>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">What file formats do you support?</h3>
-              <p className="text-gray-600">We support PDF, DOCX, JPG, JPEG, and PNG files for printing.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center">
-          <Link 
-            href="/"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 transition-colors"
-          >
-            ← Back to Home
-          </Link>
-        </div>
+                <div className="space-y-2">
+                  <Label htmlFor="message">Message</Label>
+                  <Textarea id="message" required minLength={10} maxLength={3000} rows={6} value={form.message} onChange={set('message')} placeholder="Tell us what happened. Include your order number if you have one." />
+                </div>
+                {/* Spam trap: hidden from people and screen readers */}
+                <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                  <label>Website<input tabIndex={-1} autoComplete="off" value={form.website} onChange={set('website')} /></label>
+                </div>
+                <Button type="submit" size="lg" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null}Send message</Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      <section className="mt-12" aria-labelledby="faq">
+        <h2 id="faq" className="text-xl font-semibold">Common questions</h2>
+        <div className="mt-4 divide-y rounded-xl border">
+          {FAQ.map((f) => (
+            <details key={f.q} className="group p-4">
+              <summary className="cursor-pointer list-none font-medium marker:hidden [&::-webkit-details-marker]:hidden">{f.q}</summary>
+              <p className="mt-2 text-sm text-muted-foreground">{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

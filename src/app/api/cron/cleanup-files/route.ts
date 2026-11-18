@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/cronAuth';
 import { v2 as cloudinary } from 'cloudinary';
 
 cloudinary.config({
@@ -17,13 +18,9 @@ cloudinary.config({
  * Protected by CRON_SECRET header check.
  */
 export async function GET(request: NextRequest) {
-    // Verify cron secret to prevent unauthorized access
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
+  const cronAuth = requireCronSecret(request);
+  if (cronAuth) return cronAuth;
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     try {
         console.log('🧹 Starting Cloudinary cleanup for old filled documents...');

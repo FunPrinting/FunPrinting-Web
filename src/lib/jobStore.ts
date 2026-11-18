@@ -6,6 +6,8 @@ import { Redis } from '@upstash/redis';
 
 export interface JobStatus {
   jobId: string;
+  /** The user who started the job; only they can read its status */
+  userId?: string;
   wordUrl: string;
   pdfUrl?: string;
   status: 'processing' | 'completed' | 'failed';

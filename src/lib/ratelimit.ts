@@ -51,6 +51,48 @@ export const webhookRateLimit = new Ratelimit({
 });
 
 /**
+ * Rate limiter for sending email OTPs
+ * Allows 5 requests per 10 minutes per key (applied to both email and IP)
+ */
+export const otpSendRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(5, '10 m'),
+    prefix: 'ratelimit:otp-send',
+    analytics: true,
+});
+/**
+ * Rate limiter for verifying email OTPs
+ * Allows 10 attempts per 10 minutes per key (applied to both email and IP)
+ */
+export const otpVerifyRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, '10 m'),
+    prefix: 'ratelimit:otp-verify',
+    analytics: true,
+});
+/**
+ * Rate limiter for client error reports (POST /api/errors)
+ * Allows 30 reports per 60 seconds per IP
+ */
+export const errorReportRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(30, '60 s'),
+    analytics: false,
+    prefix: 'ratelimit:error-report',
+});
+
+/**
+ * Rate limiter for the contact form
+ * Allows 3 messages per 10 minutes per IP
+ */
+export const contactRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(3, '10 m'),
+    prefix: 'ratelimit:contact',
+    analytics: false,
+});
+
+/**
  * Get client identifier from request (IP address or fallback)
  */
 export function getClientIdentifier(request: NextRequest): string {
@@ -65,7 +107,8 @@ export function getClientIdentifier(request: NextRequest): string {
  */
 export async function checkRateLimit(
     rateLimiter: Ratelimit,
-    identifier: string
+    identifier: string,
+    { failClosed = false }: { failClosed?: boolean } = {}
 ): Promise<NextResponse | null> {
     try {
         const { success, limit, remaining, reset } = await rateLimiter.limit(identifier);
@@ -92,7 +135,15 @@ export async function checkRateLimit(
 
         return null; // Within limit
     } catch (error) {
-        // If rate limiting fails (Redis down), allow the request through
+        if (failClosed) {
+            // Security-sensitive limits (OTP) must not be bypassable by a Redis outage
+            console.error('⚠️ Rate limit check failed, rejecting request:', error);
+            return NextResponse.json(
+                { success: false, error: 'Service temporarily unavailable. Please try again shortly.' },
+                { status: 503, headers: { 'Retry-After': '30' } }
+            );
+        }
+        // Other limits: allow the request through when Redis is down
         console.error('⚠️ Rate limit check failed, allowing request:', error);
         return null;
     }

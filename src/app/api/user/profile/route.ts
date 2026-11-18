@@ -3,11 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
-import PickupLocation from '@/models/PickupLocation';
-import { validatePhoneNumber, needsCountryCode } from '@/lib/phoneValidation';
-import { sendVerificationEmail } from '@/lib/email-verification';
-import VerificationToken from '@/models/VerificationToken';
-import crypto from 'crypto';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
+import { cleanBorder, DEFAULT_BORDER } from '@/lib/templateBorders';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -31,12 +28,6 @@ export async function GET(_request: NextRequest) {
       );
     }
 
-    // Get default location if user has one set
-    let defaultLocation = null;
-    if (user.defaultLocationId) {
-      defaultLocation = await PickupLocation.findById(user.defaultLocationId);
-    }
-
     return NextResponse.json({
       success: true,
       profile: {
@@ -46,18 +37,6 @@ export async function GET(_request: NextRequest) {
         profilePicture: user.profilePicture || null,
         emailVerified: user.emailVerified,
         provider: user.provider,
-        defaultLocationId: user.defaultLocationId || null,
-        defaultLocation: defaultLocation ? {
-          _id: defaultLocation._id.toString(),
-          name: defaultLocation.name,
-          address: defaultLocation.address,
-          lat: defaultLocation.lat,
-          lng: defaultLocation.lng,
-          contactPerson: defaultLocation.contactPerson,
-          contactPhone: defaultLocation.contactPhone,
-          operatingHours: defaultLocation.operatingHours,
-          gmapLink: defaultLocation.gmapLink
-        } : null,
         templateBorderPreference: user.templateBorderPreference || {
           style: 'solid',
           color: 'blue',
@@ -87,7 +66,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, email, phone, defaultLocationId, templateBorderPreference } = body;
+    const { name, email, phone, templateBorderPreference } = body;
 
     await connectDB();
 
@@ -100,124 +79,41 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    let emailChanged = false;
-    let emailVerificationToken = null;
-
-    // Update name if provided
-    if (name !== undefined && name !== null && name.trim() !== '') {
-      user.name = name.trim();
+    // The email is the sign-in identity and ties the customer to their orders, so it
+    // cannot be changed here
+    if (typeof email === 'string' && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+      return NextResponse.json(
+        { success: false, error: 'Your email address cannot be changed here. Contact us if you need it changed.' },
+        { status: 400 }
+      );
     }
 
-    // Update email if provided and different
-    if (email !== undefined && email !== null && email.toLowerCase() !== user.email.toLowerCase()) {
-      const newEmail = email.toLowerCase().trim();
-      
-      // Check if email is already taken
-      const existingUser = await User.findOne({ email: newEmail });
-      if (existingUser && existingUser._id.toString() !== user._id.toString()) {
-        return NextResponse.json(
-          { success: false, error: 'Email is already in use' },
-          { status: 400 }
-        );
-      }
-
-      // Generate verification token for new email
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours
-
-      // Delete any existing verification tokens for this email
-      await VerificationToken.deleteMany({ email: newEmail });
-
-      // Create new verification token
-      await VerificationToken.create({
-        token,
-        email: newEmail,
-        expiresAt,
-      });
-
-      // Update user email and mark as unverified
-      user.email = newEmail;
-      user.emailVerified = false;
-      emailChanged = true;
-      emailVerificationToken = token;
-
-      // Send verification email
-      await sendVerificationEmail(newEmail, user.name, token);
+    if (typeof name === 'string' && name.trim()) {
+      user.name = name.trim().slice(0, 100);
     }
 
-    // Update phone if provided
     if (phone !== undefined && phone !== null) {
-      let phoneNumber = phone.trim();
-      
-      // Handle legacy phone numbers (10-digit without country code)
-      if (needsCountryCode(phoneNumber)) {
-        phoneNumber = `+91${phoneNumber}`;
+      const checked = normalisePhoneInput(phone);
+      if (!checked.ok) {
+        return NextResponse.json({ success: false, error: checked.error }, { status: 400 });
       }
-
-      // Validate phone number format
-      const validation = validatePhoneNumber(phoneNumber);
-      if (!validation.valid) {
-        return NextResponse.json(
-          { success: false, error: validation.error || 'Invalid phone number format' },
-          { status: 400 }
-        );
-      }
-
-      user.phone = validation.formatted || phoneNumber;
+      user.phone = checked.phone;
     }
 
-    // Update default location if provided
-    if (defaultLocationId !== undefined) {
-      if (defaultLocationId === null || defaultLocationId === '') {
-        // Clear default location
-        user.defaultLocationId = undefined;
-      } else {
-        // Verify location exists
-        const location = await PickupLocation.findById(defaultLocationId);
-        if (!location) {
-          return NextResponse.json(
-            { success: false, error: 'Location not found' },
-            { status: 404 }
-          );
-        }
-        user.defaultLocationId = defaultLocationId;
-      }
-    }
-
-    // Update template border preference if provided
-    if (templateBorderPreference !== undefined) {
-      if (!user.templateBorderPreference) {
-        user.templateBorderPreference = {
-          style: 'solid',
-          color: 'blue',
-          width: '2px'
-        };
-      }
-      if (templateBorderPreference.style !== undefined) {
-        user.templateBorderPreference.style = templateBorderPreference.style;
-      }
-      if (templateBorderPreference.color !== undefined) {
-        user.templateBorderPreference.color = templateBorderPreference.color;
-      }
-      if (templateBorderPreference.width !== undefined) {
-        user.templateBorderPreference.width = templateBorderPreference.width;
-      }
+    if (templateBorderPreference && typeof templateBorderPreference === 'object') {
+      user.templateBorderPreference = cleanBorder(templateBorderPreference, user.templateBorderPreference ?? DEFAULT_BORDER);
     }
 
     await user.save();
 
     return NextResponse.json({
       success: true,
-      message: emailChanged 
-        ? 'Profile updated successfully. Please check your email to verify the new email address.'
-        : 'Profile updated successfully',
+      message: 'Profile updated successfully',
       profile: {
         name: user.name,
         email: user.email,
         phone: user.phone || '',
         emailVerified: user.emailVerified,
-        defaultLocationId: user.defaultLocationId || null
       }
     });
 

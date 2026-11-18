@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -31,14 +31,13 @@ interface Partner {
   location: {
     coordinates: [number, number]; // [lng, lat]
   };
-  address: {
-    street: string;
-    city: string;
+  address?: {
+    street?: string;
+    city?: string;
   };
   servicesOffered?: {
-    printing: boolean;
-    binding: boolean;
-    cashOnDelivery: boolean;
+    printing?: boolean;
+    binding?: boolean;
   };
   pricing?: {
     perPageBW: number;
@@ -114,7 +113,29 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
         const markers: any[] = [];
         const priceColor = getMarkerColor(partner.calculatedPrice || 0);
 
-        // ONLY render Delivery Points as requested
+        // The shop itself
+        const [shopLng, shopLat] = partner.location?.coordinates ?? [];
+        if (Number.isFinite(shopLat) && Number.isFinite(shopLng)) {
+          const isShopSelected = partner._id === selectedPartnerId && !selectedDeliveryPoint;
+          markers.push(
+            <Marker key={`${partner._id}-shop`} position={[shopLat, shopLng]} icon={getMarkerIcon(priceColor, isShopSelected)} zIndexOffset={isShopSelected ? 1000 : 0}>
+              <Popup>
+                <div className="font-sans min-w-[200px] space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold leading-tight">{partner.businessName}</h3>
+                    <span className="rounded bg-accent px-2 py-0.5 text-sm font-semibold text-accent-foreground">₹{partner.calculatedPrice}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{partner.address?.street}{partner.address?.city ? `, ${partner.address.city}` : ''}</p>
+                  <button className="w-full rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90" onClick={() => onSelectPartner(partner, undefined)}>
+                    {isShopSelected ? 'Selected' : 'Choose this shop'}
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        }
+
+        // Its delivery points
         if (partner.deliveryPoints && partner.deliveryPoints.length > 0) {
           partner.deliveryPoints.forEach(dp => {
             if (!dp.isActive) return;
@@ -134,16 +155,16 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
                 <Popup>
                   <div className="font-sans min-w-[220px]">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-lg leading-tight text-gray-900">{dp.name}</h3>
-                      <span className="bg-indigo-100 text-indigo-800 text-sm px-2 py-1 rounded font-bold whitespace-nowrap ml-2">
+                      <h3 className="font-bold text-lg leading-tight text-foreground">{dp.name}</h3>
+                      <span className="bg-accent text-accent-foreground text-sm px-2 py-1 rounded font-bold whitespace-nowrap ml-2">
                         ₹{partner.calculatedPrice}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3 border-b pb-2">Serviced by {partner.businessName}</p>
+                    <p className="text-sm text-muted-foreground mb-3 border-b pb-2">Delivery point of {partner.businessName}</p>
                     
                     <div className="mb-3">
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Pricing Rates</p>
-                      <ul className="text-sm space-y-1 text-gray-700">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-1">Pricing Rates</p>
+                      <ul className="text-sm space-y-1 text-foreground">
                         <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{partner.pricing?.perPageBW || 2}</strong></li>
                         <li className="flex justify-between"><span>Color Page:</span> <strong>₹{partner.pricing?.perPageColor || 10}</strong></li>
                         <li className="flex justify-between"><span>Binding:</span> <strong>₹{partner.pricing?.binding || 30}</strong></li>
@@ -151,20 +172,19 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
                     </div>
 
                     <div className="mb-4 flex flex-wrap gap-1">
-                      {partner.servicesOffered?.printing && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">Printing</span>}
-                      {partner.servicesOffered?.binding && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">Binding</span>}
-                      {partner.servicesOffered?.cashOnDelivery && <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 font-medium">COD</span>}
+                      {partner.servicesOffered?.printing && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Printing</span>}
+                      {partner.servicesOffered?.binding && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Binding</span>}
                     </div>
                     
                     <button 
                       className={`w-full py-2.5 rounded-lg font-bold transition-all shadow-sm ${
                         isDpSelected 
-                          ? 'bg-green-600 text-white hover:bg-green-700' 
-                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          ? 'bg-primary text-white hover:bg-primary/90' 
+                          : 'bg-primary text-white hover:bg-primary/90'
                       }`}
                       onClick={() => onSelectPartner(partner, dp.name)}
                     >
-                      {isDpSelected ? '✓ Selected' : 'Select This Location'}
+                      {isDpSelected ? 'Selected' : 'Choose this point'}
                     </button>
                   </div>
                 </Popup>

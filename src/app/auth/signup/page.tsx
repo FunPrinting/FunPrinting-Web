@@ -3,6 +3,14 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AuthShell, BackHome, GoogleButton, OrDivider } from '@/components/auth/AuthShell';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { PhoneNotice } from '@/components/PhoneNotice';
+import { Label } from '@/components/ui/label';
 
 export default function SignUpPage() {
   const [formData, setFormData] = useState({
@@ -17,6 +25,7 @@ export default function SignUpPage() {
   const [success, setSuccess] = useState('');
   const [showResend, setShowResend] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -39,6 +48,12 @@ export default function SignUpPage() {
       return;
     }
 
+    const phoneCheck = normalisePhoneInput(formData.phone);
+    if (!phoneCheck.ok) {
+      setError(phoneCheck.error);
+      setIsLoading(false);
+      return;
+    }
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters long');
       setIsLoading(false);
@@ -55,7 +70,7 @@ export default function SignUpPage() {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          phone: formData.phone,
+          phone: phoneCheck.phone,
         }),
       });
 
@@ -69,6 +84,7 @@ export default function SignUpPage() {
           setSuccess('Account created successfully! However, the verification email could not be sent. Please contact support.');
           setShowResend(true);
         }
+        setRegisteredEmail(formData.email);
         // Clear form
         setFormData({
           name: '',
@@ -104,7 +120,8 @@ export default function SignUpPage() {
   };
 
   const handleResendVerification = async () => {
-    if (!formData.email) {
+    const email = registeredEmail || formData.email;
+    if (!email) {
       setError('Please enter your email address');
       return;
     }
@@ -118,7 +135,7 @@ export default function SignUpPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: formData.email }),
+        body: JSON.stringify({ email }),
       });
 
       const data = await response.json();
@@ -137,190 +154,62 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link href="/auth/signin" className="font-medium text-blue-600 hover:text-blue-500">
-              sign in to your existing account
-            </Link>
-          </p>
-        </div>
-
-        <div className="bg-white py-8 px-6 shadow rounded-lg">
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-              {success}
-            </div>
-          )}
-
-          {showResend && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-              <p className="text-sm text-blue-700 mb-3">
-                Didn&apos;t receive the verification email? Check your spam folder or resend it.
-              </p>
-              <button
-                onClick={handleResendVerification}
-                disabled={isResending}
-                className="w-full py-2 px-4 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isResending ? 'Sending...' : 'Resend Verification Email'}
+    <AuthShell
+      title="Create your account"
+      description={<>Already have one? <Link href="/auth/signin" className="font-medium text-primary hover:underline">Sign in</Link></>}
+      footer={<BackHome />}
+    >
+      {success ? (
+        <Alert className="border-success/30 bg-success/10">
+          <CheckCircle2 className="text-success" />
+          <AlertDescription className="text-success">
+            {success}
+            {showResend ? (
+              <button type="button" onClick={handleResendVerification} disabled={isResending} className="mt-1 block font-medium underline underline-offset-2">
+                {isResending ? 'Sending…' : 'Resend verification email'}
               </button>
-            </div>
-          )}
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {error ? <Alert variant="destructive"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert> : null}
 
-          {/* Google Sign In Button */}
-          <button
-            onClick={handleGoogleSignIn}
-            disabled={isLoading}
-            className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            Continue with Google
-          </button>
+      <GoogleButton onClick={handleGoogleSignIn} disabled={isLoading}>Sign up with Google</GoogleButton>
+      <OrDivider />
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or create account with email</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Email/Password Form */}
-          <form className="mt-6 space-y-4" onSubmit={handleEmailSignUp}>
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                Full Name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                required
-                value={formData.name}
-                onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your full name"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.email}
-                onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your email"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                Phone Number (Optional)
-              </label>
-              <input
-                id="phone"
-                name="phone"
-                type="tel"
-                autoComplete="tel"
-                value={formData.phone}
-                onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your phone number"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.password}
-                onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Create a password (min 6 characters)"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.confirmPassword}
-                onChange={handleInputChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Confirm your password"
-              />
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? 'Creating account...' : 'Create account'}
-              </button>
-            </div>
-          </form>
+      <form className="space-y-4" onSubmit={handleEmailSignUp}>
+        <div className="space-y-2">
+          <Label htmlFor="name">Full name</Label>
+          <Input id="name" name="name" type="text" autoComplete="name" value={formData.name} onChange={handleInputChange} className="h-11" required />
         </div>
-
-        <div className="text-center">
-          <Link href="/" className="text-sm text-gray-600 hover:text-gray-500">
-            ← Back to home
-          </Link>
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" name="email" type="email" autoComplete="email" value={formData.email} onChange={handleInputChange} className="h-11" required placeholder="you@example.com" />
         </div>
-      </div>
-    </div>
+        <div className="space-y-2">
+          <Label htmlFor="phone">Mobile number</Label>
+          <Input id="phone" name="phone" type="tel" autoComplete="tel" inputMode="tel" required value={formData.phone} onChange={handleInputChange} className="h-11" placeholder="98765 43210" aria-describedby="phone-hint" />
+          <PhoneNotice id="phone-hint" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input id="password" name="password" type="password" autoComplete="new-password" value={formData.password} onChange={handleInputChange} className="h-11" required minLength={6} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">Confirm password</Label>
+          <Input id="confirmPassword" name="confirmPassword" type="password" autoComplete="new-password" value={formData.confirmPassword} onChange={handleInputChange} className="h-11" required minLength={6} />
+        </div>
+        </div>
+        <p className="text-xs text-muted-foreground">At least 6 characters. We send a link to confirm your email.</p>
+        <Button type="submit" className="h-11 w-full" disabled={isLoading}>
+          {isLoading ? <Loader2 className="animate-spin" /> : null}
+          {isLoading ? 'Creating account…' : 'Create account'}
+        </Button>
+        <p className="text-center text-xs text-muted-foreground">
+          By signing up you agree to the <Link href="/terms" className="underline">terms</Link> and <Link href="/privacy" className="underline">privacy policy</Link>.
+        </p>
+      </form>
+    </AuthShell>
   );
 }

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Placeholder values so `next build` can run. No real secrets: the build never
+    # connects to these services.
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      MONGODB_URI: mongodb://127.0.0.1:27017/ci
+      NEXTAUTH_SECRET: ci-placeholder-secret-0123456789
+      NEXTAUTH_URL: http://localhost:3000
+      RAZORPAY_KEY_ID: rzp_test_ci
+      RAZORPAY_KEY_SECRET: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

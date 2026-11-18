@@ -1,138 +1,98 @@
 'use client';
 
 import Link from 'next/link';
+import { Clock, Globe, Mail, MapPin, Phone, Printer } from 'lucide-react';
 import { useAdminInfo } from '@/hooks/useAdminInfo';
-import { FacebookIcon, InstagramIcon, TwitterIcon, LinkedInIcon, YouTubeIcon, LocationIcon, EmailIcon, PhoneIcon, ClockIcon, WebsiteIcon } from '@/components/SocialIcons';
+import { FacebookIcon, InstagramIcon, LinkedInIcon, TwitterIcon, YouTubeIcon } from '@/components/SocialIcons';
 
+const SERVICE = [
+  { href: '/order', label: 'Order prints' },
+  { href: '/templates', label: 'Templates' },
+  { href: '/my-orders', label: 'Track an order' },
+  { href: '/partner', label: 'Become a partner' },
+];
+
+const POLICIES = [
+  { href: '/terms', label: 'Terms & conditions' },
+  { href: '/privacy', label: 'Privacy policy' },
+  { href: '/cancellation-refund', label: 'Cancellation & refund' },
+  { href: '/return-policy', label: 'Return policy' },
+  { href: '/shipping-delivery', label: 'Shipping & delivery' },
+  { href: '/contact', label: 'Contact us' },
+];
+
+const SOCIAL = [
+  { key: 'facebook', label: 'Facebook', Icon: FacebookIcon },
+  { key: 'instagram', label: 'Instagram', Icon: InstagramIcon },
+  { key: 'twitter', label: 'Twitter', Icon: TwitterIcon },
+  { key: 'linkedin', label: 'LinkedIn', Icon: LinkedInIcon },
+  { key: 'youtube', label: 'YouTube', Icon: YouTubeIcon },
+] as const;
+
+function LinkList({ title, links }: { title: string; links: { href: string; label: string }[] }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <ul className="mt-3 space-y-2">
+        {links.map((l) => (
+          <li key={l.href}>
+            <Link href={l.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">{l.label}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Contact details and social links come from Admin → Site info; nothing is shown that isn't set there. */
 export default function Footer() {
-  const { adminInfo, loading } = useAdminInfo();
-
-  const footerLinks = [
-    { href: '/terms', label: 'Terms & Conditions' },
-    { href: '/privacy', label: 'Privacy Policy' },
-    { href: '/cancellation-refund', label: 'Cancellation & Refund' },
-    { href: '/return-policy', label: 'Return & Refund Policy' },
-    { href: '/shipping-delivery', label: 'Shipping & Delivery' },
-    { href: '/contact', label: 'Contact Us' },
-  ];
-
-  // Helper function to get the appropriate icon component
-  const getSocialIcon = (label: string) => {
-    switch (label) {
-      case 'Facebook':
-        return FacebookIcon;
-      case 'Instagram':
-        return InstagramIcon;
-      case 'Twitter':
-        return TwitterIcon;
-      case 'LinkedIn':
-        return LinkedInIcon;
-      case 'YouTube':
-        return YouTubeIcon;
-      default:
-        return null;
-    }
-  };
-
-  // Default social links if admin info is not available
-  const defaultSocialLinks = [
-    { href: '#', label: 'Facebook' },
-    { href: '#', label: 'Twitter' },
-    { href: '#', label: 'Instagram' },
-    { href: '#', label: 'LinkedIn' },
-  ];
-
-  // Create social links from admin info
-  const socialLinks = adminInfo?.socialMedia ? [
-    ...(adminInfo.socialMedia.facebook ? [{ href: adminInfo.socialMedia.facebook, label: 'Facebook' }] : []),
-    ...(adminInfo.socialMedia.twitter ? [{ href: adminInfo.socialMedia.twitter, label: 'Twitter' }] : []),
-    ...(adminInfo.socialMedia.instagram ? [{ href: adminInfo.socialMedia.instagram, label: 'Instagram' }] : []),
-    ...(adminInfo.socialMedia.linkedin ? [{ href: adminInfo.socialMedia.linkedin, label: 'LinkedIn' }] : []),
-    ...(adminInfo.socialMedia.youtube ? [{ href: adminInfo.socialMedia.youtube, label: 'YouTube' }] : []),
-  ] : defaultSocialLinks;
+  const { adminInfo: info } = useAdminInfo();
+  const name = info?.name || 'Fun Printing';
+  const social = SOCIAL.filter((s) => info?.socialMedia?.[s.key]);
+  const address = info?.address ? [info.address, info.city, info.state, info.pincode].filter(Boolean).join(', ') : '';
+  const hours = info?.businessHours?.monday ? `${info.businessHours.monday}${info.businessHours.saturday && info.businessHours.saturday !== info.businessHours.monday ? ` · Sat ${info.businessHours.saturday}` : ''}` : '';
 
   return (
-    <footer className="bg-gray-800 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* Company Info */}
-          <div className="col-span-1 md:col-span-2">
-            <h3 className="text-2xl font-bold text-blue-400 mb-4">
-              {adminInfo?.name || 'Fun Printing Service'}
-            </h3>
-            <p className="text-gray-300 mb-4">
-              {adminInfo?.description || 'Your trusted printing partner for all academic needs. Fast, reliable, and affordable printing services for college students.'}
-            </p>
-            <div className="flex space-x-4">
-              {socialLinks.map((social) => {
-                const IconComponent = getSocialIcon(social.label);
-                if (!IconComponent) return null;
-                
-                return (
-                  <a
-                    key={social.label}
-                    href={social.href}
-                    className="text-gray-400 hover:text-blue-400 transition-colors"
-                    aria-label={social.label}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconComponent size={28} className="w-7 h-7" />
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Quick Links */}
-          <div>
-            <h4 className="text-lg font-semibold mb-4">Quick Links</h4>
-            <ul className="space-y-2">
-              {footerLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-300 hover:text-blue-400 transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
+    <footer className="border-t bg-card">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
+        <div className="space-y-4">
+          <Link href="/" className="inline-flex items-center gap-2 font-semibold">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground"><Printer className="size-4" aria-hidden /></span>
+            {name}
+          </Link>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            {info?.description || 'Upload your documents, pick a nearby print shop and collect your prints, or get them delivered.'}
+          </p>
+          {social.length ? (
+            <div className="flex gap-3">
+              {social.map(({ key, label, Icon }) => (
+                <a key={key} href={info!.socialMedia![key]} target="_blank" rel="noopener noreferrer" aria-label={label} className="text-muted-foreground transition-colors hover:text-foreground">
+                  <Icon size={20} className="size-5" />
+                </a>
               ))}
-            </ul>
-          </div>
-
-          {/* Contact Info */}
-          <div>
-            <h4 className="text-lg font-semibold mb-4">Contact Info</h4>
-            <div className="space-y-2 text-gray-300">
-              <p className="flex items-start gap-2">
-                <LocationIcon size={20} className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                <span>{adminInfo?.address ? `${adminInfo.address}, ${adminInfo.city}, ${adminInfo.state} ${adminInfo.pincode}` : 'College Campus'}</span>
-              </p>
-              <p className="flex items-center gap-2">
-                <EmailIcon size={20} className="w-5 h-5 flex-shrink-0" />
-                <span>{adminInfo?.email || 'info@printservice.com'}</span>
-              </p>
-              <p className="flex items-center gap-2">
-                <PhoneIcon size={20} className="w-5 h-5 flex-shrink-0" />
-                <span>{adminInfo?.phone || '+91 98765 43210'}</span>
-              </p>
-              <p className="flex items-center gap-2">
-                <ClockIcon size={20} className="w-5 h-5 flex-shrink-0" />
-                <span>{adminInfo?.businessHours ? `${adminInfo.businessHours.monday} - ${adminInfo.businessHours.saturday}` : 'Mon-Sat: 9AM-6PM'}</span>
-              </p>
-              {adminInfo?.website && (
-                <p className="flex items-center gap-2">
-                  <WebsiteIcon size={20} className="w-5 h-5 flex-shrink-0" />
-                  <a href={adminInfo.website} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">{adminInfo.website}</a>
-                </p>
-              )}
             </div>
-          </div>
+          ) : null}
         </div>
 
-        <div className="border-t border-gray-700 mt-8 pt-8 text-center text-gray-400">
-          <p>&copy; 2024 {adminInfo?.name || 'Fun Printing Service'}. All rights reserved.</p>
+        <LinkList title="Service" links={SERVICE} />
+        <LinkList title="Policies" links={POLICIES} />
+
+        <div>
+          <h3 className="text-sm font-semibold">Contact</h3>
+          <ul className="mt-3 space-y-2.5 text-sm text-muted-foreground">
+            {address ? <li className="flex gap-2"><MapPin className="mt-0.5 size-4 shrink-0" aria-hidden />{address}</li> : null}
+            {info?.email ? <li className="flex gap-2"><Mail className="mt-0.5 size-4 shrink-0" aria-hidden /><a href={`mailto:${info.email}`} className="hover:text-foreground">{info.email}</a></li> : null}
+            {info?.phone ? <li className="flex gap-2"><Phone className="mt-0.5 size-4 shrink-0" aria-hidden /><a href={`tel:${info.phone.replace(/\s+/g, '')}`} className="hover:text-foreground">{info.phone}</a></li> : null}
+            {hours ? <li className="flex gap-2"><Clock className="mt-0.5 size-4 shrink-0" aria-hidden />{hours}</li> : null}
+            {info?.website ? <li className="flex gap-2"><Globe className="mt-0.5 size-4 shrink-0" aria-hidden /><a href={info.website} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">{info.website.replace(/^https?:\/\//, '')}</a></li> : null}
+            {!address && !info?.email && !info?.phone ? <li><Link href="/contact" className="hover:text-foreground">Get in touch</Link></li> : null}
+          </ul>
+        </div>
+      </div>
+      <div className="border-t">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p>© {new Date().getFullYear()} {name}. All rights reserved.</p>
+          <p>Payments secured by Razorpay</p>
         </div>
       </div>
     </footer>

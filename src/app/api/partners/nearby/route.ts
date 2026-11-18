@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Partner from '@/models/Partner';
+import { courierReady } from '@/lib/delivery/options';
 
 export async function GET(request: Request) {
   try {
@@ -59,7 +60,10 @@ export async function GET(request: Request) {
       query['supportedPrinters.paperSizes'] = 'A3';
     }
 
-    const nearbyPartners = await Partner.find(query).select('-earnings -__v').lean();
+    // Public listing: only what customers need to choose a shop (no account ids, owner, payouts)
+    const nearbyPartners = await Partner.find(query)
+      .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
+      .lean();
 
     // Calculate distance and sort
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -76,7 +80,16 @@ export async function GET(request: Request) {
       const pLat = p.location?.coordinates[1] || 0;
       const pLng = p.location?.coordinates[0] || 0;
       const distance = calculateDistance(latitude, longitude, pLat, pLng);
-      return { ...p, distance };
+      // Delivery: say what the shop offers, never its internal courier settings
+      const { delivery, ...rest } = p;
+      return {
+        ...rest,
+        distance,
+        delivery: {
+          courier: courierReady(p),
+          self: delivery?.self?.enabled ? { radiusKm: delivery.self.radiusKm, fee: delivery.self.fee, etaMinutes: delivery.self.etaMinutes } : null,
+        },
+      };
     });
 
     partnersWithDistance.sort((a, b) => a.distance - b.distance);

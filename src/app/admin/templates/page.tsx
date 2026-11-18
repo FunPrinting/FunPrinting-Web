@@ -1,255 +1,151 @@
 'use client';
 
 import Link from 'next/link';
-import AdminGoogleAuth from '@/components/admin/AdminGoogleAuth';
-import { DocumentIcon, ChartIcon } from '@/components/SocialIcons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
+import { Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { categoryLabel, priceLabel } from '@/lib/templates';
+import { PageHeader } from '@/components/admin/PageHeader';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-function AdminTemplatesPageContent() {
-  return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Template Management</h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Create and manage dynamic Word templates with placeholders for personalized document generation
-          </p>
-        </div>
-
-        {/* Template Management Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* PDF Templates - Fixed Link */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-            <div className="bg-blue-600 p-6">
-              <div className="text-white text-center">
-                <div className="flex justify-center mb-2">
-                  <DocumentIcon size={32} className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg font-semibold mb-1">PDF Templates</h3>
-                <p className="text-blue-100 text-sm">Static PDF templates</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                  Assignment Cover Pages
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                  Templates
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                  Lab Report Templates
-                </div>
-              </div>
-              <Link
-                href="/admin/templates/upload"
-                className="block w-full bg-blue-600 text-white text-center py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                Upload PDF Template
-              </Link>
-            </div>
-          </div>
-
-          {/* Dynamic Templates - Main Feature */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden border-2 border-purple-200">
-            <div className="bg-purple-600 p-6">
-              <div className="text-white text-center">
-                <div className="text-3xl mb-2">🔧</div>
-                <h3 className="text-lg font-semibold mb-1">Dynamic Templates</h3>
-                <p className="text-purple-100 text-sm">Interactive Word templates</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                  Upload Word Files
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                  Auto-detect Placeholders
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                  Generate Forms
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Link
-                  href="/admin/templates/dynamic/upload"
-                  className="block w-full bg-purple-600 text-white text-center py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors text-sm"
-                >
-                  Create New Template
-                </Link>
-                <Link
-                  href="/admin/templates/dynamic"
-                  className="block w-full bg-gray-100 text-gray-700 text-center py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
-                >
-                  Manage Templates
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Template Statistics - Real Data */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-            <div className="bg-green-600 p-6">
-              <div className="text-white text-center">
-                <div className="flex justify-center mb-2">
-                  <ChartIcon size={32} className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg font-semibold mb-1">Statistics</h3>
-                <p className="text-green-100 text-sm">Template overview</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Active Templates
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Categories Available
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Recent Activity
-                </div>
-              </div>
-              <Link
-                href="/admin/templates/dynamic"
-                className="block w-full bg-green-600 text-white text-center py-2 px-4 rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                View All Templates
-              </Link>
-            </div>
-          </div>
-
-          {/* Quick Actions - Simplified */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-            <div className="bg-indigo-600 p-6">
-              <div className="text-white text-center">
-                <div className="text-3xl mb-2">⚡</div>
-                <h3 className="text-lg font-semibold mb-1">Quick Actions</h3>
-                <p className="text-indigo-100 text-sm">Common operations</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
-                  Duplicate Template
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
-                  Export Templates
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
-                  Bulk Operations
-                </div>
-              </div>
-              <button 
-                onClick={() => window.location.href = '/admin/templates/dynamic/upload'}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors text-sm"
-              >
-                Quick Upload
-              </button>
-            </div>
-          </div>
-
-          {/* Help & Documentation - Simplified */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-            <div className="bg-teal-600 p-6">
-              <div className="text-white text-center">
-                <div className="text-3xl mb-2">❓</div>
-                <h3 className="text-lg font-semibold mb-1">Help</h3>
-                <p className="text-teal-100 text-sm">Get assistance</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                  How to use placeholders
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                  Template best practices
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-teal-500 rounded-full mr-2"></span>
-                  Troubleshooting
-                </div>
-              </div>
-              <button 
-                onClick={() => alert('Help documentation coming soon!')}
-                className="w-full bg-teal-600 text-white py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors text-sm"
-              >
-                View Help
-              </button>
-            </div>
-          </div>
-
-          {/* System Status - New */}
-          <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-            <div className="bg-gray-600 p-6">
-              <div className="text-white text-center">
-                <div className="text-3xl mb-2">🔧</div>
-                <h3 className="text-lg font-semibold mb-1">System Status</h3>
-                <p className="text-gray-100 text-sm">Service health</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Template Processing: Online
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  File Storage: Active
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Database: Connected
-                </div>
-              </div>
-              <button 
-                onClick={() => alert('All systems operational!')}
-                className="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors text-sm"
-              >
-                Check Status
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Back to Admin Dashboard */}
-        <div className="text-center mt-12">
-          <Link
-            href="/admin"
-            className="inline-flex items-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            ← Back to Admin Dashboard
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+interface Row {
+  id: string;
+  name: string;
+  category: string;
+  fields: number;
+  isPublic: boolean;
+  isPaid: boolean;
+  price: number;
+  ownerName: string;
+  ownerEmail: string;
+  createdByType?: string;
+  createdAt: string;
 }
 
 export default function AdminTemplatesPage() {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [toDelete, setToDelete] = useState<Row | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const res = await fetch('/api/admin/templates/all');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'We couldn’t load the templates.');
+      setRows(data.templates);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'We couldn’t load the templates.');
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (rows ?? []).filter((r) => !q || [r.name, r.ownerName, r.ownerEmail].some((s) => s.toLowerCase().includes(q)));
+  }, [rows, query]);
+
+  const setPublic = async (r: Row, isPublic: boolean) => {
+    setToggling(r.id);
+    try {
+      const res = await fetch(`/api/templates/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isPublic }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'The change failed.');
+      setRows((all) => (all ?? []).map((x) => (x.id === r.id ? { ...x, isPublic } : x)));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'The change failed.');
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!toDelete) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/templates/${toDelete.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'We couldn’t delete the template.');
+      setRows((all) => (all ?? []).filter((x) => x.id !== toDelete.id));
+      toast.success('Template deleted');
+      setToDelete(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'We couldn’t delete the template.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <AdminGoogleAuth 
-      title="Template Management"
-      subtitle="Sign in with Google to create and manage dynamic Word templates"
-    >
-      <AdminTemplatesPageContent />
-    </AdminGoogleAuth>
+    <>
+      <PageHeader
+        title="Templates"
+        description="Every template on the site, including private ones. Creators manage their own from My templates."
+        actions={<Button asChild><Link href="/templates/create"><Plus />New template</Link></Button>}
+      />
+      {error ? <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+      <div className="relative mb-4 max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or owner" aria-label="Search templates" />
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>Template</TableHead><TableHead>Owner</TableHead><TableHead>Price</TableHead><TableHead className="text-right">Fields</TableHead><TableHead>Public</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows === null ? (
+              <TableRow><TableCell colSpan={6} className="py-10 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" aria-label="Loading" /></TableCell></TableRow>
+            ) : shown.length === 0 ? (
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No templates.</TableCell></TableRow>
+            ) : (
+              shown.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell>
+                    <Link href={`/templates/fill/${r.id}`} className="font-medium hover:underline">{r.name}</Link>
+                    <p className="text-xs text-muted-foreground">{categoryLabel(r.category)} · {new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-sm">{r.ownerName || '—'}</p>
+                    <p className="text-xs text-muted-foreground">{r.ownerEmail}</p>
+                  </TableCell>
+                  <TableCell><Badge variant={r.isPaid ? 'default' : 'secondary'}>{priceLabel(r)}</Badge></TableCell>
+                  <TableCell className="text-right tabular-nums">{r.fields}</TableCell>
+                  <TableCell><Switch checked={r.isPublic} disabled={toggling === r.id} onCheckedChange={(v) => setPublic(r, v)} aria-label={`${r.name} is public`} /></TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild size="icon-sm" variant="ghost" aria-label={`Edit ${r.name}`}><Link href={`/templates/edit/${r.id}`}><Pencil /></Link></Button>
+                    <Button size="icon-sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setToDelete(r)} aria-label={`Delete ${r.name}`}><Trash2 /></Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ConfirmDialog
+        open={Boolean(toDelete)}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title="Delete this template?"
+        description={`“${toDelete?.name}” is removed for everyone, including its owner. This cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        busy={busy}
+        onConfirm={remove}
+      />
+    </>
   );
 }

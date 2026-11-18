@@ -1,275 +1,114 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
-interface PayoutSettings {
+interface Settings {
   upiId: string;
-  bankDetails: {
-    accountHolderName: string;
-    accountNumber: string;
-    ifscCode: string;
-    bankName: string;
-  };
+  bankDetails: { accountHolderName: string; accountNumber: string; ifscCode: string; bankName: string };
 }
+const EMPTY: Settings = { upiId: '', bankDetails: { accountHolderName: '', accountNumber: '', ifscCode: '', bankName: '' } };
 
 export default function PayoutSettingsPage() {
-  const { data: session, status } = useSession();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { status } = useSession();
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [settings, setSettings] = useState<Settings>(EMPTY);
   const [password, setPassword] = useState('');
-  
-  const [settings, setSettings] = useState<PayoutSettings>({
-    upiId: '',
-    bankDetails: {
-      accountHolderName: '',
-      accountNumber: '',
-      ifscCode: '',
-      bankName: '',
-    },
-  });
+  const [error, setError] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [commission, setCommission] = useState(20);
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/auth/signin');
-      return;
-    }
-
-    if (status === 'authenticated') {
-      fetchSettings();
-    }
+    if (status === 'unauthenticated') router.push('/auth/signin?callbackUrl=/payout-settings');
+    if (status !== 'authenticated') return;
+    fetch('/api/user/payout-settings')
+      .then((r) => r.json())
+      .then((d) => d.payoutSettings && setSettings(d.payoutSettings))
+      .catch(() => toast.error('We couldn’t load your saved details.'))
+      .finally(() => setLoaded(true));
+    fetch('/api/pricing').then((r) => r.json()).then((d) => typeof d.pricing?.templateCommissionPercent === 'number' && setCommission(d.pricing.templateCommissionPercent)).catch(() => undefined);
   }, [status, router]);
 
-  const fetchSettings = async () => {
-    try {
-      const response = await fetch('/api/user/payout-settings');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.payoutSettings) {
-          setSettings(data.payoutSettings);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching payout settings:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (status !== 'authenticated' || !loaded) {
+    return <div className="grid min-h-[60vh] place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" /></div>;
+  }
 
-  const handleSave = async (e: React.FormEvent) => {
+  const setBank = (k: keyof Settings['bankDetails'], v: string) => setSettings((s) => ({ ...s, bankDetails: { ...s.bankDetails, [k]: v } }));
+
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     setSaving(true);
-    setMessage(null);
-
     try {
-      const response = await fetch('/api/user/payout-settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...settings, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage({ type: 'success', text: 'Payout settings saved successfully!' });
-        setPassword(''); // Clear password after successful save
-      } else {
-        setMessage({ type: 'error', text: data.error || 'Failed to save settings' });
+      const res = await fetch('/api/user/payout-settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...settings, password }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNeedsPassword(/No password set/i.test(data.error ?? ''));
+        throw new Error(data.error || 'We couldn’t save your details.');
       }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'An error occurred while saving' });
+      setNeedsPassword(false);
+      setPassword('');
+      toast.success('Payout details saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'We couldn’t save your details.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (status === 'loading' || loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link href="/my-templates" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
-            ← Back to My Templates
-          </Link>
-          <h1 className="text-3xl font-bold text-gray-900">Payout Settings</h1>
-          <p className="mt-2 text-gray-600">
-            Set up your payment details to receive earnings from your paid templates.
-          </p>
-        </div>
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+      <Button asChild variant="ghost" size="sm" className="-ml-2 mb-4"><Link href="/my-templates"><ArrowLeft />My templates</Link></Button>
+      <h1 className="text-3xl font-semibold">Payout details</h1>
+      <p className="mt-2 text-muted-foreground">Where we send what you earn from paid templates. You get the price minus our {commission}% commission. Earnings are paid out in batches.</p>
 
-        {/* Message */}
-        {message && (
-          <div className={`mb-6 p-4 rounded-lg ${
-            message.type === 'success' 
-              ? 'bg-green-50 border border-green-200 text-green-800' 
-              : 'bg-red-50 border border-red-200 text-red-800'
-          }`}>
-            {message.text}
-          </div>
-        )}
+      <form onSubmit={save} className="mt-6 flex flex-col gap-6">
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Not saved</AlertTitle>
+            <AlertDescription>{error}{needsPassword ? <> <Link href="/auth/setup-password" className="underline">Set a password</Link>, then try again.</> : null}</AlertDescription>
+          </Alert>
+        ) : null}
 
-        <form onSubmit={handleSave} className="space-y-8">
-          {/* UPI Section */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="text-2xl mr-2">📱</span>
-              UPI Payment
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Enter your UPI ID to receive payments directly to your UPI-enabled bank account.
-            </p>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                UPI ID
-              </label>
-              <input
-                type="text"
-                value={settings.upiId}
-                onChange={(e) => setSettings(prev => ({ ...prev, upiId: e.target.value }))}
-                placeholder="yourname@upi"
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Example: yourname@paytm, yourname@ybl, yourname@okaxis
-              </p>
-            </div>
-          </div>
+        <Card>
+          <CardHeader><CardTitle>UPI</CardTitle><CardDescription>The fastest way to be paid.</CardDescription></CardHeader>
+          <CardContent className="space-y-2">
+            <Label htmlFor="upi">UPI ID</Label>
+            <Input id="upi" autoComplete="off" placeholder="yourname@okaxis" value={settings.upiId} onChange={(e) => setSettings((s) => ({ ...s, upiId: e.target.value }))} />
+          </CardContent>
+        </Card>
 
-          {/* Bank Account Section */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="text-2xl mr-2">🏦</span>
-              Bank Account (Optional)
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Add your bank account details as a backup payment method. This is optional if you have UPI set up.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Account Holder Name
-                </label>
-                <input
-                  type="text"
-                  value={settings.bankDetails.accountHolderName}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    bankDetails: { ...prev.bankDetails, accountHolderName: e.target.value }
-                  }))}
-                  placeholder="As per bank records"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+        <Card>
+          <CardHeader><CardTitle>Bank account (optional)</CardTitle><CardDescription>A backup if UPI does not work.</CardDescription></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="holder">Account holder</Label><Input id="holder" autoComplete="off" value={settings.bankDetails.accountHolderName} onChange={(e) => setBank('accountHolderName', e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="bank">Bank name</Label><Input id="bank" autoComplete="off" value={settings.bankDetails.bankName} onChange={(e) => setBank('bankName', e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="acc">Account number</Label><Input id="acc" inputMode="numeric" autoComplete="off" placeholder="9 to 18 digits" value={settings.bankDetails.accountNumber} onChange={(e) => setBank('accountNumber', e.target.value.replace(/\D/g, ''))} /></div>
+            <div className="space-y-2"><Label htmlFor="ifsc">IFSC code</Label><Input id="ifsc" autoComplete="off" placeholder="SBIN0001234" value={settings.bankDetails.ifscCode} onChange={(e) => setBank('ifscCode', e.target.value.toUpperCase())} /></div>
+          </CardContent>
+        </Card>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Bank Name
-                </label>
-                <input
-                  type="text"
-                  value={settings.bankDetails.bankName}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    bankDetails: { ...prev.bankDetails, bankName: e.target.value }
-                  }))}
-                  placeholder="e.g., State Bank of India"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+        <Card>
+          <CardHeader><CardTitle>Confirm it is you</CardTitle><CardDescription>Enter your password to change payout details.</CardDescription></CardHeader>
+          <CardContent className="space-y-2">
+            <Label htmlFor="pw">Password</Label>
+            <Input id="pw" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          </CardContent>
+        </Card>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Account Number
-                </label>
-                <input
-                  type="text"
-                  value={settings.bankDetails.accountNumber}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    bankDetails: { ...prev.bankDetails, accountNumber: e.target.value.replace(/\D/g, '') }
-                  }))}
-                  placeholder="9-18 digit account number"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  IFSC Code
-                </label>
-                <input
-                  type="text"
-                  value={settings.bankDetails.ifscCode}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    bankDetails: { ...prev.bankDetails, ifscCode: e.target.value.toUpperCase() }
-                  }))}
-                  placeholder="e.g., SBIN0001234"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-medium text-blue-800 mb-2">💡 How Payouts Work</h3>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• When someone purchases your paid template, you earn the template price minus platform commission.</li>
-              <li>• The platform commission is currently set by the admin (typically 20%).</li>
-              <li>• Earnings are accumulated and paid out periodically.</li>
-              <li>• UPI is the preferred and fastest payment method.</li>
-            </ul>
-          </div>
-
-          {/* Password Section */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password (required to update)
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter your password"
-              />
-            </div>
-          </div>
-
-          {/* Save Button */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {saving ? 'Saving...' : 'Save Payout Settings'}
-            </button>
-          </div>
-        </form>
-      </div>
+        <div><Button type="submit" size="lg" disabled={saving || !password}>{saving ? <Loader2 className="animate-spin" /> : null}Save payout details</Button></div>
+      </form>
     </div>
   );
 }
-
-

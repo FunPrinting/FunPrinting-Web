@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/authz';
 import connectDB from '@/lib/mongodb';
 import CreatorEarning from '@/models/CreatorEarning';
 import User from '@/models/User';
 import { processCreatorPayout } from '@/lib/razorpayPayouts';
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await connectDB();
     
