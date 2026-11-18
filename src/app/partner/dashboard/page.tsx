@@ -9,6 +9,7 @@ import PartnerDevices from '@/components/partner/PartnerDevices';
 import { statusInfo } from '@/lib/orderStatus';
 import { fulfilmentOf, nextPartnerStatuses, PARTNER_STATUS_LABEL } from '@/lib/partnerOrderTransitions';
 import { orderPartnerShare } from '@/lib/payments/money';
+import { PARTNER_APP_RELEASES } from '@/lib/partnerApps';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -26,12 +27,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 type Partner = any;
 type PartnerOrder = any;
 
-const RELEASES = {
-  windows: 'https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.exe',
-  mac: 'https://github.com/FunPrinting/partner-desktop/releases/latest/download/FunPrintingPartner-Setup.dmg',
-  android: 'https://github.com/FunPrinting/partner-mobile/releases/latest/download/FunPrintingPartner.apk',
-  desktopAll: 'https://github.com/FunPrinting/partner-desktop/releases/latest',
-};
+const RELEASES = PARTNER_APP_RELEASES;
 
 const TONE = { neutral: 'bg-muted text-muted-foreground', primary: 'bg-accent text-accent-foreground', success: 'bg-success/10 text-success', warning: 'bg-warning/10 text-warning', danger: 'bg-destructive/10 text-destructive' };
 

@@ -82,6 +82,17 @@ export const errorReportRateLimit = new Ratelimit({
 });
 
 /**
+ * Rate limiter for the contact form
+ * Allows 3 messages per 10 minutes per IP
+ */
+export const contactRateLimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(3, '10 m'),
+    prefix: 'ratelimit:contact',
+    analytics: false,
+});
+
+/**
  * Get client identifier from request (IP address or fallback)
  */
 export function getClientIdentifier(request: NextRequest): string {

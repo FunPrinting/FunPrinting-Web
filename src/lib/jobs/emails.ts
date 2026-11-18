@@ -5,13 +5,13 @@ import { logger } from '@/lib/logger';
 /** Customer emails sent by the job service. Failures are logged, never thrown. */
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-async function send(to: string, subject: string, html: string): Promise<boolean> {
+async function send(to: string, subject: string, html: string, replyTo?: string): Promise<boolean> {
   if (!isMailConfigured()) {
     logger.warn({ subject }, 'email not configured; customer email skipped');
     return false;
   }
   try {
-    await getMailTransporter().sendMail({ from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER, to, subject, html });
+    await getMailTransporter().sendMail({ from: process.env.EMAIL_USER || process.env.EMAIL_HOST_USER, to, subject, html, ...(replyTo ? { replyTo } : {}) });
     return true;
   } catch (error) {
     logger.error({ err: error, subject }, 'customer email failed');
@@ -67,5 +67,22 @@ export async function sendPartnerApplicationEmail(opts: { businessName: string; 
       `<p><b>${escape(opts.businessName)}</b>${opts.city ? ` (${escape(opts.city)})` : ''} applied to become a partner shop.</p>
       <p><a href="${site}/admin" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Review in the admin dashboard</a></p>`
     )
+  );
+}
+
+/** A message from the contact form, sent to the admins. Reply goes to the customer. */
+export async function sendContactMessageEmail(opts: { name: string; email: string; phone: string; topic: string; message: string }) {
+  const { getAdminEmails } = await import('@/lib/authz');
+  const to = getAdminEmails();
+  if (!to.length) return false;
+  return send(
+    to.join(','),
+    `Contact form (${opts.topic}): ${opts.name}`,
+    layout(
+      'New message from the contact form',
+      `<p><b>${escape(opts.name)}</b><br>${escape(opts.email)} · ${escape(opts.phone)}<br>Topic: ${escape(opts.topic)}</p>
+      <p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px">${escape(opts.message)}</p>`
+    ),
+    opts.email
   );
 }

@@ -59,7 +59,6 @@ Rules for new code:
 | `/api/delivery/options` | GET | public, rate-limited | Pickup / shop delivery / courier options for one shop and address (docs/DELIVERY.md) | |
 | `/api/partner/orders/[orderId]/ship` | POST | partner | Shop books the courier pickup after printing | |
 | `/api/webhooks/courier-updates` | POST | `x-api-key` = `SHIPROCKET_WEBHOOK_TOKEN` | Shiprocket tracking; marks courier orders delivered | |
-| `/api/user/orders`, `/api/user/orders/[orderId]` | GET | session | Customer dashboard | |
 
 ### Print jobs (docs/PRINT_JOBS.md)
 | Route | Methods | Guard | Notes |

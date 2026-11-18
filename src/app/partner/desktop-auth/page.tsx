@@ -1,115 +1,93 @@
 'use client';
 
-import { useSession, signIn } from 'next-auth/react';
-import { useEffect, useState, Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { signIn, useSession } from 'next-auth/react';
+import { CircleAlert, Loader2 } from 'lucide-react';
 import { isAllowedCallback } from '@/lib/partnerAuth/callbacks';
+import { AuthShell } from '@/components/auth/AuthShell';
 
-function DesktopAuthContent() {
-  const { data: session, status } = useSession();
-  const searchParams = useSearchParams();
+/** Opened by the Partner apps: signs the shop in on the web, then hands a one-time code back to the app. */
+function DesktopAuth() {
+  const { status } = useSession();
+  const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const callback = searchParams?.get('callback');
-    
-    if (!callback) {
-      setError('No callback URL provided by the desktop app.');
-      return;
-    }
+    const callback = params.get('callback');
+    if (!callback) return setError('The app did not say where to return to. Open the sign-in from the Partner app again.');
+    if (!isAllowedCallback(callback)) return setError('This sign-in link is not from a Fun Printing Partner app.');
+    const codeChallenge = params.get('code_challenge');
+    const state = params.get('state') || '';
 
-    if (!isAllowedCallback(callback)) {
-      setError('This sign-in link is not from a recognised Fun Printing Partner app.');
-      return;
-    }
-
-    const codeChallenge = searchParams?.get('code_challenge');
-    const state = searchParams?.get('state') || '';
     if (status === 'unauthenticated') {
-      // Not logged in, redirect to signin and return here afterwards (keeping all parameters)
-      signIn('google', { callbackUrl: `/partner/desktop-auth?${searchParams?.toString() ?? ''}` });
-    } else if (status === 'authenticated' && codeChallenge) {
-      // Current apps: one-time code + PKCE; no token in the URL
-      fetch('/api/partner/device-auth/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codeChallenge, callback }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.error === 'not_a_partner') return setError('This account is not a Fun Printing partner yet. Apply at funprinting.store/partner, then sign in again.');
-          if (data.error === 'partner_pending_approval') return setError('Your partner application is still under review. You can sign in to the app once it is approved.');
-          if (!data.success) return setError(data.error || 'Sign-in failed.');
-          const redirectUrl = new URL(callback);
-          redirectUrl.searchParams.set('code', data.code);
-          if (state) redirectUrl.searchParams.set('state', state);
-          window.location.href = redirectUrl.toString();
-        })
-        .catch(() => setError('Network error during sign-in.'));
-    } else if (status === 'authenticated') {
-      // Installed apps from before device sign-in (no code_challenge): legacy token
-      // in the redirect. Remove once all partners have updated their apps.
-      // Fetch the partner device token (only issued to existing partners)
-      fetch('/api/partner/desktop-token')
-        .then(res => res.json())
-        .then(data => {
-          if (data.error === 'not_a_partner') {
-            setError('This account is not a Fun Printing partner yet. Apply to become a partner at funprinting.store/partner, then sign in again.');
-            return;
-          }
-          if (data.error === 'partner_pending_approval') {
-            setError('Your partner application is still under review. You can sign in to the app once it is approved.');
-            return;
-          }
-          if (data.success) {
-            // Redirect back to the local desktop app server
-            const redirectUrl = new URL(callback);
-            redirectUrl.searchParams.append('partnerId', data.partnerId);
-            redirectUrl.searchParams.append('token', data.token);
-            window.location.href = redirectUrl.toString();
-          } else {
-            setError(data.error || 'Failed to generate desktop token.');
-          }
-        })
-        .catch(err => {
-          console.error(err);
-          setError('Network error while generating token.');
-        });
+      // Come back here after Google sign-in, keeping every parameter
+      signIn('google', { callbackUrl: `/partner/desktop-auth?${params.toString()}` });
+      return;
     }
-  }, [status, session, searchParams]);
+    if (status !== 'authenticated') return;
+
+    const notReady = (code?: string) =>
+      code === 'not_a_partner'
+        ? 'This account is not a Fun Printing partner yet. Apply on the partner page, then sign in again.'
+        : code === 'partner_pending_approval'
+          ? 'Your shop is still being reviewed. You can sign in to the app once it is approved.'
+          : null;
+
+    if (codeChallenge) {
+      // Current apps: one-time code + PKCE, so no token appears in a URL
+      fetch('/api/partner/device-auth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codeChallenge, callback }) })
+        .then((r) => r.json())
+        .then((data) => {
+          const reason = notReady(data.error);
+          if (reason) return setError(reason);
+          if (!data.success) return setError(data.error || 'Sign-in failed. Please try again.');
+          const url = new URL(callback);
+          url.searchParams.set('code', data.code);
+          if (state) url.searchParams.set('state', state);
+          window.location.href = url.toString();
+        })
+        .catch(() => setError('We couldn’t reach the server. Check your connection and try again.'));
+      return;
+    }
+
+    // Apps installed before device sign-in send no code challenge and get a token instead.
+    // Remove this branch once every shop has updated its app.
+    fetch('/api/partner/desktop-token')
+      .then((r) => r.json())
+      .then((data) => {
+        const reason = notReady(data.error);
+        if (reason) return setError(reason);
+        if (!data.success) return setError(data.error || 'Sign-in failed. Please try again.');
+        const url = new URL(callback);
+        url.searchParams.append('partnerId', data.partnerId);
+        url.searchParams.append('token', data.token);
+        window.location.href = url.toString();
+      })
+      .catch(() => setError('We couldn’t reach the server. Check your connection and try again.'));
+  }, [status, params]);
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 text-gray-900">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border-t-4 border-red-500">
-          <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Authentication Failed</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <p className="text-sm text-gray-400">You can close this window and try again.</p>
+      <AuthShell title="We couldn’t sign you in" description={error}>
+        <div className="flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
+          <CircleAlert className="size-10 text-destructive" aria-hidden />
+          <p>You can close this window and try again from the app.</p>
         </div>
-      </div>
+      </AuthShell>
     );
   }
-
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-50 text-gray-900">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border-t-4 border-indigo-500">
-        <div className="w-16 h-16 bg-indigo-100 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Signing in to the Partner app…</h2>
-        <p className="text-gray-600">Please wait while we securely authenticate your hardware.</p>
-      </div>
-    </div>
+    <AuthShell title="Signing in to the Partner app…" description="This window returns you to the app automatically.">
+      <div className="flex justify-center py-2" role="status"><Loader2 className="size-8 animate-spin text-primary" aria-label="Signing in" /></div>
+    </AuthShell>
   );
 }
 
 export default function DesktopAuthPage() {
   return (
-    <Suspense fallback={<div className="h-screen bg-gray-50"></div>}>
-      <DesktopAuthContent />
+    <Suspense fallback={<div className="grid min-h-[60vh] place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" /></div>}>
+      <DesktopAuth />
     </Suspense>
   );
 }

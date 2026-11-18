@@ -27,6 +27,10 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+  async redirects() {
+    // The old customer dashboard duplicated My orders
+    return [{ source: '/dashboard', destination: '/my-orders', permanent: true }];
+  },
   async headers() {
     return [
       // The PDF viewer is embedded in same-origin iframes
