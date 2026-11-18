@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 import { countryCodes, defaultCountryCode, validatePhoneNumber, parsePhoneNumber, needsCountryCode } from '@/lib/phoneValidation';
 import { LocationIcon } from '@/components/SocialIcons';
+import { PHONE_NOTICE } from '@/components/PhoneNotice';
 
 interface PickupLocation {
   _id: string;
@@ -297,7 +298,7 @@ export default function CompleteProfilePage() {
                 <p className="text-green-600 text-sm mt-1">✓ Valid phone number: {phone}</p>
               )}
               
-              <p className="text-xs text-gray-500 mt-1">We&apos;ll use this to contact you about your orders</p>
+              <p className="text-xs text-gray-500 mt-1">{PHONE_NOTICE}</p>
             </div>
 
             {/* Pickup Location */}

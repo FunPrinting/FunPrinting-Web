@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { PHONE_NOTICE } from '@/components/PhoneNotice';
 
 interface UserProfile {
   name: string;
@@ -531,9 +532,10 @@ export default function ProfilePage() {
                     setHasChanges(true);
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="+1234567890"
+                  placeholder="+91 98765 43210"
                   disabled={hasChanges && !isPasswordVerified && profile.provider === 'email'}
                 />
+                <p className="text-xs text-gray-500 mt-1">{PHONE_NOTICE}</p>
               </div>
 
               {/* Submit Button */}

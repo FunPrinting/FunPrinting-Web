@@ -9,6 +9,7 @@ import { AuthShell, BackHome, GoogleButton, OrDivider } from '@/components/auth/
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PhoneNotice } from '@/components/PhoneNotice';
 import { Label } from '@/components/ui/label';
 
 export default function SignUpPage() {
@@ -188,7 +189,7 @@ export default function SignUpPage() {
         <div className="space-y-2">
           <Label htmlFor="phone">Mobile number</Label>
           <Input id="phone" name="phone" type="tel" autoComplete="tel" inputMode="tel" required value={formData.phone} onChange={handleInputChange} className="h-11" placeholder="98765 43210" aria-describedby="phone-hint" />
-          <p id="phone-hint" className="text-xs text-muted-foreground">The print shop uses it to reach you about your order.</p>
+          <PhoneNotice id="phone-hint" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { signIn, getSession, useSession } from 'next-auth/react';
 import { useAuth } from '@/hooks/useAuth';
+import { PHONE_NOTICE } from '@/components/PhoneNotice';
+import { normalisePhoneInput } from '@/lib/phoneValidation';
 
 interface InlineAuthModalProps {
   isOpen: boolean;
@@ -141,6 +143,12 @@ export default function InlineAuthModal({
       setIsLoading(false);
       return;
     }
+    const phoneCheck = normalisePhoneInput(phone);
+    if (!phoneCheck.ok) {
+      setError(phoneCheck.error);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/auth/register', {
@@ -152,7 +160,7 @@ export default function InlineAuthModal({
           name,
           email,
           password,
-          phone,
+          phone: phoneCheck.phone,
         }),
       });
 
@@ -469,17 +477,21 @@ export default function InlineAuthModal({
 
                 <div>
                   <label htmlFor="phone-signup" className="block text-sm font-medium text-gray-700">
-                    Phone Number (Optional)
+                    Mobile number
                   </label>
                   <input
                     id="phone-signup"
                     type="tel"
                     autoComplete="tel"
+                    inputMode="tel"
+                    required
+                    aria-describedby="phone-signup-hint"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                    placeholder="Enter your phone number"
+                    placeholder="98765 43210"
                   />
+                  <p id="phone-signup-hint" className="mt-1 text-xs text-gray-500">{PHONE_NOTICE}</p>
                 </div>
 
                 <div>

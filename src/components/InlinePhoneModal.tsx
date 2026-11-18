@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CheckIcon, WarningIcon, RefreshIcon } from '@/components/SocialIcons';
+import { PHONE_NOTICE } from '@/components/PhoneNotice';
 
 interface InlinePhoneModalProps {
   isOpen: boolean;
@@ -168,13 +169,14 @@ export default function InlinePhoneModal({
                     handleSave();
                   }
                 }}
-                placeholder="Enter your phone number"
+                placeholder="98765 43210"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isSaving}
               />
               {phone && phone.replace(/\D/g, '').length < 10 && phone.replace(/\D/g, '').length > 0 && (
                 <p className="text-xs text-red-600 mt-1">Phone number must be at least 10 digits</p>
               )}
+              <p className="text-xs text-gray-500 mt-1">{PHONE_NOTICE}</p>
             </div>
 
             {/* Submit button */}
