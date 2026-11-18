@@ -257,7 +257,16 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
                     <TableRow key={o.orderId}>
                       <TableCell className="pl-6 font-mono text-xs">{o.orderId}</TableCell>
                       <TableCell className="text-muted-foreground">{new Date(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
-                      <TableCell className="max-w-48 truncate">{o.originalFileName || o.originalFileNames?.[0] || 'Document'}</TableCell>
+                      <TableCell className="max-w-56">
+                        <span className="block truncate">{o.originalFileName || o.originalFileNames?.[0] || 'Document'}</span>
+                        {o.job?.printedBy ? (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            Printed on {[o.job.printedBy.deviceName, o.job.printedBy.printer].filter(Boolean).join(' · ') || 'a shop device'}
+                          </span>
+                        ) : o.job?.printer && ['claimed', 'printing'].includes(o.job.status) ? (
+                          <span className="block truncate text-xs text-muted-foreground">Printing on {o.job.printer}</span>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="text-sm">
                         <span className="flex items-center gap-1.5 text-muted-foreground">
                           {how === 'shop' ? <Bike className="size-4" aria-hidden /> : how === 'courier' ? <Truck className="size-4" aria-hidden /> : <Building2 className="size-4" aria-hidden />}

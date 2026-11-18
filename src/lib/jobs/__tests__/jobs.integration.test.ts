@@ -37,6 +37,7 @@ import { resendJob } from '@/lib/jobs/service';
 import PrintJob from '@/models/PrintJob';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
+import PartnerDevice from '@/models/PartnerDevice';
 
 let mongo: MongoMemoryServer;
 let autoShop = '';
@@ -152,6 +153,21 @@ describe('devices', () => {
     expect(await orderOf(orderId)).toMatchObject({ status: 'printed', orderStatus: 'printed' });
     expect(money.released).toEqual([(await orderOf(orderId)).paymentRef]);
     expect(await claimJob(device)).toBeNull();
+  });
+
+  it('records which device and printer printed the job', async () => {
+    const orderId = await paidOrder(autoShop);
+    await createJobForOrder(orderId);
+    const { jobId } = await jobOf(orderId);
+    await PartnerDevice.create({ deviceId: 'dev-front', partnerId: autoShop, userId: 'u', name: 'Front desk PC', platform: 'desktop', refreshTokenHash: 'h', refreshExpiresAt: new Date(Date.now() + 1e9), lastSeenAt: new Date() });
+    const device = { partnerId: autoShop, deviceId: 'dev-front' };
+    await claimJob(device, jobId);
+    await reportJob(jobId, device, 'printing', undefined, 'HP LaserJet');
+    expect((await jobOf(orderId)).claim.printer).toBe('HP LaserJet');
+    await reportJob(jobId, device, 'printed');
+    const job = await jobOf(orderId);
+    expect(job.printedBy).toEqual({ deviceId: 'dev-front', deviceName: 'Front desk PC', printer: 'HP LaserJet' });
+    expect(job.history.at(-1).detail).toBe('Front desk PC on HP LaserJet');
   });
 
   it('two devices racing: exactly one gets the job', async () => {

@@ -62,7 +62,9 @@ export interface IPrintJob {
   firstClaimedAt?: Date;
   printedAt?: Date;
 
-  claim?: { deviceId: string; leaseUntil: Date };
+  claim?: { deviceId: string; leaseUntil: Date; printer?: string };
+  /** Where it was printed, for the shop's records (set on the "printed" report). */
+  printedBy?: { deviceId: string; deviceName?: string; printer?: string };
   rejections: Array<{ partnerId: string; reason?: string; at: Date }>;
   // Sent to the customer when the shop is late: refund now or keep waiting
   customerChoice?: { tokenHash: string; sentAt: Date };
@@ -109,7 +111,8 @@ const printJobSchema = new Schema<IPrintJob>(
     firstClaimedAt: Date,
     printedAt: Date,
 
-    claim: { deviceId: String, leaseUntil: Date },
+    claim: { deviceId: String, leaseUntil: Date, printer: String },
+    printedBy: { deviceId: String, deviceName: String, printer: String },
     rejections: { type: [new Schema({ partnerId: String, reason: String, at: Date }, { _id: false })], default: [] },
     customerChoice: { tokenHash: String, sentAt: Date },
     lastError: String,

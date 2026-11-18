@@ -57,15 +57,15 @@ export async function GET(request: NextRequest) {
 
     const orders = await Order.find(query).sort({ createdAt: -1 }).lean<Array<Record<string, any>>>();
     const jobs = await PrintJob.find({ orderId: { $in: orders.map((o) => o.orderId) } })
-      .select('jobId orderId status acceptBy refundBy acceptanceMode')
-      .lean<Array<Pick<IPrintJob, 'jobId' | 'orderId' | 'status' | 'acceptBy' | 'refundBy' | 'acceptanceMode'>>>();
+      .select('jobId orderId status acceptBy refundBy acceptanceMode printedBy claim.printer')
+      .lean<Array<Pick<IPrintJob, 'jobId' | 'orderId' | 'status' | 'acceptBy' | 'refundBy' | 'acceptanceMode' | 'printedBy' | 'claim'>>>();
     const jobByOrder = new Map(jobs.map((j) => [j.orderId, j]));
 
     const visible = fromLegacyApp ? orders.filter((o) => jobByOrder.get(o.orderId)?.status !== 'pending_acceptance') : orders;
     const result = visible.map((o) => {
       const j = jobByOrder.get(o.orderId);
       const view = forPartner(o);
-      return j ? { ...view, job: { jobId: j.jobId, status: j.status, acceptBy: j.acceptBy, refundBy: j.refundBy, acceptanceMode: j.acceptanceMode } } : view;
+      return j ? { ...view, job: { jobId: j.jobId, status: j.status, acceptBy: j.acceptBy, refundBy: j.refundBy, acceptanceMode: j.acceptanceMode, printedBy: j.printedBy, printer: j.claim?.printer } } : view;
     });
 
     if (Date.now() - lastSweep > 60_000) {

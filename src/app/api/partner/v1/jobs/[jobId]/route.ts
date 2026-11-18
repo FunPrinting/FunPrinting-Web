@@ -14,6 +14,8 @@ const bodySchema = z.discriminatedUnion('action', [
     action: z.literal('report'),
     status: z.enum(['printing', 'printed', 'failed', 'release']),
     error: z.string().trim().max(500).optional(),
+    /** Printer used on this device, shown to the shop with the order */
+    printer: z.string().trim().max(200).optional(),
   }),
 ]);
 
@@ -22,7 +24,7 @@ const bodySchema = z.discriminatedUnion('action', [
  *   { action: 'accept' }                          manual-mode shops take the order
  *   { action: 'reject', reason? }                 decline; the order moves on immediately
  *   { action: 'claim' }                           this device prints it (x-device-id)
- *   { action: 'report', status, error? }          printing (heartbeat) | printed | failed | release
+ *   { action: 'report', status, error?, printer? } printing (heartbeat) | printed | failed | release
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const ctx = await partnerContext(request);
@@ -45,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!job) return NextResponse.json({ success: false, error: 'Job is not ready to print' }, { status: 409 });
       return NextResponse.json({ success: true, job: publicJob(job) });
     }
-    const job = await reportJob(jobId, device, body.status, body.error);
+    const job = await reportJob(jobId, device, body.status, body.error, body.printer);
     log.info({ status: body.status }, 'job report');
     return NextResponse.json({ success: true, job: publicJob(job) });
   } catch (error) {

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import PrintJob, { ACTIVE_JOB_STATUSES, type IPrintJob, type JobEvent, type JobFile, type JobStatus } from '@/models/PrintJob';
+import PartnerDevice from '@/models/PartnerDevice';
 import { STATUS_RANK } from '@/lib/partnerOrderTransitions';
 import { getActivePartner } from '@/lib/jobs/assign';
 import { scheduleDeadline } from '@/lib/jobs/scheduler';
@@ -371,7 +372,7 @@ export type DeviceReport = 'printing' | 'printed' | 'failed' | 'release';
  * - failed: put back in the queue; flagged after MAX_PRINT_FAILURES
  * - release: give the job back without printing (e.g. printer offline)
  */
-export async function reportJob(jobId: string, actor: Required<PartnerActor>, report: DeviceReport, error?: string): Promise<IPrintJob> {
+export async function reportJob(jobId: string, actor: Required<PartnerActor>, report: DeviceReport, error?: string, printer?: string): Promise<IPrintJob> {
   const job = await loadOwned(jobId, actor.partnerId);
   if (job.claim?.deviceId !== actor.deviceId || !['claimed', 'printing'].includes(job.status)) {
     throw new JobError('This device does not hold the job; claim it first', 409);
@@ -379,19 +380,30 @@ export async function reportJob(jobId: string, actor: Required<PartnerActor>, re
   const now = new Date();
   const guard: Record<string, unknown> = { _id: job._id, partnerId: actor.partnerId, 'claim.deviceId': actor.deviceId, status: { $in: ['claimed', 'printing'] } };
   let update: Record<string, unknown>;
+  const printerName = printer?.trim().slice(0, 200) || job.claim?.printer;
+  const on = printerName ? ` on ${printerName}` : '';
   if (report === 'printing') {
-    update = { $set: { status: 'printing', 'claim.leaseUntil': new Date(now.getTime() + CLAIM_LEASE_MS) }, ...(job.status !== 'printing' ? { $push: { history: event('printing', actorLabel(actor)) } } : {}) };
+    update = {
+      $set: { status: 'printing', 'claim.leaseUntil': new Date(now.getTime() + CLAIM_LEASE_MS), ...(printerName ? { 'claim.printer': printerName } : {}) },
+      ...(job.status !== 'printing' ? { $push: { history: event('printing', actorLabel(actor), printerName) } } : {}),
+    };
   } else if (report === 'printed') {
-    update = { $set: { status: 'printed', printedAt: now }, $unset: { claim: '' }, $inc: { version: 1 }, $push: { history: event('printed', actorLabel(actor)) } };
+    const device = await PartnerDevice.findOne({ deviceId: actor.deviceId }).select('name').lean<{ name?: string } | null>();
+    update = {
+      $set: { status: 'printed', printedAt: now, printedBy: { deviceId: actor.deviceId, deviceName: device?.name, printer: printerName } },
+      $unset: { claim: '' },
+      $inc: { version: 1 },
+      $push: { history: event('printed', actorLabel(actor), `${device?.name ?? 'device'}${on}`) },
+    };
   } else if (report === 'release') {
-    update = { $set: { status: 'queued' }, $unset: { claim: '' }, $inc: { version: 1 }, $push: { history: event('released', actorLabel(actor), error) } };
+    update = { $set: { status: 'queued' }, $unset: { claim: '' }, $inc: { version: 1 }, $push: { history: event('released', actorLabel(actor), [error, printerName].filter(Boolean).join(' · ') || undefined) } };
   } else {
     const failures = job.history.filter((h) => h.type === 'failed').length + 1;
     update = {
       $set: { status: 'failed', lastError: (error || 'Print failed').slice(0, 500), ...(failures >= MAX_PRINT_FAILURES ? { needsAttention: `Failed ${failures} times: ${error ?? ''}`.slice(0, 300) } : {}) },
       $unset: { claim: '' },
       $inc: { version: 1 },
-      $push: { history: event('failed', actorLabel(actor), error) },
+      $push: { history: event('failed', actorLabel(actor), [error, printerName && `printer: ${printerName}`].filter(Boolean).join(' · ') || undefined) },
     };
   }
   const updated = await PrintJob.findOneAndUpdate(guard, update, { new: true }).lean<IPrintJob | null>();

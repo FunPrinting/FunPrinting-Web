@@ -35,6 +35,8 @@ export function publicJob(job: IPrintJob) {
     lastError: job.lastError,
     createdAt: job.createdAt,
     printedAt: job.printedAt,
+    printer: job.claim?.printer,
+    printedBy: job.printedBy,
   };
 }
 
