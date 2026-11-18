@@ -12,14 +12,12 @@ import pino, { type Logger } from 'pino';
  */
 const isDev = process.env.NODE_ENV === 'development';
 
+// pino-pretty is a dev dependency, loaded by name in pino's worker thread. It must
+// not be require()d here: the bundler would then pull it into the edge build of
+// instrumentation.ts, where Node's 'stream' module doesn't exist (dev server 500).
 function devTransport() {
-  if (!isDev) return undefined;
-  try {
-    require.resolve('pino-pretty');
-    return { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } };
-  } catch {
-    return undefined;
-  }
+  if (!isDev || process.env.LOG_PRETTY === '0') return undefined;
+  return { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } };
 }
 
 export const REDACT_PATHS = [

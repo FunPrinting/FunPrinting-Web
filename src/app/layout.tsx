@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Geist } from 'next/font/google';
 import './globals.css';
 import SessionProvider from '@/components/SessionProvider';
 import ConditionalLayout from '@/components/ConditionalLayout';
@@ -7,8 +7,10 @@ import ErrorReporter from '@/components/ErrorReporter';
 import { generateMetadata as generateSEOMetadata } from '@/lib/seo';
 import connectDB from '@/lib/mongodb';
 import AdminInfo from '@/models/AdminInfo';
+import { cn } from '@/lib/utils';
 
-const inter = Inter({ subsets: ['latin'] });
+const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
+
 
 // Generate dynamic metadata with admin info from database
 export async function generateMetadata(): Promise<Metadata> {
@@ -86,7 +88,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={cn('font-sans', geist.variable)}>
       <head>
         <link rel="canonical" href={process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.funprinting.store'} />
         {/* Google AdSense */}
@@ -96,7 +98,7 @@ export default function RootLayout({
           crossOrigin="anonymous"
         ></script>
       </head>
-      <body className={inter.className}>
+      <body>
         <ErrorReporter />
         <SessionProvider>
           <ConditionalLayout>
