@@ -12,20 +12,25 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!/^[0-9a-f-]{36}$/i.test(jobId || '')) {
     return NextResponse.json({ success: false, error: 'Invalid job ID' }, { status: 400 });
   }
-  const job = await jobStore.get(jobId);
-  if (!job) {
-    return NextResponse.json({ success: false, status: 'failed', error: 'This job has expired. Please generate the document again.' }, { status: 404 });
-  }
-  if (job.userId) {
-    const user = await getSessionUser().catch(() => null);
-    if (!user || user.id !== job.userId) {
-      return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
+  try {
+    const job = await jobStore.get(jobId);
+    if (!job) {
+      return NextResponse.json({ success: false, status: 'failed', error: 'This job has expired. Please generate the document again.' }, { status: 404 });
     }
+    if (job.userId) {
+      const user = await getSessionUser().catch(() => null);
+      if (!user || user.id !== job.userId) {
+        return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
+      }
+    }
+
+    let progress = 50;
+    if (job.status === 'completed' && job.pdfUrl) progress = 100;
+    else if (job.status === 'processing') progress = Math.round(50 + Math.min(((Date.now() - job.createdAt) / 60_000) * 40, 40));
+
+    return NextResponse.json({ success: true, status: job.status, progress, pdfUrl: job.pdfUrl, wordUrl: job.wordUrl, error: job.error });
+  } catch (error) {
+    console.error('generation-status error:', error);
+    return NextResponse.json({ success: false, status: 'failed', error: 'Job store is unavailable. Please check UPSTASH_REDIS environment variables.' }, { status: 503 });
   }
-
-  let progress = 50; // Word document ready
-  if (job.status === 'completed' && job.pdfUrl) progress = 100;
-  else if (job.status === 'processing') progress = Math.round(50 + Math.min(((Date.now() - job.createdAt) / 60_000) * 40, 40));
-
-  return NextResponse.json({ success: true, status: job.status, progress, pdfUrl: job.pdfUrl, wordUrl: job.wordUrl, error: job.error });
 }

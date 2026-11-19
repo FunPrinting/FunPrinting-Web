@@ -1,23 +1,11 @@
 {
+  "regions": ["bom1"],
   "functions": {
-    "src/app/api/templates/user-download/route.ts": {
-      "maxDuration": 30
+    "src/app/api/templates/generate-fill-pdf/route.ts": {
+      "maxDuration": 300
     },
-    "src/app/api/templates/download-filled/route.ts": {
-      "maxDuration": 30
-    },
-    "src/app/api/upload-file/route.ts": {
-      "maxDuration": 60
+    "src/app/api/templates/generation-status/[jobId]/route.ts": {
+      "maxDuration": 10
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/reconcile-payments",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/cleanup-files",
-      "schedule": "0 3 * * *"
-    }
-  ]
+  }
 }
