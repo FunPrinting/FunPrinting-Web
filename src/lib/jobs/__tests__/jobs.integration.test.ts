@@ -30,6 +30,18 @@ vi.mock('@/lib/authz', () => ({
 }));
 vi.mock('next/server', async (orig) => ({ ...(await orig<typeof import('next/server')>()), after: () => undefined }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+const conv = vi.hoisted(() => ({ fail: false, calls: [] as string[] }));
+vi.mock('@/lib/documents/fileUrls', () => ({
+  fetchTrustedFile: vi.fn(async (url: string) => ({ buffer: Buffer.from(url), contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })),
+}));
+vi.mock('@/lib/uploads/printReady', () => ({
+  toPrintReady: vi.fn(async (_b: Buffer, mime: string) => {
+    conv.calls.push(mime);
+    if (conv.fail) throw new Error('converter down');
+    return { pdf: Buffer.from('%PDF-'), pages: 4, passthrough: false };
+  }),
+}));
+vi.mock('@/lib/storage', () => ({ uploadFile: vi.fn(async () => 'https://res.cloudinary.com/demo/print-ready/x.pdf') }));
 
 import { acceptJob, claimJob, createJobForOrder, rejectJob, reportJob, syncJobFromOrderStatus, CLAIM_LEASE_MS } from '@/lib/jobs/service';
 import { answerCustomerChoice, cancelJob, cancelJobAfterRefund, handleAcceptDeadline, sweepDeadlines } from '@/lib/jobs/deadlines';
@@ -136,6 +148,39 @@ describe('creating jobs', () => {
     expect((await jobOf(orderId)).status).toBe('cancelled');
     expect(money.refunds).toHaveLength(1);
     expect((await orderOf(orderId)).status).toBe('cancelled');
+  });
+});
+
+describe('print-ready files', () => {
+  it('PDF files of older orders are print-ready as they are; uploads carry their printUrl', async () => {
+    const orderId = await paidOrder(autoShop, { printURLs: [null, 'https://res.cloudinary.com/demo/print-ready/b.pdf'] });
+    const job = await createJobForOrder(orderId);
+    expect(job.files.map((f) => f.printUrl)).toEqual(['https://f/a.pdf', 'https://res.cloudinary.com/demo/print-ready/b.pdf']);
+    expect(conv.calls).toHaveLength(0);
+  });
+
+  it('a Word file from an older order is converted after the job is created', async () => {
+    conv.calls.length = 0; conv.fail = false;
+    const orderId = await paidOrder(autoShop, { fileURLs: ['https://f/cv.docx'], fileURL: 'https://f/cv.docx', originalFileNames: ['cv.docx'], fileTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] });
+    await createJobForOrder(orderId);
+    const job = await jobOf(orderId);
+    expect(job.files[0]).toMatchObject({ printUrl: 'https://res.cloudinary.com/demo/print-ready/x.pdf', pages: 4 });
+    expect(await claimJob({ partnerId: autoShop, deviceId: 'desk-0001' })).toMatchObject({ orderId });
+  });
+
+  it('a job whose files are not ready cannot be claimed until the sweep prepares them', async () => {
+    conv.calls.length = 0; conv.fail = true;
+    const orderId = await paidOrder(autoShop, { fileURLs: ['https://f/photo.png'], fileURL: 'https://f/photo.png', originalFileNames: ['photo.png'], fileTypes: ['image/png'] });
+    await createJobForOrder(orderId);
+    const device = { partnerId: autoShop, deviceId: 'desk-0001' };
+    expect(await claimJob(device)).toBeNull();
+    const { publicJob } = await import('@/lib/jobs/http');
+    expect(publicJob(await jobOf(orderId)).printReady).toBe(false);
+
+    conv.fail = false;
+    const { prepareWaitingJobs } = await import('@/lib/jobs/printReady');
+    await prepareWaitingJobs(autoShop);
+    expect(await claimJob(device)).toMatchObject({ orderId });
   });
 });
 

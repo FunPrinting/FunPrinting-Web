@@ -42,7 +42,9 @@ export async function signIn(page: Page, user: TestUser | null) {
  * Stubs one API route. `handler` gets the request and returns the JSON body
  * (or a [status, body] pair). Calls are recorded so tests can check what was sent.
  */
-export async function api(page: Page, pattern: string | RegExp, handler: unknown | ((req: Request) => unknown)) {
+type Handler = ((req: Request) => unknown) | Record<string, unknown> | unknown[];
+
+export async function api(page: Page, pattern: string | RegExp, handler: Handler) {
   const calls: Array<{ method: string; url: string; body: unknown }> = [];
   await page.route(pattern, async (route: Route) => {
     const req = route.request();

@@ -130,7 +130,7 @@ export async function exchangeCode(opts: { code: string; verifier: string; devic
 }
 
 /** Step 4: rotate the refresh token. A reused (old) token revokes the device. */
-export async function refreshTokens(refreshToken: string, ip?: string): Promise<TokenPair> {
+export async function refreshTokens(refreshToken: string, ip?: string, appVersion?: string): Promise<TokenPair> {
   if (typeof refreshToken !== 'string' || refreshToken.length < 20 || refreshToken.length > 200) throw new DeviceAuthError('Invalid refresh token', 401, 'invalid_grant');
   await connectDB();
   const hash = sha256(refreshToken);
@@ -138,7 +138,7 @@ export async function refreshTokens(refreshToken: string, ip?: string): Promise<
   const now = new Date();
   const device = await PartnerDevice.findOneAndUpdate(
     { refreshTokenHash: hash, revokedAt: { $exists: false }, refreshExpiresAt: { $gt: now } },
-    { $set: { refreshTokenHash: sha256(next), previousRefreshTokenHash: hash, rotatedAt: now, refreshExpiresAt: new Date(now.getTime() + REFRESH_TTL_MS), lastSeenAt: now, lastIp: ip } },
+    { $set: { refreshTokenHash: sha256(next), previousRefreshTokenHash: hash, rotatedAt: now, refreshExpiresAt: new Date(now.getTime() + REFRESH_TTL_MS), lastSeenAt: now, lastIp: ip, ...(appVersion ? { appVersion: appVersion.slice(0, 40) } : {}) } },
     { new: true }
   ).lean<IPartnerDevice | null>();
 

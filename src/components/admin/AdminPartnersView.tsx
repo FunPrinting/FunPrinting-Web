@@ -22,6 +22,7 @@ interface Partner {
   address?: { city?: string; zipCode?: string };
   delivery?: { courier?: { enabled: boolean }; self?: { enabled: boolean } };
   earnings?: { totalRevenue: number; pendingPayout: number };
+  devices?: Array<{ deviceId: string; name: string; platform: string; appVersion?: string; lastSeenAt?: string }>;
 }
 
 const rupees = (n = 0) => `₹${n.toLocaleString('en-IN')}`;
@@ -82,6 +83,7 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
               <TableHead>Status</TableHead>
               <TableHead>Orders from</TableHead>
               <TableHead>Delivery</TableHead>
+              <TableHead>Devices</TableHead>
               <TableHead>Payout account</TableHead>
               <TableHead className="text-right">Earned</TableHead>
               <TableHead className="text-right">Waiting</TableHead>
@@ -108,6 +110,19 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                   </Button>
                 </TableCell>
                 <TableCell className="text-sm">{[p.delivery?.self?.enabled && 'Own rider', p.delivery?.courier?.enabled && 'Courier'].filter(Boolean).join(', ') || 'Pickup only'}</TableCell>
+                <TableCell className="text-xs">
+                  {p.devices?.length ? (
+                    <ul className="space-y-0.5">
+                      {p.devices.map((d) => (
+                        <li key={d.deviceId} title={d.lastSeenAt ? `Last seen ${new Date(d.lastSeenAt).toLocaleString('en-IN')}` : undefined}>
+                          {d.name} <span className="text-muted-foreground">· {d.platform} {d.appVersion ? `v${d.appVersion}` : '(version unknown)'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-muted-foreground">None signed in</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <button type="button" className="text-left text-sm underline-offset-4 hover:underline" onClick={() => { setLinking(p); setAccountId(p.razorpayAccountId ?? ''); }}>
                     {p.razorpayAccountId ? <span className="font-mono text-xs">{p.razorpayAccountId}</span> : <span className="text-warning">Not linked</span>}

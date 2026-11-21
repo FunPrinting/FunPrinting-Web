@@ -25,6 +25,8 @@ export const WAITING_JOB_STATUSES: JobStatus[] = ['pending_acceptance', 'queued'
 
 export interface JobFile {
   url: string;
+  /** The PDF partner apps print (see src/lib/jobs/printReady.ts). */
+  printUrl?: string;
   name: string;
   mime?: string;
   pages?: number;
@@ -79,6 +81,7 @@ export interface IPrintJob {
 const fileSchema = new Schema<JobFile>(
   {
     url: { type: String, required: true },
+    printUrl: String,
     name: { type: String, required: true },
     mime: String,
     pages: Number,

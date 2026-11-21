@@ -13,6 +13,8 @@ import crypto from 'crypto';
 export interface UploadReceipt {
   v: 1;
   url: string;
+  /** The PDF the shop prints: the upload itself for PDFs, else the converted file. Absent for estimated Word files. */
+  printUrl?: string;
   name: string;
   mime: string;
   size: number;
@@ -59,7 +61,7 @@ export function verifyUploadReceipt(token: unknown, userId: string, now = Date.n
   } catch {
     return { ok: false, error: 'Invalid upload receipt' };
   }
-  if (receipt.v !== 1 || typeof receipt.url !== 'string' || !Number.isInteger(receipt.pages) || receipt.pages < 1) {
+  if (receipt.v !== 1 || typeof receipt.url !== 'string' || (receipt.printUrl !== undefined && typeof receipt.printUrl !== 'string') || !Number.isInteger(receipt.pages) || receipt.pages < 1) {
     return { ok: false, error: 'Invalid upload receipt' };
   }
   if (receipt.uid !== userId) return { ok: false, error: 'Upload receipt belongs to another user' };

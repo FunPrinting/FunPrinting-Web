@@ -36,7 +36,7 @@ async function docxToPdf(buffer: Buffer): Promise<Buffer | null> {
   }
 }
 
-async function estimateDocxPages(buffer: Buffer): Promise<number> {
+export async function estimateDocxPages(buffer: Buffer): Promise<number> {
   const mammoth = await import('mammoth');
   const { value } = await mammoth.extractRawText({ buffer });
   const words = value.split(/\s+/).filter(Boolean).length;

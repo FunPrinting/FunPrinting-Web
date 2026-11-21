@@ -9,6 +9,7 @@ import { getActivePartner } from '@/lib/jobs/assign';
 import { scheduleDeadline } from '@/lib/jobs/scheduler';
 import { generateDeliveryNumber } from '@/lib/jobs/deliveryNumber';
 import { logger } from '@/lib/logger';
+import { isPdf, isPrintReady, preparePrintFiles, PRINT_READY_FILTER } from '@/lib/jobs/printReady';
 
 /**
  * Print jobs: one per paid order, owned by one partner at a time.
@@ -79,10 +80,14 @@ function filesFromOrder(order: Record<string, any>): JobFile[] {
   return urls.map((url, i) => {
     const fo = opts.fileOptions?.[i] || {};
     const colors = Array.isArray(opts.pageColors) ? opts.pageColors[i] : i === 0 ? opts.pageColors : undefined;
+    const name = order.originalFileNames?.[i] || (i === 0 ? order.originalFileName : undefined) || `File ${i + 1}`;
+    const mime = order.fileTypes?.[i] || order.fileType;
     return {
       url,
-      name: order.originalFileNames?.[i] || (i === 0 ? order.originalFileName : undefined) || `File ${i + 1}`,
-      mime: order.fileTypes?.[i] || order.fileType,
+      // Set at upload; PDFs from older orders are print-ready as they are
+      printUrl: order.printURLs?.[i] || (isPdf(mime, name, url) ? url : undefined),
+      name,
+      mime,
       pages: order.pricing?.files?.[i]?.pages,
       pageSize: fo.pageSize || opts.pageSize || 'A4',
       color: fo.color || opts.color || 'bw',
@@ -212,6 +217,11 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
   }
   if (progressed) return job;
 
+  // Older orders with Word files or images: make the PDFs now, so the shop can claim the job
+  if (!isPrintReady(job)) {
+    await preparePrintFiles(job.jobId).catch((error) => logger.error({ err: error, jobId: job.jobId }, 'preparing print files failed'));
+  }
+
   if (job.acceptBy) await scheduleDeadline(job.jobId, 'accept', job.acceptBy, job.version);
   if (job.refundBy) await scheduleDeadline(job.jobId, 'refund', job.refundBy, job.version);
   await announce(job, partner!._id, 'new');
@@ -326,6 +336,8 @@ export async function claimJob(actor: Required<PartnerActor>, jobId?: string): P
   const now = new Date();
   const claimable: Record<string, unknown> = {
     partnerId: actor.partnerId,
+    // Partner apps print only PDFs; a job waits until every file has one
+    ...PRINT_READY_FILTER,
     $or: [
       { status: 'queued' },
       // lease expired before printing started (a job already printing is never taken

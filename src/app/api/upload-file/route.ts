@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/authz';
 import { uploadFile } from '@/lib/storage';
 import { withRequestLogger } from '@/lib/logger';
-import { countPages } from '@/lib/uploads/pageCount';
+import { PDF_MIME } from '@/lib/uploads/pageCount';
+import { prepareUpload } from '@/lib/uploads/printReady';
 import { signUploadReceipt } from '@/lib/uploads/receipt';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Word files are converted to PDF during the upload
+export const maxDuration = 120;
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -34,7 +36,8 @@ function storageConfigured(): boolean {
 /**
  * POST /api/upload-file (multipart, field "file")
  *
- * Stores the file and returns its URL, the server-counted page count and a signed
+ * Stores the file and a print-ready PDF of it (Word files and images are converted once,
+ * here), and returns the URL, the page count of the print-ready PDF and a signed
  * `receipt`. Checkout requires the receipt; page counts from the browser are ignored.
  */
 export async function POST(request: NextRequest) {
@@ -69,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     let counted;
     try {
-      counted = await countPages(buffer, file.type);
+      counted = await prepareUpload(buffer, file.type);
     } catch (error) {
       log.warn({ err: error, mime: file.type }, 'could not read uploaded document');
       return NextResponse.json(
@@ -78,9 +81,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const fileURL = await uploadFile(buffer, 'print-service', file.type);
+    const [fileURL, printPdfUrl] = await Promise.all([
+      uploadFile(buffer, 'print-service', file.type),
+      counted.pdf ? uploadFile(counted.pdf, 'print-ready', PDF_MIME) : Promise.resolve(null),
+    ]);
+    const printUrl = file.type === PDF_MIME ? fileURL : printPdfUrl ?? undefined;
     const receipt = signUploadReceipt({
       url: fileURL,
+      printUrl,
       name: file.name.slice(0, 255),
       mime: file.type,
       size: file.size,

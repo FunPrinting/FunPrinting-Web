@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { withRequestLogger } from '@/lib/logger';
 import { listPartnerJobs } from '@/lib/jobs/service';
 import { sweepDeadlines } from '@/lib/jobs/deadlines';
+import { prepareWaitingJobs } from '@/lib/jobs/printReady';
 import { jobErrorResponse, partnerContext, publicJob } from '@/lib/jobs/http';
 
 export const runtime = 'nodejs';
@@ -21,6 +22,8 @@ export async function GET(request: NextRequest) {
     const jobs = await listPartnerJobs(ctx.partnerId, scope);
     // Deadlines are also enforced here, in case no scheduled message arrived
     after(() => sweepDeadlines(20).then(() => undefined).catch((err) => log.warn({ err }, 'deadline sweep failed')));
+    // Jobs still waiting for their print-ready PDFs (older orders) are retried here
+    if (scope === 'active') after(() => prepareWaitingJobs(ctx.partnerId).catch((err) => log.warn({ err }, 'print file sweep failed')));
     return NextResponse.json({ success: true, jobs: jobs.map(publicJob), serverTime: new Date().toISOString() });
   } catch (error) {
     return jobErrorResponse(error, log);

@@ -89,6 +89,15 @@ describe('sign-in with code + PKCE', () => {
 });
 
 describe('refresh rotation', () => {
+  it('records the app version sent with a refresh', async () => {
+    const first = await signIn();
+    expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).appVersion).toBe('2.0.0');
+    const next = await refreshTokens(first.refreshToken, undefined, '2.1.0');
+    expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).appVersion).toBe('2.1.0');
+    await refreshTokens(next.refreshToken); // no version sent: keeps the last one
+    expect((await PartnerDevice.findOne({ deviceId: first.deviceId }).lean<any>()).appVersion).toBe('2.1.0');
+  });
+
   it('two simultaneous refreshes: one wins, the other is told to retry, nobody is signed out', async () => {
     const first = await signIn();
     const results = await Promise.allSettled([refreshTokens(first.refreshToken), refreshTokens(first.refreshToken)]);

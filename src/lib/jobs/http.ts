@@ -1,4 +1,5 @@
 import 'server-only';
+import { isPrintReady } from '@/lib/jobs/printReady';
 import { NextResponse } from 'next/server';
 import { resolvePartnerRequest } from '@/lib/authz';
 import { JobError } from '@/lib/jobs/service';
@@ -28,6 +29,8 @@ export function publicJob(job: IPrintJob) {
     deliveryType: job.deliveryType,
     deliveryNumber: job.deliveryNumber,
     files: job.files,
+    // False while the server is still making PDFs for an older order; such a job can't be claimed yet
+    printReady: isPrintReady(job),
     service: job.service,
     acceptBy: job.acceptBy,
     claimedBy: job.claim?.deviceId,

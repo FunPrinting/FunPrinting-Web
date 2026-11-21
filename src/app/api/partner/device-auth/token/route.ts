@@ -15,13 +15,14 @@ const bodySchema = z.discriminatedUnion('grant_type', [
     platform: z.enum(['desktop', 'mobile', 'other']).default('other'),
     app_version: z.string().max(40).optional(),
   }),
-  z.object({ grant_type: z.literal('refresh_token'), refresh_token: z.string().min(20).max(200) }),
+  // app_version is sent on every refresh, so the server always knows what each device runs
+  z.object({ grant_type: z.literal('refresh_token'), refresh_token: z.string().min(20).max(200), app_version: z.string().max(40).optional() }),
 ]);
 
 /**
  * POST /api/partner/device-auth/token
  *   { grant_type: 'authorization_code', code, code_verifier, device_name, platform, app_version? }
- *   { grant_type: 'refresh_token', refresh_token }
+ *   { grant_type: 'refresh_token', refresh_token, app_version? }
  * → { access_token, expires_in, refresh_token, refresh_token_expires_at, device_id, partner_id }
  *
  * The refresh token changes on every refresh; keep only the newest one.
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const pair =
       body.grant_type === 'authorization_code'
         ? await exchangeCode({ code: body.code, verifier: body.code_verifier, deviceName: body.device_name, platform: body.platform, appVersion: body.app_version, ip })
-        : await refreshTokens(body.refresh_token, ip);
+        : await refreshTokens(body.refresh_token, ip, body.app_version);
     return NextResponse.json(
       {
         access_token: pair.accessToken,

@@ -179,6 +179,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     fileURL: urls[0],
     fileURLs: urls,
     fileTypes: receipts.map((r) => r.mime),
+    printURLs: receipts.map((r) => r.printUrl ?? null),
     fileType: getFileTypeFromFileNames(names, urls),
     originalFileName: names[0],
     originalFileNames: names,

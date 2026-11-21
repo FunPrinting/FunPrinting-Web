@@ -13,6 +13,7 @@ export interface IOrder {
   fileURLs?: string[]; // Array of file URLs for multiple files
   fileType?: string; // Store the original file type (e.g., 'application/pdf', 'image/jpeg') - Legacy support
   fileTypes?: string[]; // Array of file types for multiple files (MIME types)
+  printURLs?: (string | null)[]; // Print-ready PDF per file (same index as fileURLs); null until prepared
   originalFileName?: string; // Store the original file name
   originalFileNames?: string[]; // Array of original file names for multiple files
   // Template-specific fields
@@ -166,6 +167,7 @@ const orderSchema = new mongoose.Schema<IOrder>({
   fileURLs: [String], // Array of file URLs for multiple files
   fileType: String, // Legacy support
   fileTypes: [String], // Array of file types for multiple files (MIME types)
+  printURLs: [String], // Print-ready PDF per file, see src/lib/uploads/printReady.ts
   originalFileName: String, // Legacy: single file name (for backward compatibility)
   originalFileNames: [String], // Array of original file names for multiple files
   // Template-specific fields
