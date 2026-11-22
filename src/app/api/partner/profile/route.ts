@@ -86,10 +86,6 @@ export async function POST(request: NextRequest) {
       }
       if (data.pricing) {
         partner.pricing = data.pricing;
-        if (data.pricing.printing?.a4) {
-          partner.set('pricing.perPageBW', data.pricing.printing.a4.blackAndWhite?.singleSided ?? 2);
-          partner.set('pricing.perPageColor', data.pricing.printing.a4.color?.singleSided ?? 5);
-        }
       }
       if (data.deliveryPoints) {
         partner.deliveryPoints = data.deliveryPoints;

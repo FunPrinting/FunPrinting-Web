@@ -161,7 +161,21 @@ beforeEach(async () => {
   afterQueue.length = 0;
   delete process.env.RAZORPAY_ROUTE_ENABLED;
   // Default shop for checkouts: B&W ₹5/page, colour ₹10, binding ₹30
-  const shop = await Partner.create({ userId: 'shop-owner', businessName: 'Default Shop', isActive: true, pricing: { perPageBW: 5, perPageColor: 10, binding: 30 }, location: { type: 'Point', coordinates: [77, 28] } });
+  const shop = await Partner.create({
+    userId: 'shop-owner',
+    businessName: 'Default Shop',
+    isActive: true,
+    pricing: {
+      printing: {
+        a4: {
+          blackAndWhite: { singleSided: 5, doubleSided: 8 },
+          color: { singleSided: 10, doubleSided: 15 },
+        },
+      },
+      binding: { spiral: 30, perfect: 50, staple: 10 },
+    },
+    location: { type: 'Point', coordinates: [77, 28] },
+  });
   shopId = String(shop._id);
   await Pricing.create({
     basePrices: { A4: 5, A3: 10 },
@@ -198,7 +212,22 @@ describe('checkout', () => {
   });
 
   it('uses partner pricing, requires an approved partner, and holds the Route share when enabled', async () => {
-    const p = await Partner.create({ userId: 'u1', businessName: 'Shop', isActive: true, pricing: { perPageBW: 2, perPageColor: 10, binding: 30 }, razorpayAccountId: 'acc_ABCDEFGHIJKLMN', location: { type: 'Point', coordinates: [77, 28] } });
+    const p = await Partner.create({
+      userId: 'u1',
+      businessName: 'Shop',
+      isActive: true,
+      pricing: {
+        printing: {
+          a4: {
+            blackAndWhite: { singleSided: 2, doubleSided: 3 },
+            color: { singleSided: 10, doubleSided: 15 },
+          },
+        },
+        binding: { spiral: 30, perfect: 50, staple: 10 },
+      },
+      razorpayAccountId: 'acc_ABCDEFGHIJKLMN',
+      location: { type: 'Point', coordinates: [77, 28] },
+    });
     process.env.RAZORPAY_ROUTE_ENABLED = '1';
     const r = await createPrintCheckout(user, checkoutInput({ delivery: { type: 'pickup', partnerId: String(p._id) } }), 'http://x');
     expect(r.amounts.subtotal).toBe(2000);

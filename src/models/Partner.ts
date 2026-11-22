@@ -66,8 +66,6 @@ export interface IPartner {
     }>;
   };
   pricing: {
-    perPageBW?: number;
-    perPageColor?: number;
     printing?: {
       a4: {
         blackAndWhite: { singleSided: number; doubleSided: number };
@@ -207,8 +205,6 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     }],
   },
   pricing: {
-    perPageBW: { type: Number },
-    perPageColor: { type: Number },
     printing: {
       a4: {
         blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },

@@ -165,8 +165,8 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
                     <div className="mb-3">
                       <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-1">Pricing Rates</p>
                       <ul className="text-sm space-y-1 text-foreground">
-                        <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{partner.pricing?.perPageBW ?? (partner.pricing as any)?.printing?.a4?.blackAndWhite?.singleSided ?? 2}</strong></li>
-                        <li className="flex justify-between"><span>Color Page:</span> <strong>₹{partner.pricing?.perPageColor ?? (partner.pricing as any)?.printing?.a4?.color?.singleSided ?? 5}</strong></li>
+                        <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{(partner.pricing as any)?.printing?.a4?.blackAndWhite?.singleSided ?? (partner.pricing as any)?.perPageBW ?? 2}</strong></li>
+                        <li className="flex justify-between"><span>Color Page:</span> <strong>₹{(partner.pricing as any)?.printing?.a4?.color?.singleSided ?? (partner.pricing as any)?.perPageColor ?? 5}</strong></li>
                         <li className="flex justify-between"><span>Binding:</span> <strong>₹{typeof partner.pricing?.binding === 'number' ? partner.pricing.binding : ((partner.pricing as any)?.binding?.spiral ?? 30)}</strong></li>
                       </ul>
                     </div>
