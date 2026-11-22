@@ -50,14 +50,18 @@ export async function GET(request: Request) {
       ]
     };
 
+    const andFilters: any[] = [];
     if (reqBinding) {
-      query['servicesOffered.binding'] = true;
+      andFilters.push({ $or: [{ 'servicesOffered.binding': true }, { 'servicesOffered.binding.enabled': true }] });
     }
     if (reqColor) {
-      query['supportedPrinters.isColor'] = true;
+      andFilters.push({ $or: [{ 'supportedPrinters.isColor': true }, { 'servicesOffered.printing.supportsColor': true }] });
     }
     if (reqA3) {
-      query['supportedPrinters.paperSizes'] = 'A3';
+      andFilters.push({ $or: [{ 'supportedPrinters.paperSizes': 'A3' }, { 'servicesOffered.printing.maxPaperSize': 'a3' }] });
+    }
+    if (andFilters.length > 0) {
+      query.$and = andFilters;
     }
 
     // Public listing: only what customers need to choose a shop (no account ids, owner, payouts)

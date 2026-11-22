@@ -32,15 +32,15 @@ interface Shop {
   businessName: string;
   location: { coordinates: [number, number] };
   address: { street?: string; city?: string };
-  pricing?: PartnerPricing;
-  servicesOffered?: { binding?: boolean };
+  pricing?: any;
+  servicesOffered?: any;
   deliveryPoints?: Array<{ name: string; location: { type: 'Point'; coordinates: [number, number] }; isActive: boolean }>;
   delivery?: ShopDeliverySummary;
   distance?: number;
   calculatedPrice?: number;
 }
 
-const FALLBACK_PRICING: PartnerPricing = { perPageBW: 2, perPageColor: 10, binding: 30 };
+const FALLBACK_PRICING: PartnerPricing = { perPageBW: 2, perPageColor: 5, binding: 30 };
 const PAGE_SIZE = 10;
 
 /**
@@ -210,9 +210,9 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
                   <div className="space-y-4 border-t bg-muted/30 p-4 text-sm">
                     <dl className="grid grid-cols-3 gap-3">
                       {[
-                        ['B&W page', s.pricing?.perPageBW ?? FALLBACK_PRICING.perPageBW],
-                        ['Colour page', s.pricing?.perPageColor ?? FALLBACK_PRICING.perPageColor],
-                        ['Binding', s.pricing?.binding ?? FALLBACK_PRICING.binding],
+                        ['B&W page', s.pricing?.printing?.a4?.blackAndWhite?.singleSided ?? s.pricing?.perPageBW ?? FALLBACK_PRICING.perPageBW],
+                        ['Colour page', s.pricing?.printing?.a4?.color?.singleSided ?? s.pricing?.perPageColor ?? FALLBACK_PRICING.perPageColor],
+                        ['Binding', typeof s.pricing?.binding === 'number' ? s.pricing.binding : (s.pricing?.binding?.spiral ?? FALLBACK_PRICING.binding)],
                       ].map(([k, v]) => (
                         <div key={k} className="rounded-lg border bg-background p-3">
                           <dt className="text-xs text-muted-foreground">{k}</dt>

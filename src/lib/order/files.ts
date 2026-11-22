@@ -110,7 +110,7 @@ export function toQuoteFile(f: OrderFile): QuoteFile {
 }
 
 /** Printing price in rupees at a shop, or null if the options can't be priced yet. */
-export function estimateAtShop(files: OrderFile[], pricing: PartnerPricing): number | null {
+export function estimateAtShop(files: OrderFile[], pricing: any): number | null {
   if (!files.length) return null;
   try {
     return quotePrintOrder({ files: files.map(toQuoteFile), partnerPricing: pricing }).subtotal / 100;

@@ -146,27 +146,57 @@ export function estimateItemPrice(item: CartItem, pricing?: { basePrices?: { A4:
 /**
  * Calculate price for a single cart item based on a specific partner's custom pricing.
  */
-export function calculatePartnerItemPrice(item: CartItem, partnerPricing: { perPageBW: number; perPageColor: number; binding: number }): number {
+export function calculatePartnerItemPrice(item: CartItem, partnerPricing: any): number {
+    if (!partnerPricing) return 0;
     let total = 0;
     const copies = item.printingOptions.copies || 1;
-    const pageSizeMultiplier = item.printingOptions.pageSize === 'A3' ? 2 : 1;
-    const sidedMultiplier = item.printingOptions.sided === 'double' ? 1.5 : 1; // Assuming 1.5x for double sided like the default
+    const isA3 = item.printingOptions.pageSize === 'A3';
+    const isDouble = item.printingOptions.sided === 'double';
 
-    if (item.printingOptions.color === 'mixed' && item.printingOptions.pageColors) {
-        const colorCount = item.printingOptions.pageColors.colorPages.length;
-        const bwCount = item.printingOptions.pageColors.bwPages.length;
-        total = ((colorCount * partnerPricing.perPageColor) + (bwCount * partnerPricing.perPageBW)) * pageSizeMultiplier * sidedMultiplier;
-    } else if (item.printingOptions.color === 'color') {
-        total = item.pageCount * partnerPricing.perPageColor * pageSizeMultiplier * sidedMultiplier;
+    if (partnerPricing.printing) {
+        const sizeKey = isA3 ? 'a3' : 'a4';
+        const sidedKey = isDouble ? 'doubleSided' : 'singleSided';
+        const bwRate = partnerPricing.printing[sizeKey]?.blackAndWhite?.[sidedKey] ?? (isA3 ? (isDouble ? 6 : 4) : (isDouble ? 3 : 2));
+        const colorRate = partnerPricing.printing[sizeKey]?.color?.[sidedKey] ?? (isA3 ? (isDouble ? 15 : 10) : (isDouble ? 8 : 5));
+
+        if (item.printingOptions.color === 'mixed' && item.printingOptions.pageColors) {
+            const colorCount = item.printingOptions.pageColors.colorPages.length;
+            const bwCount = item.printingOptions.pageColors.bwPages.length;
+            total = (colorCount * colorRate) + (bwCount * bwRate);
+        } else if (item.printingOptions.color === 'color') {
+            total = item.pageCount * colorRate;
+        } else {
+            total = item.pageCount * bwRate;
+        }
+        total *= copies;
+
+        if (item.printingOptions.serviceOption === 'binding') {
+            const bindingRate = typeof partnerPricing.binding === 'number'
+                ? partnerPricing.binding
+                : (partnerPricing.binding?.spiral ?? partnerPricing.binding?.staple ?? 30);
+            total += bindingRate * copies;
+        }
     } else {
-        total = item.pageCount * partnerPricing.perPageBW * pageSizeMultiplier * sidedMultiplier;
-    }
+        const bw = partnerPricing.perPageBW ?? 2;
+        const color = partnerPricing.perPageColor ?? 5;
+        const binding = typeof partnerPricing.binding === 'number' ? partnerPricing.binding : 30;
+        const pageSizeMultiplier = isA3 ? 2 : 1;
+        const sidedMultiplier = isDouble ? 1.5 : 1;
 
-    total *= copies;
+        if (item.printingOptions.color === 'mixed' && item.printingOptions.pageColors) {
+            const colorCount = item.printingOptions.pageColors.colorPages.length;
+            const bwCount = item.printingOptions.pageColors.bwPages.length;
+            total = ((colorCount * color) + (bwCount * bw)) * pageSizeMultiplier * sidedMultiplier;
+        } else if (item.printingOptions.color === 'color') {
+            total = item.pageCount * color * pageSizeMultiplier * sidedMultiplier;
+        } else {
+            total = item.pageCount * bw * pageSizeMultiplier * sidedMultiplier;
+        }
+        total *= copies;
 
-    // Add binding cost if service option is binding
-    if (item.printingOptions.serviceOption === 'binding') {
-        total += partnerPricing.binding * copies; // Usually binding is per copy
+        if (item.printingOptions.serviceOption === 'binding') {
+            total += binding * copies;
+        }
     }
 
     return Math.ceil(total);
@@ -182,7 +212,7 @@ export function estimateCartTotal(pricing?: { basePrices?: { A4: number; A3: num
 /**
  * Calculate total price for all cart items based on a specific partner's pricing.
  */
-export function calculatePartnerCartTotal(partnerPricing: { perPageBW: number; perPageColor: number; binding: number }): number {
+export function calculatePartnerCartTotal(partnerPricing: any): number {
     if (!partnerPricing) return 0;
     return getCart().reduce((sum, item) => sum + calculatePartnerItemPrice(item, partnerPricing), 0);
 }

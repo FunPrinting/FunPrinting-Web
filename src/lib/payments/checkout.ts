@@ -158,7 +158,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   // 4. Price
   let quote;
   try {
-    quote = quotePrintOrder({ files: quoteFiles, partnerPricing, deliveryChargePaise });
+    quote = quotePrintOrder({ files: quoteFiles, partnerPricing: partner.pricing ?? partnerPricing, deliveryChargePaise });
   } catch (error) {
     if (error instanceof QuoteError) throw new CheckoutError(error.message);
     throw error;
