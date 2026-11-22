@@ -193,6 +193,8 @@ export async function resolvePartnerRequest(
   let deviceId: string | undefined;
 
   if (request.headers.get('authorization')) {
+    const { isAppTooOld, upgradeRequiredResponse } = await import('@/lib/partnerAuth/appVersion');
+    if (isAppTooOld(request.headers)) return upgradeRequiredResponse();
     const claims = requirePartnerToken(request);
     if (claims instanceof NextResponse) return claims;
     userId = claims.userId;
