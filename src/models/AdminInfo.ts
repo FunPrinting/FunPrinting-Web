@@ -34,6 +34,18 @@ export interface IAdminInfo extends Document {
   seoDescription?: string;
   seoKeywords?: string;
   ogImage?: string;
+  // Services offered by the shop
+  services?: {
+    colorPrinting?: boolean;
+    blackAndWhitePrinting?: boolean;
+    binding?: boolean;
+    lamination?: boolean;
+    scanning?: boolean;
+    photocopying?: boolean;
+    delivery?: boolean;
+    plasticFiles?: boolean;
+    customServices?: string[]; // Array of custom service names
+  };
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -131,6 +143,18 @@ const AdminInfoSchema = new Schema<IAdminInfo>({
   ogImage: {
     type: String,
     trim: true
+  },
+  // Services offered
+  services: {
+    colorPrinting: { type: Boolean, default: true },
+    blackAndWhitePrinting: { type: Boolean, default: true },
+    binding: { type: Boolean, default: false },
+    lamination: { type: Boolean, default: false },
+    scanning: { type: Boolean, default: false },
+    photocopying: { type: Boolean, default: false },
+    delivery: { type: Boolean, default: false },
+    plasticFiles: { type: Boolean, default: false },
+    customServices: { type: [String], default: [] }
   },
   isActive: {
     type: Boolean,
