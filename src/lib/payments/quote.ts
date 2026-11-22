@@ -33,33 +33,46 @@ export interface QuoteFile {
   service?: ServiceOption;
 }
 
-export interface PartnerPricing {
-  perPageBW: number;
-  perPageColor: number;
-  binding: number;
+export interface PrintModePricing {
+  singleSided: number;
+  doubleSided: number;
 }
 
-export interface CategorizedPartnerPricing {
+export interface PaperSizePricing {
+  blackAndWhite: PrintModePricing;
+  color: PrintModePricing;
+}
+
+export interface PartnerPricing {
   printing?: {
-    a4?: {
-      blackAndWhite?: { singleSided?: number; doubleSided?: number };
-      color?: { singleSided?: number; doubleSided?: number };
-    };
-    a3?: {
-      blackAndWhite?: { singleSided?: number; doubleSided?: number };
-      color?: { singleSided?: number; doubleSided?: number };
-    };
+    a4?: PaperSizePricing;
+    a3?: PaperSizePricing;
+    letter?: PaperSizePricing;
+    legal?: PaperSizePricing;
   };
   binding?: {
     spiral?: number;
     perfect?: number;
     staple?: number;
   } | number;
+  lamination?: {
+    a4?: number;
+    a3?: number;
+  };
+  scanning?: number;
+  photocopying?: {
+    blackAndWhite?: number;
+    color?: number;
+  };
+  plasticFiles?: number;
+  customServices?: Array<{
+    name: string;
+    price: number;
+  }>;
+  // Legacy flat fields for backward compatibility
   perPageBW?: number;
   perPageColor?: number;
 }
-
-export type AnyPartnerPricing = PartnerPricing | CategorizedPartnerPricing;
 
 export interface QuoteLine {
   label: string;
@@ -91,24 +104,46 @@ export class QuoteError extends Error {
 export const MAX_COPIES = 100;
 
 /** Rates used when a shop has not set its own (same as the order page). */
-export const DEFAULT_PARTNER_PRICING: PartnerPricing = { perPageBW: 2, perPageColor: 5, binding: 30 };
+export const DEFAULT_PARTNER_PRICING: PartnerPricing = {
+  printing: {
+    a4: {
+      blackAndWhite: { singleSided: 2, doubleSided: 3 },
+      color: { singleSided: 5, doubleSided: 8 },
+    },
+    a3: {
+      blackAndWhite: { singleSided: 4, doubleSided: 6 },
+      color: { singleSided: 10, doubleSided: 15 },
+    },
+    letter: {
+      blackAndWhite: { singleSided: 2, doubleSided: 3 },
+      color: { singleSided: 5, doubleSided: 8 },
+    },
+    legal: {
+      blackAndWhite: { singleSided: 2, doubleSided: 3 },
+      color: { singleSided: 5, doubleSided: 8 },
+    },
+  },
+  binding: {
+    spiral: 30,
+    perfect: 50,
+    staple: 10,
+  },
+  lamination: {
+    a4: 20,
+    a3: 40,
+  },
+  scanning: 5,
+  photocopying: {
+    blackAndWhite: 2,
+    color: 10,
+  },
+  plasticFiles: 10,
+};
 
 /** Normalize either categorized or legacy partner pricing into standard rates. */
 export function normalizePartnerPricing(raw: any): PartnerPricing {
   if (!raw) return DEFAULT_PARTNER_PRICING;
-  const bw = typeof raw.perPageBW === 'number'
-    ? raw.perPageBW
-    : (raw.printing?.a4?.blackAndWhite?.singleSided ?? DEFAULT_PARTNER_PRICING.perPageBW);
-  const color = typeof raw.perPageColor === 'number'
-    ? raw.perPageColor
-    : (raw.printing?.a4?.color?.singleSided ?? DEFAULT_PARTNER_PRICING.perPageColor);
-  let binding = DEFAULT_PARTNER_PRICING.binding;
-  if (typeof raw.binding === 'number') {
-    binding = raw.binding;
-  } else if (raw.binding && typeof raw.binding === 'object') {
-    binding = raw.binding.spiral ?? raw.binding.staple ?? raw.binding.perfect ?? DEFAULT_PARTNER_PRICING.binding;
-  }
-  return { perPageBW: bw, perPageColor: color, binding };
+  return raw;
 }
 
 /** Colour pages that actually exist in the file, de-duplicated. */
@@ -142,31 +177,39 @@ function colourSplit(file: QuoteFile): { color: number; bw: number } {
   return { color, bw: file.pages - color };
 }
 
-function quotePartnerFile(file: QuoteFile, p: AnyPartnerPricing): QuoteFileResult {
+function quotePartnerFile(file: QuoteFile, p: PartnerPricing): QuoteFileResult {
   const split = colourSplit(file);
-  const raw = p as any;
-  let printing = 0;
-  let binding = 0;
+  const size = (file.pageSize === 'A3' ? 'a3' : 'a4') as 'a4' | 'a3';
+  const sided = (file.sided === 'double' ? 'doubleSided' : 'singleSided') as 'singleSided' | 'doubleSided';
 
-  if (raw && raw.printing) {
-    const size = file.pageSize === 'A3' ? 'a3' : 'a4';
-    const sided = file.sided === 'double' ? 'doubleSided' : 'singleSided';
-    const bwRate = raw.printing[size]?.blackAndWhite?.[sided] ?? (size === 'a3' ? (sided === 'doubleSided' ? 6 : 4) : (sided === 'doubleSided' ? 3 : 2));
-    const colorRate = raw.printing[size]?.color?.[sided] ?? (size === 'a3' ? (sided === 'doubleSided' ? 15 : 10) : (sided === 'doubleSided' ? 8 : 5));
-    printing = (split.color * colorRate + split.bw * bwRate) * file.copies;
+  // Explicit rate lookup: directly from the shop's matrix, or standard rate defaults (NO multipliers)
+  let bwRate: number;
+  let colorRate: number;
 
-    if (file.service === 'binding') {
-      const bindingRate = typeof raw.binding === 'number'
-        ? raw.binding
-        : (raw.binding?.spiral ?? raw.binding?.staple ?? raw.binding?.perfect ?? 30);
-      binding = bindingRate * file.copies;
-    }
+  if (p.printing?.[size]?.blackAndWhite?.[sided] !== undefined) {
+    bwRate = p.printing[size]!.blackAndWhite[sided];
+  } else if (typeof p.perPageBW === 'number') {
+    bwRate = p.perPageBW * (size === 'a3' ? 2 : 1) * (sided === 'doubleSided' ? 1.5 : 1);
   } else {
-    const norm = normalizePartnerPricing(p);
-    const size = file.pageSize === 'A3' ? 2 : 1;
-    const sided = file.sided === 'double' ? 1.5 : 1;
-    printing = (split.color * norm.perPageColor + split.bw * norm.perPageBW) * size * sided * file.copies;
-    binding = file.service === 'binding' ? norm.binding * file.copies : 0;
+    bwRate = DEFAULT_PARTNER_PRICING.printing![size]!.blackAndWhite[sided];
+  }
+
+  if (p.printing?.[size]?.color?.[sided] !== undefined) {
+    colorRate = p.printing[size]!.color[sided];
+  } else if (typeof p.perPageColor === 'number') {
+    colorRate = p.perPageColor * (size === 'a3' ? 2 : 1) * (sided === 'doubleSided' ? 1.5 : 1);
+  } else {
+    colorRate = DEFAULT_PARTNER_PRICING.printing![size]!.color[sided];
+  }
+
+  const printing = (split.color * colorRate + split.bw * bwRate) * file.copies;
+
+  let binding = 0;
+  if (file.service === 'binding') {
+    const bindingRate = typeof p.binding === 'number'
+      ? p.binding
+      : (p.binding?.spiral ?? p.binding?.staple ?? p.binding?.perfect ?? 30);
+    binding = bindingRate * file.copies;
   }
 
   const totalRupees = Math.ceil(printing + binding);
@@ -177,15 +220,23 @@ function quotePartnerFile(file: QuoteFile, p: AnyPartnerPricing): QuoteFileResul
 
 export function quotePrintOrder(input: {
   files: QuoteFile[];
-  partnerPricing: AnyPartnerPricing;
+  partnerPricing: PartnerPricing;
   deliveryChargePaise?: number;
 }): PrintQuote {
   if (!input.files.length) throw new QuoteError('Add at least one file');
   if (input.files.length > 20) throw new QuoteError('At most 20 files per order');
-  const norm = normalizePartnerPricing(input.partnerPricing);
-  if (![norm.perPageBW, norm.perPageColor, norm.binding].every((v) => Number.isFinite(v) && v >= 0)) {
+
+  const p = input.partnerPricing;
+  if (typeof p.perPageBW === 'number' && (!Number.isFinite(p.perPageBW) || p.perPageBW < 0)) {
     throw new QuoteError('This shop has invalid prices; please choose another shop');
   }
+  if (typeof p.perPageColor === 'number' && (!Number.isFinite(p.perPageColor) || p.perPageColor < 0)) {
+    throw new QuoteError('This shop has invalid prices; please choose another shop');
+  }
+  if (typeof p.binding === 'number' && (!Number.isFinite(p.binding) || p.binding < 0)) {
+    throw new QuoteError('This shop has invalid prices; please choose another shop');
+  }
+
   input.files.forEach(validate);
 
   const files = input.files.map((f) => quotePartnerFile(f, input.partnerPricing));

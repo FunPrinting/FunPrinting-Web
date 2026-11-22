@@ -67,24 +67,24 @@ export interface IPartner {
   };
   pricing: {
     printing?: {
-      a4: {
+      a4?: {
         blackAndWhite: { singleSided: number; doubleSided: number };
         color: { singleSided: number; doubleSided: number };
       };
-      a3: {
+      a3?: {
         blackAndWhite: { singleSided: number; doubleSided: number };
         color: { singleSided: number; doubleSided: number };
       };
-      letter: {
+      letter?: {
         blackAndWhite: { singleSided: number; doubleSided: number };
         color: { singleSided: number; doubleSided: number };
       };
-      legal: {
+      legal?: {
         blackAndWhite: { singleSided: number; doubleSided: number };
         color: { singleSided: number; doubleSided: number };
       };
     };
-    binding: {
+    binding?: {
       spiral?: number; // per order
       perfect?: number; // per order
       staple?: number; // per order
