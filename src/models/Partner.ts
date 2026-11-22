@@ -27,22 +27,82 @@ export interface IPartner {
     pendingPayout: number;
   };
   servicesOffered: {
-    printing: boolean;
-    colorPrinting: boolean;
-    blackAndWhitePrinting: boolean;
-    binding: boolean;
-    lamination: boolean;
-    scanning: boolean;
-    photocopying: boolean;
-    cashOnDelivery: boolean;
-    delivery: boolean;
-    plasticFiles: boolean;
-    customServices: string[];
+    printing: {
+      enabled: boolean;
+      maxPaperSize: 'a4' | 'a3' | 'letter' | 'legal'; // A3 printer can also print A4, Letter, Legal
+      supportsColor: boolean;
+      supportsBlackAndWhite: boolean;
+      supportsDoubleSided: boolean;
+    };
+    binding: {
+      enabled: boolean;
+      types: {
+        spiral: boolean;
+        perfect: boolean;
+        staple: boolean;
+      };
+    };
+    lamination: {
+      enabled: boolean;
+      maxSize: 'a4' | 'a3'; // A3 laminator can also do A4
+    };
+    scanning: {
+      enabled: boolean;
+    };
+    photocopying: {
+      enabled: boolean;
+      supportsColor: boolean;
+    };
+    plasticFiles: {
+      enabled: boolean;
+    };
+    delivery: {
+      enabled: boolean;
+    };
+    customServices: Array<{
+      name: string;
+      enabled: boolean;
+      priceUnit: 'per_page' | 'per_item' | 'per_order';
+    }>;
   };
-  pricing?: {
-    perPageBW: number;
-    perPageColor: number;
-    binding: number;
+  pricing: {
+    printing: {
+      a4: {
+        blackAndWhite: { singleSided: number; doubleSided: number };
+        color: { singleSided: number; doubleSided: number };
+      };
+      a3: {
+        blackAndWhite: { singleSided: number; doubleSided: number };
+        color: { singleSided: number; doubleSided: number };
+      };
+      letter: {
+        blackAndWhite: { singleSided: number; doubleSided: number };
+        color: { singleSided: number; doubleSided: number };
+      };
+      legal: {
+        blackAndWhite: { singleSided: number; doubleSided: number };
+        color: { singleSided: number; doubleSided: number };
+      };
+    };
+    binding: {
+      spiral: number; // per order
+      perfect: number; // per order
+      staple: number; // per order
+    };
+    lamination: {
+      a4: number; // per page
+      a3: number; // per page
+    };
+    scanning: number; // per page
+    photocopying: {
+      blackAndWhite: number; // per page
+      color: number; // per page
+    };
+    plasticFiles: number; // per item
+    customServices: Array<{
+      name: string;
+      price: number;
+    }>;
   };
   deliveryPoints: Array<{
     name: string;
@@ -106,29 +166,82 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     pendingPayout: { type: Number, required: true, default: 0 },
   },
   servicesOffered: {
-    printing: { type: Boolean, default: true },
-    colorPrinting: { type: Boolean, default: true },
-    blackAndWhitePrinting: { type: Boolean, default: true },
-    binding: { type: Boolean, default: false },
-    lamination: { type: Boolean, default: false },
-    scanning: { type: Boolean, default: false },
-    photocopying: { type: Boolean, default: false },
-    cashOnDelivery: { type: Boolean, default: false },
-    delivery: { type: Boolean, default: false },
-    plasticFiles: { type: Boolean, default: false },
+    printing: {
+      enabled: { type: Boolean, default: true },
+      maxPaperSize: { type: String, enum: ['a4', 'a3', 'letter', 'legal'], default: 'a4' },
+      supportsColor: { type: Boolean, default: true },
+      supportsBlackAndWhite: { type: Boolean, default: true },
+      supportsDoubleSided: { type: Boolean, default: false },
+    },
+    binding: {
+      enabled: { type: Boolean, default: false },
+      types: {
+        spiral: { type: Boolean, default: false },
+        perfect: { type: Boolean, default: false },
+        staple: { type: Boolean, default: false },
+      },
+    },
+    lamination: {
+      enabled: { type: Boolean, default: false },
+      maxSize: { type: String, enum: ['a4', 'a3'], default: 'a4' },
+    },
+    scanning: {
+      enabled: { type: Boolean, default: false },
+    },
+    photocopying: {
+      enabled: { type: Boolean, default: false },
+      supportsColor: { type: Boolean, default: false },
+    },
+    plasticFiles: {
+      enabled: { type: Boolean, default: false },
+    },
+    delivery: {
+      enabled: { type: Boolean, default: false },
+    },
     customServices: [{
       name: { type: String },
-      enabled: { type: Boolean, default: true }
-    }]
+      enabled: { type: Boolean, default: true },
+      priceUnit: { type: String, enum: ['per_page', 'per_item', 'per_order'], default: 'per_item' },
+    }],
   },
   pricing: {
-    perPageBW: { type: Number, default: 2 },
-    perPageColor: { type: Number, default: 10 },
-    binding: { type: Number, default: 30 },
-    lamination: { type: Number, default: 0 },
-    scanning: { type: Number, default: 0 },
-    photocopying: { type: Number, default: 0 },
-    plasticFiles: { type: Number, default: 0 },
+    printing: {
+      a4: {
+        blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
+        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+      },
+      a3: {
+        blackAndWhite: { singleSided: { type: Number, default: 4 }, doubleSided: { type: Number, default: 6 } },
+        color: { singleSided: { type: Number, default: 20 }, doubleSided: { type: Number, default: 30 } },
+      },
+      letter: {
+        blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
+        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+      },
+      legal: {
+        blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
+        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+      },
+    },
+    binding: {
+      spiral: { type: Number, default: 30 },
+      perfect: { type: Number, default: 50 },
+      staple: { type: Number, default: 10 },
+    },
+    lamination: {
+      a4: { type: Number, default: 20 },
+      a3: { type: Number, default: 40 },
+    },
+    scanning: { type: Number, default: 5 },
+    photocopying: {
+      blackAndWhite: { type: Number, default: 2 },
+      color: { type: Number, default: 10 },
+    },
+    plasticFiles: { type: Number, default: 10 },
+    customServices: [{
+      name: { type: String },
+      price: { type: Number, default: 0 },
+    }],
   },
   deliveryPoints: [{
     name: { type: String, required: true },
