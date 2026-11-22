@@ -31,9 +31,7 @@ vi.mock('@/lib/payments/razorpayApi', () => ({
 }));
 const side = vi.hoisted(() => ({ dispatched: [] as string[], invoices: [] as string[], adminNotices: 0, invoiceFails: 0 }));
 vi.mock('@/lib/wssClient', () => ({
-  dispatchPrintJob: vi.fn(async (_p: string, o: any) => { side.dispatched.push(o.orderId); return { ok: true, delivered: 1 }; }),
-  notifyPartnerJobs: vi.fn(async () => ({ ok: true, delivered: 1 })),
-  cancelPrintJob: vi.fn(async () => ({ ok: true, delivered: 1 })),
+  notifyPartnerJobs: vi.fn(async (_p: string, reason: string) => { if (reason === 'new') side.dispatched.push('new'); return { ok: true, delivered: 1 }; }),
 }));
 vi.mock('@/lib/jobs/emails', () => ({ sendShopDelayEmail: vi.fn(async () => true), sendRefundEmail: vi.fn(async () => true) }));
 vi.mock('@/lib/invoiceEmail', () => ({
@@ -275,8 +273,8 @@ describe('settlement', () => {
     expect(await res2.json()).toEqual({ status: 'duplicate' });
 
     const order = await Order.findOne({ orderId: r.orderId }).lean<any>();
-    expect(order).toMatchObject({ paymentStatus: 'completed', status: 'printing', razorpayPaymentId: paymentId, amountPaid: 51.5 });
-    expect(side.dispatched).toEqual([r.orderId]);
+    expect(order).toMatchObject({ paymentStatus: 'completed', status: 'paid', razorpayPaymentId: paymentId, amountPaid: 51.5 });
+    expect(side.dispatched).toEqual(['new']);
     expect(side.invoices).toEqual([r.orderId]);
     expect(side.adminNotices).toBe(1);
     const p = await Payment.findOne({ referenceId: r.referenceId }).lean<any>();
@@ -439,7 +437,7 @@ describe('review fixes', () => {
     const runs = await Promise.all([runFulfilment(r.referenceId), runFulfilment(r.referenceId), runFulfilment(r.referenceId), runFulfilment(r.referenceId)]);
     expect(runs.filter((x) => x.busy).length).toBeGreaterThanOrEqual(1);
     await runFulfilment(r.referenceId);
-    expect(side.dispatched).toEqual([r.orderId]);
+    expect(side.dispatched).toEqual(['new']);
     expect(side.invoices).toEqual([r.orderId]);
     expect(side.adminNotices).toBe(1);
   });

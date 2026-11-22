@@ -25,19 +25,6 @@ export interface WssResult {
 
 const TIMEOUT_MS = 10_000;
 
-/** Order fields the WSS forwards to the partner app. Customer PII is not sent. */
-export interface DispatchOrder {
-  orderId: string;
-  orderType?: string;
-  fileURL?: string;
-  fileURLs?: string[];
-  fileTypes?: string[];
-  originalFileName?: string;
-  originalFileNames?: string[];
-  printingOptions?: unknown;
-  deliveryNumber?: string;
-}
-
 export function signWssBody(secret: string, timestamp: string, body: string): string {
   return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
 }
@@ -55,21 +42,6 @@ export function verifyWssSignature(headers: Headers, rawBody: string, now = Date
   const expected = Buffer.from(signWssBody(secret, timestamp, rawBody));
   const given = Buffer.from(signature);
   return expected.length === given.length && crypto.timingSafeEqual(expected, given);
-}
-
-function toDispatchOrder(order: any): DispatchOrder {
-  const o = order && typeof order.toObject === 'function' ? order.toObject() : order || {};
-  return {
-    orderId: String(o.orderId),
-    orderType: o.orderType,
-    fileURL: o.fileURL,
-    fileURLs: Array.isArray(o.fileURLs) ? o.fileURLs : undefined,
-    fileTypes: Array.isArray(o.fileTypes) ? o.fileTypes : undefined,
-    originalFileName: o.originalFileName,
-    originalFileNames: Array.isArray(o.originalFileNames) ? o.originalFileNames : undefined,
-    printingOptions: o.printingOptions,
-    deliveryNumber: o.deliveryNumber,
-  };
 }
 
 async function postSigned(path: string, payload: Record<string, unknown>): Promise<WssResult> {
@@ -154,19 +126,6 @@ async function postToRooms(
   const primary = results[0];
   const delivered = results.reduce((sum, r) => sum + (r.ok ? r.delivered : 0), 0);
   return { ...primary, ok: results.some((r) => r.ok), delivered };
-}
-
-/**
- * Sends a print job to the partner's socket room (partner_<Partner._id>).
- * `delivered` is the number of connected partner sockets that received it.
- */
-export function dispatchPrintJob(partnerId: string, order: any): Promise<WssResult> {
-  const payload = toDispatchOrder(order);
-  return postToRooms('/api/dispatch-print-job', partnerId, (room) => ({ partnerId: room, order: payload }));
-}
-
-export function cancelPrintJob(partnerId: string, orderId: string): Promise<WssResult> {
-  return postToRooms('/api/cancel-print-job', partnerId, (room) => ({ partnerId: room, orderId: String(orderId) }));
 }
 
 /**

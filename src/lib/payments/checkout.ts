@@ -176,7 +176,6 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     checkoutKey: input.idempotencyKey,
     customerInfo: { ...input.customerInfo, email: input.customerInfo.email.toLowerCase() },
     orderType: 'file',
-    fileURL: urls[0],
     fileURLs: urls,
     fileTypes: receipts.map((r) => r.mime),
     printURLs: receipts.map((r) => r.printUrl ?? null),

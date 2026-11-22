@@ -230,40 +230,12 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
 }
 
 /**
- * Tells the shop's devices that their job list changed. Until the partner apps
- * pull jobs (Phase 5), auto-accept shops also get the old push message so the
- * installed desktop app keeps printing; a device receiving it counts as a claim.
+ * Tells the shop's devices that their job list changed. Devices fetch their jobs from
+ * /api/partner/v1/jobs; the socket carries no job data.
  */
-export async function announce(job: IPrintJob, partnerId: string, reason: 'new' | 'updated' | 'cancelled'): Promise<void> {
-  const { notifyPartnerJobs, dispatchPrintJob, cancelPrintJob } = await import('@/lib/wssClient');
+export async function announce(_job: IPrintJob, partnerId: string, reason: 'new' | 'updated' | 'cancelled'): Promise<void> {
+  const { notifyPartnerJobs } = await import('@/lib/wssClient');
   await notifyPartnerJobs(partnerId, reason).catch(() => undefined);
-
-  if (reason === 'cancelled') {
-    await cancelPrintJob(partnerId, job.orderId).catch(() => undefined);
-    return;
-  }
-  if (job.status !== 'queued') return;
-  try {
-    const order = await Order.findOne({ orderId: job.orderId }).lean<Record<string, any> | null>();
-    if (!order) return;
-    const result = await dispatchPrintJob(partnerId, { ...order, deliveryNumber: job.deliveryNumber });
-    if (result.ok && result.delivered > 0) {
-      const now = new Date();
-      const claimed = await PrintJob.findOneAndUpdate(
-        { _id: job._id, status: 'queued', partnerId },
-        {
-          $set: { status: 'claimed', firstClaimedAt: now, claim: { deviceId: 'legacy-push', leaseUntil: new Date(now.getTime() + 24 * 3600_000) } },
-          $unset: { acceptBy: '', refundBy: '' },
-          $inc: { version: 1 },
-          $push: { history: event('claimed', 'device:legacy-push', `${result.delivered} device(s) received the push`) },
-        },
-        { new: true }
-      );
-      if (claimed) await syncOrderFromJob(job.orderId, 'printing', { shopDelayNotifiedAt: null });
-    }
-  } catch (error) {
-    logger.warn({ err: error, jobId: job.jobId }, 'legacy push to partner failed');
-  }
 }
 
 // ---------------------------------------------------------------------------

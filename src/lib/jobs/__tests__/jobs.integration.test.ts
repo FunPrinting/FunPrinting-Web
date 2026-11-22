@@ -3,11 +3,9 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // --- mocks ---------------------------------------------------------------------
-const ws = vi.hoisted(() => ({ notified: [] as string[], pushed: [] as string[], cancelled: [] as string[], pushDelivered: 0 }));
+const ws = vi.hoisted(() => ({ notified: [] as string[] }));
 vi.mock('@/lib/wssClient', () => ({
   notifyPartnerJobs: vi.fn(async (partnerId: string, reason: string) => { ws.notified.push(`${partnerId}:${reason}`); return { ok: true, delivered: 1 }; }),
-  dispatchPrintJob: vi.fn(async (_p: string, o: any) => { ws.pushed.push(o.orderId); return { ok: true, delivered: ws.pushDelivered }; }),
-  cancelPrintJob: vi.fn(async (_p: string, orderId: string) => { ws.cancelled.push(orderId); return { ok: true, delivered: 1 }; }),
 }));
 const mail = vi.hoisted(() => ({ delay: [] as any[], refunds: [] as any[] }));
 vi.mock('@/lib/jobs/emails', () => ({
@@ -96,7 +94,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Promise.all(Object.values(mongoose.connection.collections).map((c) => c.deleteMany({})));
-  ws.notified.length = 0; ws.pushed.length = 0; ws.cancelled.length = 0; ws.pushDelivered = 0;
+  ws.notified.length = 0;
   mail.delay.length = 0; mail.refunds.length = 0;
   money.refunds.length = 0; money.released.length = 0; money.failNext = false;
   vi.useRealTimers();
@@ -119,22 +117,10 @@ describe('creating jobs', () => {
     expect(await PrintJob.countDocuments()).toBe(1);
   });
 
-  it('installed desktop app still gets the push; receiving it counts as a claim', async () => {
-    ws.pushDelivered = 1;
-    const orderId = await paidOrder(autoShop);
-    await createJobForOrder(orderId);
-    const job = await jobOf(orderId);
-    expect(job).toMatchObject({ status: 'claimed', claim: { deviceId: 'legacy-push' } });
-    expect(job.refundBy).toBeUndefined();
-    expect((await orderOf(orderId)).status).toBe('printing');
-  });
-
-  it('manual shop: waits for acceptance and gets no push', async () => {
-    ws.pushDelivered = 1;
+  it('manual shop: waits for acceptance', async () => {
     const orderId = await paidOrder(manualShop);
     const job = await createJobForOrder(orderId);
     expect(job.status).toBe('pending_acceptance');
-    expect(ws.pushed).toEqual([]);
     const accepted = await acceptJob(job.jobId, { partnerId: manualShop });
     expect(accepted.status).toBe('queued');
     expect(accepted.acceptBy).toBeUndefined();
@@ -283,7 +269,7 @@ describe('late shops: never moved, customer decides, 24 h refund', () => {
     expect(await answerCustomerChoice(orderId, { token }, 'refund')).toEqual({ result: 'refunded' });
     expect((await jobOf(orderId)).status).toBe('cancelled');
     expect(money.refunds).toHaveLength(1);
-    expect(ws.cancelled).toEqual([orderId]);
+    expect(ws.notified.some((n) => n.endsWith(':cancelled'))).toBe(true);
   });
 
   it('customer keeps waiting; 24 h after payment it is refunded automatically', async () => {
@@ -424,7 +410,7 @@ describe('review fixes', () => {
     await createJobForOrder(orderId);
     await cancelJobAfterRefund(orderId);
     expect((await jobOf(orderId)).status).toBe('cancelled');
-    expect(ws.cancelled).toEqual([orderId]);
+    expect(ws.notified.some((n) => n.endsWith(':cancelled'))).toBe(true);
   });
 
   it('a job printing on a device whose lease ran out is not handed to another device, and is flagged', async () => {
@@ -450,29 +436,7 @@ describe('review fixes', () => {
   });
 });
 
-describe('installed desktop app (GET /api/partner/orders)', () => {
-  it('its fetch claims queued jobs and hides orders waiting for acceptance', async () => {
-    const { GET } = await import('@/app/api/partner/orders/route');
-    const { NextRequest } = await import('next/server');
-    const queuedOrder = await paidOrder(autoShop);
-    await createJobForOrder(queuedOrder);
-    partnerAuth.id = autoShop;
-    const req = new NextRequest('http://x/api/partner/orders', { headers: { authorization: 'Bearer t', 'user-agent': 'FunPrinting Electron/44' } });
-    const body = await (await GET(req)).json();
-    expect(body.orders.map((o: any) => o.orderId)).toContain(queuedOrder);
-    expect((await jobOf(queuedOrder))).toMatchObject({ status: 'claimed', claim: { deviceId: 'legacy-pull' } });
-    expect((await jobOf(queuedOrder)).refundBy).toBeUndefined();
-
-    const manualOrder = await paidOrder(manualShop);
-    await createJobForOrder(manualOrder);
-    partnerAuth.id = manualShop;
-    const body2 = await (await GET(req)).json();
-    expect(body2.orders.map((o: any) => o.orderId)).not.toContain(manualOrder);
-    // The web dashboard (session, no bearer) sees it, with its job
-    const web = await (await GET(new NextRequest('http://x/api/partner/orders'))).json();
-    expect(web.orders.find((o: any) => o.orderId === manualOrder).job.status).toBe('pending_acceptance');
-  });
-
+describe('desktop app (GET /api/partner/orders)', () => {
   it('a desktop app with device sign-in does not claim by fetching, and sees orders to accept', async () => {
     const { GET } = await import('@/app/api/partner/orders/route');
     const { NextRequest } = await import('next/server');
