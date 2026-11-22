@@ -28,8 +28,16 @@ export interface IPartner {
   };
   servicesOffered: {
     printing: boolean;
+    colorPrinting: boolean;
+    blackAndWhitePrinting: boolean;
     binding: boolean;
+    lamination: boolean;
+    scanning: boolean;
+    photocopying: boolean;
     cashOnDelivery: boolean;
+    delivery: boolean;
+    plasticFiles: boolean;
+    customServices: string[];
   };
   pricing?: {
     perPageBW: number;
@@ -99,13 +107,28 @@ const partnerSchema = new mongoose.Schema<IPartner>({
   },
   servicesOffered: {
     printing: { type: Boolean, default: true },
+    colorPrinting: { type: Boolean, default: true },
+    blackAndWhitePrinting: { type: Boolean, default: true },
     binding: { type: Boolean, default: false },
+    lamination: { type: Boolean, default: false },
+    scanning: { type: Boolean, default: false },
+    photocopying: { type: Boolean, default: false },
     cashOnDelivery: { type: Boolean, default: false },
+    delivery: { type: Boolean, default: false },
+    plasticFiles: { type: Boolean, default: false },
+    customServices: [{
+      name: { type: String },
+      enabled: { type: Boolean, default: true }
+    }]
   },
   pricing: {
     perPageBW: { type: Number, default: 2 },
     perPageColor: { type: Number, default: 10 },
     binding: { type: Number, default: 30 },
+    lamination: { type: Number, default: 0 },
+    scanning: { type: Number, default: 0 },
+    photocopying: { type: Number, default: 0 },
+    plasticFiles: { type: Number, default: 0 },
   },
   deliveryPoints: [{
     name: { type: String, required: true },

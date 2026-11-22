@@ -21,17 +21,6 @@ interface Info {
   seoTitle: string; seoDescription: string; seoKeywords: string; ogImage: string;
   socialMedia: Record<(typeof SOCIAL)[number], string>;
   businessHours: Record<(typeof DAYS)[number], string>;
-  services: {
-    colorPrinting: boolean;
-    blackAndWhitePrinting: boolean;
-    binding: boolean;
-    lamination: boolean;
-    scanning: boolean;
-    photocopying: boolean;
-    delivery: boolean;
-    plasticFiles: boolean;
-    customServices: string[];
-  };
 }
 
 const EMPTY: Info = {
@@ -39,20 +28,9 @@ const EMPTY: Info = {
   description: '', logo: '', favicon: '', seoTitle: '', seoDescription: '', seoKeywords: '', ogImage: '',
   socialMedia: { facebook: '', twitter: '', instagram: '', linkedin: '', youtube: '' },
   businessHours: { monday: '9:00 AM - 6:00 PM', tuesday: '9:00 AM - 6:00 PM', wednesday: '9:00 AM - 6:00 PM', thursday: '9:00 AM - 6:00 PM', friday: '9:00 AM - 6:00 PM', saturday: '10:00 AM - 4:00 PM', sunday: 'Closed' },
-  services: {
-    colorPrinting: true,
-    blackAndWhitePrinting: true,
-    binding: false,
-    lamination: false,
-    scanning: false,
-    photocopying: false,
-    delivery: false,
-    plasticFiles: false,
-    customServices: [],
-  },
 };
 
-type TextKey = Exclude<keyof Info, 'socialMedia' | 'businessHours' | 'services'>;
+type TextKey = Exclude<keyof Info, 'socialMedia' | 'businessHours'>;
 
 export default function AdminInfoPage() {
   const [info, setInfo] = useState<Info | null>(null);
@@ -64,13 +42,7 @@ export default function AdminInfoPage() {
       .then((r) => r.json())
       .then((d) => {
         const a = d.admin ?? {};
-        setInfo({
-          ...EMPTY,
-          ...a,
-          socialMedia: { ...EMPTY.socialMedia, ...(a.socialMedia ?? {}) },
-          businessHours: { ...EMPTY.businessHours, ...(a.businessHours ?? {}) },
-          services: { ...EMPTY.services, ...(a.services ?? {}) },
-        });
+        setInfo({ ...EMPTY, ...a, socialMedia: { ...EMPTY.socialMedia, ...(a.socialMedia ?? {}) }, businessHours: { ...EMPTY.businessHours, ...(a.businessHours ?? {}) } });
       })
       .catch(() => {
         setError('We couldn’t load the saved details.');
@@ -145,48 +117,6 @@ export default function AdminInfoPage() {
                 <Input id={`h-${d}`} value={info.businessHours[d]} onChange={(e) => setInfo({ ...info, businessHours: { ...info.businessHours, [d]: e.target.value } })} />
               </div>
             ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Services offered</CardTitle><CardDescription>What printing and related services your shop provides to customers.</CardDescription></CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.colorPrinting} onChange={(e) => setInfo({ ...info, services: { ...info.services, colorPrinting: e.target.checked } })} className="size-4" />
-                <span>Color printing</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.blackAndWhitePrinting} onChange={(e) => setInfo({ ...info, services: { ...info.services, blackAndWhitePrinting: e.target.checked } })} className="size-4" />
-                <span>Black & white printing</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.binding} onChange={(e) => setInfo({ ...info, services: { ...info.services, binding: e.target.checked } })} className="size-4" />
-                <span>Binding</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.lamination} onChange={(e) => setInfo({ ...info, services: { ...info.services, lamination: e.target.checked } })} className="size-4" />
-                <span>Lamination</span>
-              </Label>
-            </div>
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.scanning} onChange={(e) => setInfo({ ...info, services: { ...info.services, scanning: e.target.checked } })} className="size-4" />
-                <span>Scanning</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.photocopying} onChange={(e) => setInfo({ ...info, services: { ...info.services, photocopying: e.target.checked } })} className="size-4" />
-                <span>Photocopying</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.delivery} onChange={(e) => setInfo({ ...info, services: { ...info.services, delivery: e.target.checked } })} className="size-4" />
-                <span>Delivery</span>
-              </Label>
-              <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={info.services.plasticFiles} onChange={(e) => setInfo({ ...info, services: { ...info.services, plasticFiles: e.target.checked } })} className="size-4" />
-                <span>Plastic files / folders</span>
-              </Label>
-            </div>
           </CardContent>
         </Card>
 
