@@ -24,7 +24,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export function minimumFor(platform: AppPlatform | null, env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function minimumFor(platform: AppPlatform | null, env: Record<string, string | undefined> = process.env): string | undefined {
   const desktop = env.MIN_DESKTOP_APP_VERSION?.trim() || undefined;
   const mobile = env.MIN_MOBILE_APP_VERSION?.trim() || undefined;
   if (platform === 'desktop') return desktop;
@@ -33,7 +33,7 @@ export function minimumFor(platform: AppPlatform | null, env: NodeJS.ProcessEnv 
 }
 
 /** True when this app is too old for the configured minimum. */
-export function isAppTooOld(headers: Pick<Headers, 'get'>, env: NodeJS.ProcessEnv = process.env): boolean {
+export function isAppTooOld(headers: Pick<Headers, 'get'>, env: Record<string, string | undefined> = process.env): boolean {
   const raw = headers.get('x-app-platform');
   const platform: AppPlatform | null = raw === 'desktop' || raw === 'mobile' ? raw : null;
   const min = minimumFor(platform, env);
