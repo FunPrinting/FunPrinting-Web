@@ -99,10 +99,21 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
 
   // 2. Shop: every order goes to an approved partner (the platform's own shop is one too)
   const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<
-    (PartnerDeliveryFields & { pricing?: { perPageBW: number; perPageColor: number; binding: number }; razorpayAccountId?: string }) | null
+    (PartnerDeliveryFields & { pricing?: any; razorpayAccountId?: string }) | null
   >();
   if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
-  const partnerPricing = partner.pricing ?? DEFAULT_PARTNER_PRICING;
+  const rawP = (partner.pricing ?? {}) as any;
+  const partnerPricing = {
+    perPageBW: typeof rawP.perPageBW === 'number'
+      ? rawP.perPageBW
+      : (rawP.printing?.a4?.blackAndWhite?.singleSided ?? DEFAULT_PARTNER_PRICING.perPageBW),
+    perPageColor: typeof rawP.perPageColor === 'number'
+      ? rawP.perPageColor
+      : (rawP.printing?.a4?.color?.singleSided ?? DEFAULT_PARTNER_PRICING.perPageColor),
+    binding: typeof rawP.binding === 'number'
+      ? rawP.binding
+      : (rawP.binding?.spiral ?? rawP.binding?.staple ?? rawP.binding?.perfect ?? DEFAULT_PARTNER_PRICING.binding),
+  };
 
   // 3. Delivery: only an option this shop really offers for this address, priced here
   let deliveryChargePaise = 0;

@@ -66,7 +66,9 @@ export interface IPartner {
     }>;
   };
   pricing: {
-    printing: {
+    perPageBW?: number;
+    perPageColor?: number;
+    printing?: {
       a4: {
         blackAndWhite: { singleSided: number; doubleSided: number };
         color: { singleSided: number; doubleSided: number };
@@ -85,21 +87,21 @@ export interface IPartner {
       };
     };
     binding: {
-      spiral: number; // per order
-      perfect: number; // per order
-      staple: number; // per order
-    };
-    lamination: {
+      spiral?: number; // per order
+      perfect?: number; // per order
+      staple?: number; // per order
+    } | number;
+    lamination?: {
       a4: number; // per page
       a3: number; // per page
     };
-    scanning: number; // per page
-    photocopying: {
+    scanning?: number; // per page
+    photocopying?: {
       blackAndWhite: number; // per page
       color: number; // per page
     };
-    plasticFiles: number; // per item
-    customServices: Array<{
+    plasticFiles?: number; // per item
+    customServices?: Array<{
       name: string;
       price: number;
     }>;
@@ -205,28 +207,29 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     }],
   },
   pricing: {
+    perPageBW: { type: Number },
+    perPageColor: { type: Number },
     printing: {
       a4: {
         blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
-        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+        color: { singleSided: { type: Number, default: 5 }, doubleSided: { type: Number, default: 8 } },
       },
       a3: {
         blackAndWhite: { singleSided: { type: Number, default: 4 }, doubleSided: { type: Number, default: 6 } },
-        color: { singleSided: { type: Number, default: 20 }, doubleSided: { type: Number, default: 30 } },
+        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
       },
       letter: {
         blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
-        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+        color: { singleSided: { type: Number, default: 5 }, doubleSided: { type: Number, default: 8 } },
       },
       legal: {
         blackAndWhite: { singleSided: { type: Number, default: 2 }, doubleSided: { type: Number, default: 3 } },
-        color: { singleSided: { type: Number, default: 10 }, doubleSided: { type: Number, default: 15 } },
+        color: { singleSided: { type: Number, default: 5 }, doubleSided: { type: Number, default: 8 } },
       },
     },
     binding: {
-      spiral: { type: Number, default: 30 },
-      perfect: { type: Number, default: 50 },
-      staple: { type: Number, default: 10 },
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ spiral: 30, perfect: 50, staple: 10 }),
     },
     lamination: {
       a4: { type: Number, default: 20 },

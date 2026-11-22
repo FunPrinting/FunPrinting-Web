@@ -86,6 +86,10 @@ export async function POST(request: NextRequest) {
       }
       if (data.pricing) {
         partner.pricing = data.pricing;
+        if (data.pricing.printing?.a4) {
+          partner.set('pricing.perPageBW', data.pricing.printing.a4.blackAndWhite?.singleSided ?? 2);
+          partner.set('pricing.perPageColor', data.pricing.printing.a4.color?.singleSided ?? 5);
+        }
       }
       if (data.deliveryPoints) {
         partner.deliveryPoints = data.deliveryPoints;
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest) {
         isOnline: false,
         earnings: { totalRevenue: 0, pendingPayout: 0 },
         servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },
-        pricing: data.pricing || { perPageBW: 5, perPageColor: 10, binding: 40 },
+        pricing: data.pricing || { perPageBW: 2, perPageColor: 5, binding: { spiral: 30, perfect: 50, staple: 10 } },
         deliveryPoints: data.deliveryPoints || [],
         phoneNumbers: data.phoneNumbers || []
       });

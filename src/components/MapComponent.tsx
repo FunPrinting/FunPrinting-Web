@@ -165,15 +165,15 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
                     <div className="mb-3">
                       <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-1">Pricing Rates</p>
                       <ul className="text-sm space-y-1 text-foreground">
-                        <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{partner.pricing?.perPageBW || 2}</strong></li>
-                        <li className="flex justify-between"><span>Color Page:</span> <strong>₹{partner.pricing?.perPageColor || 10}</strong></li>
-                        <li className="flex justify-between"><span>Binding:</span> <strong>₹{partner.pricing?.binding || 30}</strong></li>
+                        <li className="flex justify-between"><span>B&W Page:</span> <strong>₹{partner.pricing?.perPageBW ?? (partner.pricing as any)?.printing?.a4?.blackAndWhite?.singleSided ?? 2}</strong></li>
+                        <li className="flex justify-between"><span>Color Page:</span> <strong>₹{partner.pricing?.perPageColor ?? (partner.pricing as any)?.printing?.a4?.color?.singleSided ?? 5}</strong></li>
+                        <li className="flex justify-between"><span>Binding:</span> <strong>₹{typeof partner.pricing?.binding === 'number' ? partner.pricing.binding : ((partner.pricing as any)?.binding?.spiral ?? 30)}</strong></li>
                       </ul>
                     </div>
 
                     <div className="mb-4 flex flex-wrap gap-1">
-                      {partner.servicesOffered?.printing && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Printing</span>}
-                      {partner.servicesOffered?.binding && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Binding</span>}
+                      {(typeof partner.servicesOffered?.printing === 'boolean' ? partner.servicesOffered.printing : (partner.servicesOffered as any)?.printing?.enabled) && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Printing</span>}
+                      {(typeof partner.servicesOffered?.binding === 'boolean' ? partner.servicesOffered.binding : (partner.servicesOffered as any)?.binding?.enabled) && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border font-medium">Binding</span>}
                     </div>
                     
                     <button 
