@@ -15,6 +15,9 @@ export interface IPartnerDevice {
   name: string;
   platform: 'desktop' | 'mobile' | 'other';
   appVersion?: string;
+  /** Printers this computer uses, reported by the desktop app (PATCH /api/partner/printers). */
+  printers?: Array<{ name: string; color: boolean; duplex: boolean; a3: boolean }>;
+  printersReportedAt?: Date;
   refreshTokenHash: string;
   previousRefreshTokenHash?: string;
   rotatedAt?: Date; // when the refresh token last rotated (grace window for retries)
@@ -35,6 +38,11 @@ const deviceSchema = new Schema<IPartnerDevice>(
     name: { type: String, required: true, maxlength: 100 },
     platform: { type: String, enum: ['desktop', 'mobile', 'other'], default: 'other' },
     appVersion: { type: String, maxlength: 40 },
+    printers: {
+      type: [{ _id: false, name: { type: String, maxlength: 120 }, color: Boolean, duplex: Boolean, a3: Boolean }],
+      default: undefined,
+    },
+    printersReportedAt: Date,
     refreshTokenHash: { type: String, required: true },
     previousRefreshTokenHash: String,
     rotatedAt: Date,

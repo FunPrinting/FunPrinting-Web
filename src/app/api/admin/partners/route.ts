@@ -13,9 +13,9 @@ export async function GET() {
     const [partners, devices] = await Promise.all([
       Partner.find({}).sort({ createdAt: -1 }).lean<Array<Record<string, any>>>(),
       PartnerDevice.find({ revokedAt: { $exists: false } })
-        .select('deviceId partnerId name platform appVersion lastSeenAt')
+        .select('deviceId partnerId name platform appVersion lastSeenAt printers')
         .sort({ lastSeenAt: -1 })
-        .lean<Array<{ deviceId: string; partnerId: string; name: string; platform: string; appVersion?: string; lastSeenAt?: Date }>>(),
+        .lean<Array<{ deviceId: string; partnerId: string; name: string; platform: string; appVersion?: string; lastSeenAt?: Date; printers?: Array<{ name: string; color: boolean; duplex: boolean; a3: boolean }> }>>(),
     ]);
     const byPartner = new Map<string, typeof devices>();
     for (const d of devices) {
@@ -28,7 +28,7 @@ export async function GET() {
       count: partners.length,
       partners: partners.map((p) => ({
         ...p,
-        devices: (byPartner.get(String(p._id)) ?? []).map(({ deviceId, name, platform, appVersion, lastSeenAt }) => ({ deviceId, name, platform, appVersion, lastSeenAt })),
+        devices: (byPartner.get(String(p._id)) ?? []).map(({ deviceId, name, platform, appVersion, lastSeenAt, printers }) => ({ deviceId, name, platform, appVersion, lastSeenAt, printers })),
       })),
     });
   } catch (error) {

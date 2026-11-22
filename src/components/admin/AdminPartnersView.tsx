@@ -22,7 +22,7 @@ interface Partner {
   address?: { city?: string; zipCode?: string };
   delivery?: { courier?: { enabled: boolean }; self?: { enabled: boolean } };
   earnings?: { totalRevenue: number; pendingPayout: number };
-  devices?: Array<{ deviceId: string; name: string; platform: string; appVersion?: string; lastSeenAt?: string }>;
+  devices?: Array<{ deviceId: string; name: string; platform: string; appVersion?: string; lastSeenAt?: string; printers?: Array<{ name: string; color: boolean; duplex: boolean; a3: boolean }> }>;
 }
 
 const rupees = (n = 0) => `₹${n.toLocaleString('en-IN')}`;
@@ -116,6 +116,11 @@ export default function AdminPartnersView({ onSelectPartner, selectedPartnerId }
                       {p.devices.map((d) => (
                         <li key={d.deviceId} title={d.lastSeenAt ? `Last seen ${new Date(d.lastSeenAt).toLocaleString('en-IN')}` : undefined}>
                           {d.name} <span className="text-muted-foreground">· {d.platform} {d.appVersion ? `v${d.appVersion}` : '(version unknown)'}</span>
+                          {d.printers && d.printers.length > 0 && (
+                            <span className="block text-xs text-muted-foreground">
+                              {d.printers.map((x) => `${x.name} (${[x.color ? 'colour' : 'B&W', x.duplex ? 'duplex' : '', x.a3 ? 'A3' : ''].filter(Boolean).join(', ')})`).join('; ')}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
