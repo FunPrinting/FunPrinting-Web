@@ -74,6 +74,18 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
     />
   );
 
+  const handleSignOut = async (targetUrl?: string) => {
+    try {
+      await signOut({ redirect: false });
+    } catch {}
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    if (typeof window !== 'undefined') {
+      window.location.href = targetUrl || siteUrl || '/';
+    }
+  };
+
   if (status === 'loading' || (status === 'authenticated' && isAdmin === null)) {
     return (
       <div className="grid min-h-screen place-items-center">
@@ -103,7 +115,7 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
             <Button onClick={() => signIn('google', { callbackUrl: pathname })}>Continue with Google</Button>
             <Button variant="outline" onClick={() => signIn(undefined, { callbackUrl: pathname })}>Sign in with email</Button>
             {session?.user ? (
-              <Button variant="ghost" onClick={() => signOut({ callbackUrl: pathname })}>Use a different account</Button>
+              <Button variant="ghost" onClick={() => handleSignOut(pathname)}>Use a different account</Button>
             ) : null}
             <Button asChild variant="link"><a href={siteUrl}>Back to the site</a></Button>
           </CardContent>
@@ -148,7 +160,7 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
               Site<ExternalLink />
             </a>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => signOut({ callbackUrl: siteUrl })}>
+          <Button variant="outline" size="sm" onClick={() => handleSignOut(siteUrl)}>
             <LogOut />Sign out
           </Button>
         </div>

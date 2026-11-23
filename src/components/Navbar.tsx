@@ -225,7 +225,13 @@ function UserMenu({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onSignOut} className="cursor-pointer text-destructive focus:text-destructive">
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            onSignOut();
+          }}
+          className="cursor-pointer text-destructive focus:text-destructive"
+        >
           <LogOut className="size-4" />
           <span>Sign out</span>
         </DropdownMenuItem>

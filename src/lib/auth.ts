@@ -209,7 +209,21 @@ export const authOptions: NextAuthOptions = {
         }
       }
       return session;
-    }
+    },
+    async redirect({ url, baseUrl }) {
+      // Allows relative callback URLs
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      try {
+        const parsedUrl = new URL(url);
+        const parsedBase = new URL(baseUrl);
+        // Allow redirects within the same apex domain (e.g. admin.funprinting.store <-> www.funprinting.store)
+        const getApex = (h: string) => h.split('.').slice(-2).join('.');
+        if (getApex(parsedUrl.hostname) === getApex(parsedBase.hostname)) {
+          return url;
+        }
+      } catch {}
+      return baseUrl;
+    },
   },
   pages: {
     signIn: '/auth/signin',
