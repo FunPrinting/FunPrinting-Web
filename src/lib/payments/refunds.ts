@@ -32,7 +32,9 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
   }
   const paid = p.amountPaid ?? p.amounts.total;
   const remaining = paid - (p.amountRefunded ?? 0);
-  const amount = opts.amountPaise ?? remaining;
+  // Refund subtotal (the order amount we received), retaining the non-refundable processing fee to avoid business loss
+  const defaultRefund = Math.min(p.amounts.subtotal ?? remaining, remaining);
+  const amount = opts.amountPaise ?? defaultRefund;
   if (!Number.isInteger(amount) || amount < 100 || amount > remaining) {
     throw new RefundError(`Refund must be between ₹1 and ₹${(remaining / 100).toFixed(2)}`);
   }
@@ -42,7 +44,7 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
 
   const refund = await refundPayment(p.razorpay.paymentId, amount, {
     notes: { referenceId, reason, actor },
-    reverseAll: Boolean(p.razorpay.transferId || p.partnerAccountId) && amount === remaining,
+    reverseAll: Boolean(p.razorpay.transferId || p.partnerAccountId),
   });
   await Payment.updateOne(
     { _id: p._id },
@@ -60,13 +62,13 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
  * request is saved first; if Razorpay fails, the reconcile job retries it, so a
  * refund is never silently dropped. Returns the refund id, or null if it will retry.
  */
-export async function requestRefund(referenceId: string, opts: { reason?: string; actor?: string }): Promise<string | null> {
+export async function requestRefund(referenceId: string, opts: { amountPaise?: number; reason?: string; actor?: string }): Promise<string | null> {
   await connectDB();
   const reason = (opts?.reason || 'Order cancelled').slice(0, 200);
   const actor = (opts?.actor || 'system').slice(0, 100);
   await Payment.updateOne(
     { referenceId, $or: [{ refundRequest: { $exists: false } }, { 'refundRequest.refundId': { $exists: false } }] },
-    { $set: { refundRequest: { reason, actor, at: new Date(), attempts: 0 } } }
+    { $set: { refundRequest: { reason, actor, at: new Date(), attempts: 0, amountPaise: opts.amountPaise } } }
   );
   return processRefundRequest(referenceId);
 }
@@ -78,7 +80,7 @@ export async function processRefundRequest(referenceId: string): Promise<string 
   const reason = (p.refundRequest.reason || 'Order cancelled').slice(0, 200);
   const actor = (p.refundRequest.actor || 'system').slice(0, 100);
   try {
-    const { refundId } = await startRefund(referenceId, { reason, actor });
+    const { refundId } = await startRefund(referenceId, { amountPaise: p.refundRequest.amountPaise, reason, actor });
     await Payment.updateOne({ _id: p._id }, { $set: { 'refundRequest.refundId': refundId }, $inc: { 'refundRequest.attempts': 1 } });
     return refundId;
   } catch (error) {
