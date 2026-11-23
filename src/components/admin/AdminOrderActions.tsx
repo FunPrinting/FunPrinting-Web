@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Loader2, Phone, Trash2 } from 'lucide-react';
+import { Loader2, Phone, RefreshCw, Trash2 } from 'lucide-react';
 import { ORDER_STATUS } from '@/lib/orderStatus';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ export default function AdminOrderActions({ order, onChanged, onDeleted }: Props
   const paid = order.paymentStatus === 'completed' && (order.status === 'paid' || (SETTABLE as readonly string[]).includes(order.status));
   const [target, setTarget] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [checkingPayment, setCheckingPayment] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const phone = order.customerInfo?.phone || order.studentInfo?.phone;
@@ -42,6 +43,29 @@ export default function AdminOrderActions({ order, onChanged, onDeleted }: Props
       toast.error(e instanceof Error ? e.message : 'We couldn’t change the status.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const checkPayment = async () => {
+    setCheckingPayment(true);
+    try {
+      const res = await fetch('/api/admin/check-razorpay-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.orderId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to check payment');
+      if (data.status === 'paid') {
+        toast.success('Payment confirmed on Razorpay! Order updated.');
+        await onChanged();
+      } else {
+        toast.error(`Payment status on Razorpay: ${data.status || 'pending'}`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not check payment with Razorpay');
+    } finally {
+      setCheckingPayment(false);
     }
   };
 
@@ -80,7 +104,20 @@ export default function AdminOrderActions({ order, onChanged, onDeleted }: Props
             <Button onClick={apply} disabled={!target || saving}>{saving ? <Loader2 className="animate-spin" /> : null}Apply</Button>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Status can be set once the order is paid and not cancelled or refunded.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">Status can be set once the order is paid and not cancelled or refunded.</p>
+            {order.paymentStatus === 'pending' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={checkPayment}
+                disabled={checkingPayment}
+              >
+                {checkingPayment ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <RefreshCw className="mr-1.5 size-4" />}
+                Check Razorpay payment
+              </Button>
+            )}
+          </div>
         )}
         <div className="flex flex-wrap gap-2">
           {phone ? <Button asChild variant="outline"><a href={`tel:${phone}`}><Phone />Call customer</a></Button> : null}

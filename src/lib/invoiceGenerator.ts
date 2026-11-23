@@ -266,8 +266,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   });
 
   const amountNumber = typeof order.amount === 'number' ? order.amount : 0;
-  drawSafeText(page, `₹${amountNumber.toFixed(2)}`, {
-    x: width - 100,
+  drawSafeText(page, `Rs. ${amountNumber.toFixed(2)}`, {
+    x: width - 120,
     y: yPosition,
     size: 14,
     font: helveticaBoldFont,

@@ -86,7 +86,7 @@ export async function reconcilePayments({ limit = 50 } = {}): Promise<ReconcileR
   const report: ReconcileReport = { checked: 0, settled: 0, closed: 0, fulfilmentRetried: 0, legacyRecovered: 0, refundsApplied: 0, transfersReleased: 0, jobDeadlines: 0, ordersCancelled: 0, errors: 0 };
   const now = Date.now();
 
-  const stale = await Payment.find({ status: 'created', createdAt: { $lt: new Date(now - 10 * 60_000) } })
+  const stale = await Payment.find({ status: 'created', createdAt: { $lt: new Date(now - 2 * 60_000) } })
     .sort({ createdAt: 1 })
     .limit(limit)
     .select('referenceId')

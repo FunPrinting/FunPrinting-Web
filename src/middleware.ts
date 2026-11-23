@@ -67,6 +67,8 @@ export function middleware(request: NextRequest) {
     }
 
     // Known admin sections -> rewrite to /admin/<section>
+    // Note: /templates/fill/* and /templates/edit/* are customer-facing pages that
+    // don't exist under /admin, so they must be served from the main store instead.
     const adminKnownPrefixes = [
       '/templates',
       '/orders',
@@ -76,6 +78,16 @@ export function middleware(request: NextRequest) {
       '/errors',
       '/partners',
     ];
+
+    // Customer-facing template pages should redirect to the main store, not rewrite to /admin
+    const customerTemplatePaths = ['/templates/fill/', '/templates/edit/', '/templates/create'];
+    if (customerTemplatePaths.some((p) => pathname.startsWith(p) || pathname === p)) {
+      const rootHost = parts.slice(1).join('.');
+      const protocol = request.headers.get('x-forwarded-proto') || (isLocalHost ? 'http' : 'https');
+      const portSuffix = port ? `:${port}` : '';
+      const rootUrl = `${protocol}://${rootHost}${portSuffix}`;
+      return NextResponse.redirect(new URL(pathname + search, rootUrl), 307);
+    }
 
     if (adminKnownPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
       const url = request.nextUrl.clone();
