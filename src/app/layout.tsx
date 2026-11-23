@@ -95,6 +95,13 @@ export default async function RootLayout({
   return (
     <html lang="en" className={cn('font-sans', geist.variable)}>
       <head>
+        <meta name="application-name" content="Fun Printing Store" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="FunPrinting" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#4f46e5" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         {isAdminSubdomain ? (
           <meta name="robots" content="noindex, nofollow" />
         ) : (

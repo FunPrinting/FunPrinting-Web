@@ -125,7 +125,7 @@ export function InstallAppModal({
                     2
                   </span>
                   <span>
-                    Or open browser menu (<strong>⋮</strong> or <strong>…</strong>) $\rightarrow$ select <strong>Install Fun Printing Store</strong>.
+                    Or open browser menu (<strong>⋮</strong> or <strong>…</strong>) → select <strong>Install Fun Printing Store</strong>.
                   </span>
                 </li>
               </ol>
@@ -142,3 +142,4 @@ export function InstallAppModal({
     </Dialog>
   );
 }
+
