@@ -25,6 +25,8 @@ export interface ShopChoice {
   name: string;
   deliveryPoint?: string;
   delivery?: ShopDeliverySummary;
+  distance?: number;
+  address?: string;
 }
 
 interface Shop {
@@ -108,8 +110,25 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
       .then((data) => {
         if (stale) return;
         if (!data.success) throw new Error(data.error);
-        setShops(data.partners);
+        const list: Shop[] = data.partners || [];
+        setShops(list);
         setPages(data.pagination?.totalPages || 1);
+        if (!value && list.length > 0) {
+          const first = list[0];
+          const addr = [first.address?.street, first.address?.city].filter(Boolean).join(', ');
+          const est = files.length > 0 ? (estimateAtShop(files, first.pricing ?? FALLBACK_PRICING) ?? null) : null;
+          onChange(
+            {
+              id: first._id,
+              name: first.businessName,
+              deliveryPoint: undefined,
+              delivery: first.delivery,
+              distance: first.distance,
+              address: addr,
+            },
+            est
+          );
+        }
       })
       .catch(() => !stale && (setShops([]), setError('Could not load print shops. Please try again.')));
     return () => {
@@ -125,13 +144,33 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
   // Keep the parent's price in step when options change
   const selected = priced.find((s) => s._id === value?.id);
   useEffect(() => {
-    if (selected && value) onChange(value, selected.calculatedPrice ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the price changes
-  }, [selected?.calculatedPrice]);
+    if (selected && value) {
+      onChange(
+        {
+          ...value,
+          distance: selected.distance,
+          address: [selected.address?.street, selected.address?.city].filter(Boolean).join(', '),
+        },
+        selected.calculatedPrice ?? null
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the price changes or files length changes
+  }, [selected?.calculatedPrice, files.length]);
 
   const choose = (s: Shop, deliveryPoint?: string) => {
     const withPrice = priced.find((p) => p._id === s._id);
-    onChange({ id: s._id, name: s.businessName, deliveryPoint, delivery: s.delivery }, withPrice?.calculatedPrice ?? null);
+    const addr = [s.address?.street, s.address?.city].filter(Boolean).join(', ');
+    onChange(
+      {
+        id: s._id,
+        name: s.businessName,
+        deliveryPoint,
+        delivery: s.delivery,
+        distance: s.distance,
+        address: addr,
+      },
+      withPrice?.calculatedPrice ?? null
+    );
   };
 
   if (locating && !where) {
@@ -195,8 +234,14 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-semibold tabular-nums">{s.calculatedPrice !== undefined ? `₹${s.calculatedPrice}` : '—'}</p>
-                    <p className="text-xs text-muted-foreground">printing</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {s.calculatedPrice !== undefined
+                        ? `₹${s.calculatedPrice}`
+                        : files.length === 0
+                        ? `From ₹${s.pricing?.printing?.a4?.blackAndWhite?.singleSided ?? s.pricing?.perPageBW ?? FALLBACK_PRICING.perPageBW}`
+                        : '—'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{files.length === 0 ? 'per page' : 'printing'}</p>
                   </div>
                   <Button variant={isSelected && !value?.deliveryPoint ? 'default' : 'outline'} onClick={() => choose(s)} aria-pressed={isSelected && !value?.deliveryPoint}>
                     {isSelected && !value?.deliveryPoint ? 'Selected' : 'Choose'}

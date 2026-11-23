@@ -148,3 +148,16 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * Splits a file name into its base name and lowercase extension (without the dot).
+ * If no extension exists, ext is empty.
+ */
+export function splitFileName(filename: string): { base: string; ext: string } {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot <= 0) return { base: filename, ext: '' };
+  return {
+    base: filename.slice(0, lastDot),
+    ext: filename.slice(lastDot + 1).toLowerCase(),
+  };
+}

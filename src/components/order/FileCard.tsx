@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, Eye, FileImage, FileText, Minus, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { colorPagesOf, fileKind, fileProblem, formatSize, MAX_COPIES, parsePageRange, type OrderFile, type PrintOptions } from '@/lib/order/files';
+import { colorPagesOf, fileKind, fileProblem, formatSize, MAX_COPIES, parsePageRange, splitFileName, type OrderFile, type PrintOptions } from '@/lib/order/files';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -42,18 +42,38 @@ export function FileCard({ file, index, bindingPrice, onChange, onRemove }: { fi
   const range = file.color === 'mixed' ? parsePageRange(file.colorInput, file.pages) : null;
   const problem = fileProblem(file);
   const id = (s: string) => `f${index}-${s}`;
+  const { base, ext } = splitFileName(file.file.name);
 
   return (
     <Card className="gap-0 overflow-hidden py-0">
-      <div className="flex items-start gap-3 p-4">
-        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted"><Icon className="size-5 text-muted-foreground" aria-hidden /></span>
+      <div className="flex items-center gap-3 p-4 min-w-0">
+        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+          <Icon className="size-5" aria-hidden />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium" title={file.file.name}>{file.file.name}</p>
-          <p className="text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="truncate font-medium text-foreground text-sm sm:text-base" title={file.file.name}>
+              {base}
+            </p>
+            {ext ? (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {ext}
+              </span>
+            ) : null}
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
             {file.pages} {file.pages === 1 ? 'page' : 'pages'}{file.estimatedPages ? ' (estimated)' : ''} · {formatSize(file.file.size)}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onRemove} aria-label={`Remove ${file.file.name}`}><Trash2 /></Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRemove}
+          className="shrink-0 size-8 text-muted-foreground hover:text-destructive"
+          aria-label={`Remove ${file.file.name}`}
+        >
+          <Trash2 className="size-4" />
+        </Button>
       </div>
 
       <div className="grid gap-4 border-t p-4 sm:grid-cols-2">

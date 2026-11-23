@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { CheckCircle2, FileText, Loader2, Lock, ShoppingCart, Store, Truck } from 'lucide-react';
+import { CheckCircle2, FileText, Loader2, Lock, MapPin, ShoppingCart, Store, Truck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import InlinePhoneModal from '@/components/InlinePhoneModal';
@@ -13,7 +13,7 @@ import { ShopPicker, type ShopChoice } from '@/components/order/ShopPicker';
 import { FileCard } from '@/components/order/FileCard';
 import { FileDropzone } from '@/components/order/FileDropzone';
 import { countPages, PageCountError, uploadFile } from '@/lib/order/client';
-import { colorPagesOf, DEFAULT_OPTIONS, describeOptions, fileProblem, MAX_FILES, parcelWeight, totals, type Finishing, type OrderFile, type PrintOptions } from '@/lib/order/files';
+import { colorPagesOf, DEFAULT_OPTIONS, describeOptions, fileProblem, MAX_FILES, parcelWeight, splitFileName, totals, type Finishing, type OrderFile, type PrintOptions } from '@/lib/order/files';
 import { saveOrderDraft, takeOrderDraft } from '@/lib/orderStatePersistence';
 import { addToCart, dataUrlToFile, fileToDataUrl, generateCartId, getCart, getCartItem, removeFromCart, updateCartItem, type CartItem } from '@/lib/cartUtils';
 import { cn } from '@/lib/utils';
@@ -361,7 +361,7 @@ function OrderPageContent() {
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           {/* 1. Documents */}
           <Card>
             <CardHeader className="flex flex-row items-start gap-3 space-y-0">
@@ -392,13 +392,27 @@ function OrderPageContent() {
           </Card>
 
           {/* 2. Shop */}
-          {files.length && !editingCartId ? (
-            <Card>
+          {!editingCartId && (
+            <Card className="overflow-hidden">
               <CardHeader className="flex flex-row items-start gap-3 space-y-0">
                 {step(2, Boolean(shop))}
-                <div className="flex-1">
-                  <CardTitle>Print shop</CardTitle>
-                  <CardDescription>Prices are for your documents at each shop.</CardDescription>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <CardTitle>Print shop</CardTitle>
+                    {shop?.distance !== undefined && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <MapPin className="size-3" />
+                        {shop.distance.toFixed(1)} km away
+                      </span>
+                    )}
+                  </div>
+                  <CardDescription>
+                    {shop
+                      ? files.length
+                        ? `Printing at ${shop.name} · Instant quote for your documents`
+                        : `Pre-selected nearest shop: ${shop.name} · Upload documents to calculate total`
+                      : 'Finding approved print shops near you…'}
+                  </CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
@@ -418,14 +432,14 @@ function OrderPageContent() {
                 />
               </CardContent>
             </Card>
-          ) : null}
+          )}
 
           {/* 3. Pickup or delivery */}
-          {files.length && shop && !editingCartId ? (
+          {shop && !editingCartId ? (
             <Card>
               <CardHeader className="flex flex-row items-start gap-3 space-y-0">
                 {step(3, delivery.type === 'pickup' || deliveryCharge !== null)}
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <CardTitle>Pickup or delivery</CardTitle>
                   <CardDescription>{shop.deliveryPoint ? `Pickup point: ${shop.deliveryPoint}` : `From ${shop.name}`}</CardDescription>
                 </div>
@@ -455,19 +469,36 @@ function OrderPageContent() {
             <CardHeader><CardTitle>Summary</CardTitle></CardHeader>
             <CardContent className="space-y-4 text-sm">
               {files.length ? (
-                <ul className="space-y-2">
-                  {files.map((f) => (
-                    <li key={f.id} className="flex items-start gap-2">
-                      <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="min-w-0">
-                        <span className="block truncate">{f.file.name}</span>
-                        <span className="text-xs text-muted-foreground">{f.pages} pp · {describeOptions(f)}</span>
-                      </span>
-                    </li>
-                  ))}
+                <ul className="space-y-2.5">
+                  {files.map((f) => {
+                    const { base, ext } = splitFileName(f.file.name);
+                    return (
+                      <li key={f.id} className="flex items-start gap-2.5 min-w-0">
+                        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate font-medium text-foreground text-xs sm:text-sm" title={f.file.name}>
+                              {base}
+                            </span>
+                            {ext && (
+                              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground">
+                                {ext}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground block truncate">
+                            {f.pages} {f.pages === 1 ? 'page' : 'pages'}{f.estimatedPages ? ' (est)' : ''} · {describeOptions(f)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
-                <p className="text-muted-foreground">No documents yet.</p>
+                <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+                  <FileText className="mx-auto size-5 mb-1 opacity-50" />
+                  No documents added yet.
+                </div>
               )}
 
               {!editingCartId ? (
@@ -475,14 +506,29 @@ function OrderPageContent() {
                   <Separator />
                   <dl className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <dt className="flex items-center gap-1.5 text-muted-foreground"><Store className="size-4" aria-hidden />Shop</dt>
-                      <dd className="truncate text-right">{shop?.name ?? 'Not chosen'}</dd>
+                      <dt className="flex items-center gap-1.5 text-muted-foreground shrink-0"><Store className="size-4" aria-hidden />Shop</dt>
+                      <dd className="truncate text-right font-medium text-xs sm:text-sm">
+                        {shop ? (
+                          <span title={`${shop.name}${shop.distance !== undefined ? ` (${shop.distance.toFixed(1)} km)` : ''}`}>
+                            {shop.name}
+                            {shop.distance !== undefined && (
+                              <span className="text-xs text-muted-foreground ml-1">({shop.distance.toFixed(1)} km)</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                            <Loader2 className="size-3 animate-spin" /> Locating nearest…
+                          </span>
+                        )}
+                      </dd>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <dt className="text-muted-foreground">Printing</dt>
-                      <dd className="tabular-nums">{printingPrice !== null ? rupees(printingPrice) : '—'}</dd>
+                      <dd className="tabular-nums font-medium">
+                        {printingPrice !== null ? rupees(printingPrice) : files.length === 0 ? <span className="text-xs text-muted-foreground font-normal">Add document</span> : <span className="text-xs text-muted-foreground font-normal">Calculating…</span>}
+                      </dd>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <dt className="flex items-center gap-1.5 text-muted-foreground"><Truck className="size-4" aria-hidden />{delivery.type === 'delivery' ? 'Delivery' : 'Pickup'}</dt>
                       <dd className="tabular-nums">{delivery.type === 'pickup' ? 'Free' : deliveryCharge === null ? 'Choose' : rupees(deliveryCharge)}</dd>
                     </div>
@@ -496,7 +542,13 @@ function OrderPageContent() {
                   <Separator />
                   <div className="flex items-baseline justify-between">
                     <span className="font-medium">Total</span>
-                    {sums ? <span className="text-2xl font-semibold tabular-nums">{rupees(sums.total)}</span> : <span className="text-muted-foreground">{files.length ? 'Choose a shop' : 'Add a document'}</span>}
+                    {sums ? (
+                      <span className="text-2xl font-semibold tabular-nums">{rupees(sums.total)}</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        {files.length ? (shop ? 'Calculating…' : 'Choose a shop') : 'Add document to calculate'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="hidden space-y-2 lg:block">
