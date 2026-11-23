@@ -50,17 +50,40 @@ export interface UploadResult {
 }
 
 /** Uploads one file with real progress (fetch can't report upload progress). */
-export function uploadFile(file: File, onProgress: (fraction: number) => void): Promise<UploadResult> {
+export function uploadFile(
+  file: File,
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal
+): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new DOMException('Upload aborted', 'AbortError'));
+    }
+
     const xhr = new XMLHttpRequest();
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException('Upload aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     xhr.open('POST', '/api/upload-file');
     xhr.responseType = 'json';
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onerror = () => reject(new Error('The upload failed. Check your connection and try again.'));
-    xhr.ontimeout = () => reject(new Error('The upload took too long. Check your connection and try again.'));
+    xhr.onerror = () => {
+      signal?.removeEventListener('abort', onAbort);
+      reject(new Error('The upload failed. Check your connection and try again.'));
+    };
+    xhr.ontimeout = () => {
+      signal?.removeEventListener('abort', onAbort);
+      reject(new Error('The upload took too long. Check your connection and try again.'));
+    };
     xhr.onload = () => {
+      signal?.removeEventListener('abort', onAbort);
       const data = xhr.response as { success?: boolean; error?: string; receipt?: string; pageCount?: number } | null;
-      if (xhr.status >= 200 && xhr.status < 300 && data?.success && data.receipt) return resolve({ receipt: data.receipt, pageCount: data.pageCount });
+      if (xhr.status >= 200 && xhr.status < 300 && data?.success && data.receipt) {
+        return resolve({ receipt: data.receipt, pageCount: data.pageCount });
+      }
       if (xhr.status === 413) return reject(new Error(`“${file.name}” is too large. The limit is 50 MB.`));
       if (xhr.status === 401) return reject(new Error('Please sign in again to upload.'));
       reject(new Error(data?.error || (xhr.status >= 500 ? 'Server error while uploading. Please try again.' : `Upload failed (${xhr.status})`)));

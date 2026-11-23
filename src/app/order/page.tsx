@@ -30,12 +30,6 @@ interface Customer {
   email: string;
   phone: string;
 }
-interface UploadState {
-  index: number;
-  total: number;
-  name: string;
-  fraction: number;
-}
 interface PriceChange {
   orderId: string;
   total: number;
@@ -103,7 +97,6 @@ function OrderPageContent() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [phoneOpen, setPhoneOpen] = useState(false);
-  const [upload, setUpload] = useState<UploadState | null>(null);
   const [paying, setPaying] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [priceChange, setPriceChange] = useState<PriceChange | null>(null);
@@ -115,6 +108,98 @@ function OrderPageContent() {
   const checkoutKey = useRef<string>(newId());
   const filesRef = useRef(files);
   filesRef.current = files;
+  const uploadAbortControllers = useRef(new Map<string, AbortController>());
+  const uploadPromises = useRef(new Map<string, Promise<{ receipt: string; pageCount?: number }>>());
+
+  // ── Background file upload & page count preprocessing ──────────────
+  const uploadSingleFile = useCallback(
+    (fileId: string, file: File): Promise<{ receipt: string; pageCount?: number }> => {
+      const existingReceipt = receipts.current.get(fileId);
+      if (existingReceipt) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId ? { ...f, uploadStatus: 'uploaded', uploadProgress: 100, receipt: existingReceipt } : f
+          )
+        );
+        return Promise.resolve({ receipt: existingReceipt });
+      }
+
+      const existingPromise = uploadPromises.current.get(fileId);
+      if (existingPromise) return existingPromise;
+
+      const prevController = uploadAbortControllers.current.get(fileId);
+      if (prevController) prevController.abort();
+
+      const controller = new AbortController();
+      uploadAbortControllers.current.set(fileId, controller);
+
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId ? { ...f, uploadStatus: 'uploading', uploadProgress: 0, uploadError: undefined } : f
+        )
+      );
+
+      const promise = (async () => {
+        try {
+          const result = await uploadFile(
+            file,
+            (fraction) => {
+              const pct = Math.round(fraction * 100);
+              setFiles((prev) =>
+                prev.map((f) => (f.id === fileId ? { ...f, uploadProgress: pct } : f))
+              );
+            },
+            controller.signal
+          );
+
+          receipts.current.set(fileId, result.receipt);
+
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === fileId
+                ? {
+                    ...f,
+                    uploadStatus: 'uploaded',
+                    uploadProgress: 100,
+                    receipt: result.receipt,
+                    pages: result.pageCount && result.pageCount > 0 ? result.pageCount : f.pages,
+                    estimatedPages: false,
+                  }
+                : f
+            )
+          );
+
+          return result;
+        } catch (err: any) {
+          if (controller.signal.aborted) throw err;
+          const msg = err instanceof Error ? err.message : 'Upload failed';
+          setFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, uploadStatus: 'error', uploadError: msg } : f))
+          );
+          throw err;
+        } finally {
+          uploadAbortControllers.current.delete(fileId);
+          uploadPromises.current.delete(fileId);
+        }
+      })();
+
+      uploadPromises.current.set(fileId, promise);
+      return promise;
+    },
+    []
+  );
+
+  // Auto-start upload for any pending documents when the user signs in
+  useEffect(() => {
+    if (isAuthenticated) {
+      const list = filesRef.current;
+      for (const f of list) {
+        if (!receipts.current.has(f.id) && f.uploadStatus !== 'uploading') {
+          uploadSingleFile(f.id, f.file).catch(() => {});
+        }
+      }
+    }
+  }, [isAuthenticated, uploadSingleFile]);
 
   // ── Customer details ───────────────────────────────────────────────
   useEffect(() => {
@@ -140,18 +225,37 @@ function OrderPageContent() {
     for (const file of list.slice(0, room)) {
       try {
         const { pages, estimated } = await countPages(file);
-        added.push(makeFile(file, pages, options, estimated));
+        const doc = makeFile(file, pages, options, estimated);
+        if (isAuthenticated) {
+          doc.uploadStatus = 'uploading';
+          doc.uploadProgress = 0;
+        } else {
+          doc.uploadStatus = 'idle';
+        }
+        added.push(doc);
       } catch (e) {
         toast.error(e instanceof PageCountError ? e.message : `We couldn’t add “${file.name}”.`);
       }
     }
     setFiles((prev) => [...prev, ...added]);
     setCounting(false);
-  }, []);
+
+    // Immediately preprocess & upload documents in the background
+    if (isAuthenticated) {
+      for (const doc of added) {
+        uploadSingleFile(doc.id, doc.file).catch(() => {});
+      }
+    }
+  }, [isAuthenticated, uploadSingleFile]);
 
   const updateFile = (id: string, patch: Partial<PrintOptions>) => setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
 
   const removeFile = (id: string) => {
+    const controller = uploadAbortControllers.current.get(id);
+    if (controller) controller.abort();
+    uploadAbortControllers.current.delete(id);
+    uploadPromises.current.delete(id);
+
     setFiles((prev) => {
       const gone = prev.find((f) => f.id === id);
       if (gone) URL.revokeObjectURL(gone.previewUrl);
@@ -160,7 +264,12 @@ function OrderPageContent() {
     receipts.current.delete(id);
   };
 
-  useEffect(() => () => filesRef.current.forEach((f) => URL.revokeObjectURL(f.previewUrl)), []);
+  useEffect(() => () => {
+    uploadAbortControllers.current.forEach((c) => c.abort());
+    uploadAbortControllers.current.clear();
+    uploadPromises.current.clear();
+    filesRef.current.forEach((f) => URL.revokeObjectURL(f.previewUrl));
+  }, []);
 
   // ── Arriving from elsewhere: Google sign-in, cart, a template ───────
   useEffect(() => {
@@ -278,19 +387,37 @@ function OrderPageContent() {
     }
     setPaying(true);
     try {
-      // 1. Upload (once per document; receipts are kept for retries)
       const list = filesRef.current;
-      for (let i = 0; i < list.length; i++) {
-        const f = list[i];
-        if (receipts.current.has(f.id)) continue;
-        setUpload({ index: i + 1, total: list.length, name: f.file.name, fraction: 0 });
-        const result = await uploadFile(f.file, (fraction) => setUpload((u) => (u ? { ...u, fraction } : u)));
-        receipts.current.set(f.id, result.receipt);
-        if (result.pageCount && result.pageCount !== f.pages) setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, pages: result.pageCount!, estimatedPages: false } : x)));
-      }
-      setUpload(null);
 
-      // 2. Checkout: the server prices the order and creates the payment link
+      // 1. Check if any file failed to upload
+      const failed = list.find((f) => f.uploadStatus === 'error' && !receipts.current.has(f.id));
+      if (failed) {
+        throw new Error(`“${failed.file.name}” failed to upload. Click Retry on the document card.`);
+      }
+
+      // 2. Complete any pending or in-flight uploads
+      const pending = list.filter((f) => !receipts.current.has(f.id));
+      if (pending.length > 0) {
+        for (const f of pending) {
+          if (!uploadPromises.current.has(f.id)) {
+            uploadSingleFile(f.id, f.file).catch(() => {});
+          }
+        }
+        await Promise.all(
+          pending.map((f) => {
+            const p = uploadPromises.current.get(f.id);
+            return p || uploadSingleFile(f.id, f.file);
+          })
+        );
+      }
+
+      // 3. Double check all receipts are ready
+      const missing = filesRef.current.find((f) => !receipts.current.has(f.id));
+      if (missing) {
+        throw new Error(`Could not complete upload for “${missing.file.name}”. Please try again.`);
+      }
+
+      // 4. Checkout: the server prices the order and creates the payment link
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -322,7 +449,7 @@ function OrderPageContent() {
         throw new Error(data.error || 'Could not start the payment. Please try again.');
       }
 
-      // 3. The server's price is final; ask again if it differs from what was shown
+      // 5. The server's price is final; ask again if it differs from what was shown
       const total = (data.amounts?.total ?? 0) / 100;
       if (sums && Math.abs(total - sums.total) >= 1) {
         setPriceChange({ orderId: data.orderId, total, paymentUrl: data.paymentUrl });
@@ -330,14 +457,22 @@ function OrderPageContent() {
       }
       goToPayment(data.paymentUrl);
     } catch (e) {
-      setUpload(null);
       toast.error(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
     } finally {
       setPaying(false);
     }
   };
 
-  const payLabel = !isAuthenticated ? 'Sign in to pay' : upload ? `Uploading ${upload.index} of ${upload.total}…` : paying ? 'Preparing payment…' : sums ? `Pay ${rupees(sums.total)}` : 'Pay';
+  const isAnyUploading = files.some((f) => f.uploadStatus === 'uploading');
+  const payLabel = !isAuthenticated
+    ? 'Sign in to pay'
+    : paying
+    ? isAnyUploading
+      ? 'Uploading documents…'
+      : 'Preparing payment…'
+    : sums
+    ? `Pay ${rupees(sums.total)}`
+    : 'Pay';
 
   // ── Layout ─────────────────────────────────────────────────────────
   const step = (n: number, done: boolean) => (
@@ -373,7 +508,14 @@ function OrderPageContent() {
             </CardHeader>
             <CardContent className="space-y-4">
               {files.map((f, i) => (
-                <FileCard key={f.id} file={f} index={i} onChange={(patch) => updateFile(f.id, patch)} onRemove={() => removeFile(f.id)} />
+                <FileCard
+                  key={f.id}
+                  file={f}
+                  index={i}
+                  onChange={(patch) => updateFile(f.id, patch)}
+                  onRemove={() => removeFile(f.id)}
+                  onRetryUpload={() => uploadSingleFile(f.id, f.file)}
+                />
               ))}
               {editingCartId ? null : files.length ? (
                 <div className="flex flex-wrap items-center gap-3">
@@ -570,15 +712,10 @@ function OrderPageContent() {
                 </div>
               )}
 
-              {upload ? (
-                <div className="space-y-1.5" role="status" aria-live="polite">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span className="truncate">Uploading {upload.name}</span>
-                    <span className="tabular-nums">{Math.round(upload.fraction * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary transition-[width]" style={{ width: `${((upload.index - 1 + upload.fraction) / upload.total) * 100}%` }} />
-                  </div>
+              {isAnyUploading ? (
+                <div className="rounded-lg border bg-muted/40 p-2.5 text-xs text-muted-foreground flex items-center gap-2" role="status">
+                  <div className="size-2 rounded-full bg-primary animate-ping shrink-0" />
+                  <span className="truncate">Uploading documents in background…</span>
                 </div>
               ) : null}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, Eye, FileImage, FileText, Minus, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, Eye, FileImage, FileText, Loader2, Minus, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { colorPagesOf, fileKind, fileProblem, formatSize, MAX_COPIES, parsePageRange, splitFileName, type OrderFile, type PrintOptions } from '@/lib/order/files';
 import { Button } from '@/components/ui/button';
@@ -35,7 +35,21 @@ function PageChips({ pages, colorPages }: { pages: number; colorPages: Set<numbe
 }
 
 /** One document: preview, page count and its own print options. */
-export function FileCard({ file, index, bindingPrice, onChange, onRemove }: { file: OrderFile; index: number; bindingPrice?: number; onChange: (patch: Partial<PrintOptions>) => void; onRemove: () => void }) {
+export function FileCard({
+  file,
+  index,
+  bindingPrice,
+  onChange,
+  onRemove,
+  onRetryUpload,
+}: {
+  file: OrderFile;
+  index: number;
+  bindingPrice?: number;
+  onChange: (patch: Partial<PrintOptions>) => void;
+  onRemove: () => void;
+  onRetryUpload?: () => void;
+}) {
   const [preview, setPreview] = useState(false);
   const kind = fileKind(file.file);
   const Icon = kind === 'image' ? FileImage : FileText;
@@ -61,9 +75,56 @@ export function FileCard({ file, index, bindingPrice, onChange, onRemove }: { fi
               </span>
             ) : null}
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
-            {file.pages} {file.pages === 1 ? 'page' : 'pages'}{file.estimatedPages ? ' (estimated)' : ''} · {formatSize(file.file.size)}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+            <span>
+              {file.pages} {file.pages === 1 ? 'page' : 'pages'}{file.estimatedPages ? ' (estimated)' : ''} · {formatSize(file.file.size)}
+            </span>
+
+            {/* Background Upload Progress & Preprocessing Badge */}
+            {file.uploadStatus === 'uploading' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <Loader2 className="size-3 animate-spin" />
+                <span>Uploading {Math.round(file.uploadProgress ?? 0)}%</span>
+              </span>
+            )}
+
+            {file.uploadStatus === 'uploaded' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="size-3" />
+                <span>Ready</span>
+              </span>
+            )}
+
+            {file.uploadStatus === 'error' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                <AlertCircle className="size-3" />
+                <span>{file.uploadError || 'Upload failed'}</span>
+                {onRetryUpload && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRetryUpload();
+                    }}
+                    className="ml-0.5 inline-flex items-center gap-0.5 underline font-semibold hover:text-foreground cursor-pointer"
+                  >
+                    <RefreshCw className="size-2.5" />
+                    Retry
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
+
+          {/* Mini progress bar while uploading */}
+          {file.uploadStatus === 'uploading' && (
+            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-primary transition-all duration-300 ease-out"
+                style={{ width: `${Math.max(5, Math.min(100, file.uploadProgress ?? 0))}%` }}
+              />
+            </div>
+          )}
         </div>
         <Button
           variant="ghost"

@@ -32,6 +32,10 @@ export interface OrderFile extends PrintOptions {
   pages: number;
   /** Set if the pages could not be counted exactly (price may change after upload). */
   estimatedPages?: boolean;
+  uploadStatus?: 'idle' | 'uploading' | 'uploaded' | 'error';
+  uploadProgress?: number;
+  uploadError?: string;
+  receipt?: string;
 }
 
 export const DEFAULT_OPTIONS: PrintOptions = { pageSize: 'A4', color: 'bw', sided: 'single', copies: 1, colorInput: '', finishing: 'service' };
