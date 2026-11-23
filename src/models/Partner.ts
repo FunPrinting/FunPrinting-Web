@@ -166,43 +166,17 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     pendingPayout: { type: Number, required: true, default: 0 },
   },
   servicesOffered: {
-    printing: {
-      enabled: { type: Boolean, default: true },
-      maxPaperSize: { type: String, enum: ['a4', 'a3', 'letter', 'legal'], default: 'a4' },
-      supportsColor: { type: Boolean, default: true },
-      supportsBlackAndWhite: { type: Boolean, default: true },
-      supportsDoubleSided: { type: Boolean, default: false },
-    },
-    binding: {
-      enabled: { type: Boolean, default: false },
-      types: {
-        spiral: { type: Boolean, default: false },
-        perfect: { type: Boolean, default: false },
-        staple: { type: Boolean, default: false },
-      },
-    },
-    lamination: {
-      enabled: { type: Boolean, default: false },
-      maxSize: { type: String, enum: ['a4', 'a3'], default: 'a4' },
-    },
-    scanning: {
-      enabled: { type: Boolean, default: false },
-    },
-    photocopying: {
-      enabled: { type: Boolean, default: false },
-      supportsColor: { type: Boolean, default: false },
-    },
-    plasticFiles: {
-      enabled: { type: Boolean, default: false },
-    },
-    delivery: {
-      enabled: { type: Boolean, default: false },
-    },
-    customServices: [{
-      name: { type: String },
-      enabled: { type: Boolean, default: true },
-      priceUnit: { type: String, enum: ['per_page', 'per_item', 'per_order'], default: 'per_item' },
-    }],
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({
+      printing: { enabled: true, maxPaperSize: 'a4', supportsColor: true, supportsBlackAndWhite: true, supportsDoubleSided: false },
+      binding: { enabled: false, types: { spiral: false, perfect: false, staple: false } },
+      lamination: { enabled: false, maxSize: 'a4' },
+      scanning: { enabled: false },
+      photocopying: { enabled: false, supportsColor: false },
+      plasticFiles: { enabled: false },
+      delivery: { enabled: false },
+      customServices: [],
+    }),
   },
   pricing: {
     printing: {

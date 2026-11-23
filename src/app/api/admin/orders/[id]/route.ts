@@ -93,7 +93,7 @@ export async function PATCH(
 
     const update: Record<string, unknown> = { status: target, orderStatus: target, updatedAt: new Date() };
     if (target === 'printed') update.printedAt = new Date();
-    const order = await Order.findOneAndUpdate(query, update, { new: true });
+    const order = await Order.findOneAndUpdate(query, update, { returnDocument: 'after' });
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
 
     const { syncJobFromOrderStatus } = await import('@/lib/jobs/service');

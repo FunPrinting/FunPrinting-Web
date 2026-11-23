@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
       }
       if (data.servicesOffered) {
         partner.servicesOffered = { ...partner.servicesOffered, ...data.servicesOffered };
+        partner.markModified('servicesOffered');
       }
       if (data.pricing) {
         partner.pricing = data.pricing;
@@ -121,7 +122,10 @@ export async function POST(request: NextRequest) {
         isActive: false,
         isOnline: false,
         earnings: { totalRevenue: 0, pendingPayout: 0 },
-        servicesOffered: data.servicesOffered || { printing: true, binding: false, cashOnDelivery: false },
+        servicesOffered: data.servicesOffered || {
+          printing: { enabled: true, maxPaperSize: 'a4', supportsColor: true, supportsBlackAndWhite: true, supportsDoubleSided: false },
+          binding: { enabled: false, types: { spiral: false, perfect: false, staple: false } },
+        },
         pricing: data.pricing || { perPageBW: 2, perPageColor: 5, binding: { spiral: 30, perfect: 50, staple: 10 } },
         deliveryPoints: data.deliveryPoints || [],
         phoneNumbers: data.phoneNumbers || []

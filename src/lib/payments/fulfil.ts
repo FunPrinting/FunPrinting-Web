@@ -60,7 +60,7 @@ export async function settlePaid(input: SettleInput): Promise<SettleResult> {
       },
       $push: { events: event('paid', input.source, input.razorpayPaymentId) },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPayment | null>();
 
   if (updated) {
@@ -125,7 +125,7 @@ async function markOrderPaid(p: IPayment) {
         paidAt: p.paidAt ?? new Date(),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!order) {
     const current = await Order.findOne({ orderId: p.orderId }).select('status paymentStatus paymentRef').lean<{ status: string; paymentStatus: string; paymentRef?: string } | null>();
@@ -255,7 +255,7 @@ export async function runFulfilment(referenceId: string): Promise<{ done: boolea
       $or: [{ 'fulfilment.lockedUntil': { $exists: false } }, { 'fulfilment.lockedUntil': null }, { 'fulfilment.lockedUntil': { $lt: now } }],
     },
     { $set: { 'fulfilment.lockedUntil': new Date(now.getTime() + LEASE_MS) } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPayment | null>();
   if (!p) {
     const current = await Payment.findOne({ referenceId }).select('status fulfilment').lean<IPayment | null>();

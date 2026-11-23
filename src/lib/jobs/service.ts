@@ -278,7 +278,7 @@ export async function acceptJob(jobId: string, actor: PartnerActor): Promise<IPr
       $inc: { version: 1 },
       $push: { history: event('accepted', actorLabel(actor)) },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPrintJob | null>();
   if (!updated) throw new JobError('Job changed meanwhile; reload and try again', 409);
   await Order.updateOne({ orderId: updated.orderId }, { $unset: { shopDelayNotifiedAt: '' } });
@@ -335,7 +335,7 @@ export async function claimJob(actor: Required<PartnerActor>, jobId?: string): P
         },
       },
     ],
-    { new: true, sort: { createdAt: 1 }, updatePipeline: true }
+    { returnDocument: 'after', sort: { createdAt: 1 }, updatePipeline: true }
   ).lean<IPrintJob | null>();
   if (!job) {
     if (jobId && (await PrintJob.exists({ jobId, partnerId: actor.partnerId }))) {
@@ -390,7 +390,7 @@ export async function reportJob(jobId: string, actor: Required<PartnerActor>, re
       $push: { history: event('failed', actorLabel(actor), [error, printerName && `printer: ${printerName}`].filter(Boolean).join(' · ') || undefined) },
     };
   }
-  const updated = await PrintJob.findOneAndUpdate(guard, update, { new: true }).lean<IPrintJob | null>();
+  const updated = await PrintJob.findOneAndUpdate(guard, update, { returnDocument: 'after' }).lean<IPrintJob | null>();
   if (!updated) throw new JobError('Job changed meanwhile; reload and try again', 409);
 
   if (report === 'printing') await syncOrderFromJob(updated.orderId, 'printing');
@@ -433,7 +433,7 @@ export async function syncJobFromOrderStatus(orderId: string, orderStatus: strin
     const updated = await PrintJob.findOneAndUpdate(
       { _id: job._id, status: { $nin: ['printed', 'cancelled'] } },
       { $set: { status: 'printed', printedAt: now, firstClaimedAt: job.firstClaimedAt ?? now }, $unset: { claim: '', acceptBy: '', refundBy: '' }, $inc: { version: 1 }, $push: { history: event('printed', actor, `order set to ${orderStatus}`) } },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean<IPrintJob | null>();
     if (updated?.paymentRef) {
       const { releasePartnerTransfer } = await import('@/lib/payments/refunds');
@@ -476,7 +476,7 @@ export async function resendJob(orderId: string, adminEmail: string, force = fal
   job = await PrintJob.findOneAndUpdate(
     { _id: job._id, version: job.version },
     { $set: { status: 'queued' }, $unset: { claim: '', needsAttention: '' }, $inc: { version: 1 }, $push: { history: event(force ? 'resent_forced' : 'resent', `admin:${adminEmail}`) } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPrintJob | null>();
   if (!job) throw new JobError('Job changed meanwhile; try again', 409);
   await announce(job, job.partnerId!, 'updated');

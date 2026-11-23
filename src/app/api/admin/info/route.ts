@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       const updatedAdmin = await AdminInfo.findByIdAndUpdate(
         existingAdmin._id,
         { ...body, isActive: true },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
       
       return NextResponse.json({
@@ -100,7 +100,7 @@ export async function PUT(request: NextRequest) {
     const updatedAdmin = await AdminInfo.findByIdAndUpdate(
       id,
       updateData,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
     
     if (!updatedAdmin) {

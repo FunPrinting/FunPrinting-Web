@@ -54,7 +54,7 @@ export async function bookCourier(orderId: string, actor: string, opts: { partne
   const locked = await Order.findOneAndUpdate(
     { _id: order._id, 'shiprocket.awbCode': { $exists: false }, $or: [{ 'shiprocket.bookingStartedAt': { $exists: false } }, { 'shiprocket.bookingStartedAt': { $lt: new Date(now.getTime() - LOCK_MS) } }] },
     { $set: { 'shiprocket.bookingStartedAt': now } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<any>();
   if (!locked) throw new CourierError('A booking for this order is already in progress', 409);
 
@@ -99,7 +99,7 @@ export async function bookCourier(orderId: string, actor: string, opts: { partne
       status: 'dispatched',
       orderStatus: 'dispatched',
     };
-    const updated = await Order.findOneAndUpdate({ _id: order._id }, { $set: update, $unset: { 'shiprocket.bookingStartedAt': '' } }, { new: true }).lean<any>();
+    const updated = await Order.findOneAndUpdate({ _id: order._id }, { $set: update, $unset: { 'shiprocket.bookingStartedAt': '' } }, { returnDocument: 'after' }).lean<any>();
     log.info({ awb: awb.awbCode, courier: awb.courierName }, 'courier booked');
     return { awbCode: awb.awbCode, courierName: awb.courierName, trackingUrl: getTrackingUrl(awb.awbCode), order: updated };
   } catch (error) {

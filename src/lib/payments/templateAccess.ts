@@ -52,7 +52,7 @@ export async function checkTemplateAccess(
             'template.generationCount': { $lt: MAX_GENERATIONS_PER_PURCHASE },
           },
           { $inc: { 'template.generationCount': 1 } },
-          { new: true }
+          { returnDocument: 'after' }
         ).lean<{ referenceId: string; template?: { formData?: Record<string, unknown> } } | null>()
       : null;
   if (!purchase) {

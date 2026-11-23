@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const item = await ErrorGroup.findByIdAndUpdate(
     id,
     { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
-    { new: true, projection: { samples: 0 } }
+    { returnDocument: 'after', projection: { samples: 0 } }
   ).lean();
   if (!item) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
   return NextResponse.json({ success: true, item });

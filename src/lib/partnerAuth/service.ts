@@ -94,7 +94,7 @@ export async function exchangeCode(opts: { code: string; verifier: string; devic
   const record = await DeviceAuthCode.findOneAndUpdate(
     { codeHash: sha256(opts.code), usedAt: { $exists: false }, expiresAt: { $gt: new Date() } },
     { $set: { usedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean();
   if (!record) throw new DeviceAuthError('This sign-in code is invalid or has expired. Please sign in again.', 400, 'invalid_grant');
   const expected = Buffer.from(record.challenge);
@@ -139,7 +139,7 @@ export async function refreshTokens(refreshToken: string, ip?: string, appVersio
   const device = await PartnerDevice.findOneAndUpdate(
     { refreshTokenHash: hash, revokedAt: { $exists: false }, refreshExpiresAt: { $gt: now } },
     { $set: { refreshTokenHash: sha256(next), previousRefreshTokenHash: hash, rotatedAt: now, refreshExpiresAt: new Date(now.getTime() + REFRESH_TTL_MS), lastSeenAt: now, lastIp: ip, ...(appVersion ? { appVersion: appVersion.slice(0, 40) } : {}) } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPartnerDevice | null>();
 
   if (!device) {

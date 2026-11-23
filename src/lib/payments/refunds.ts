@@ -96,7 +96,7 @@ export async function applyRefundProcessed(refund: { id: string; payment_id: str
       $addToSet: { 'razorpay.processedRefundIds': refund.id, 'razorpay.refundIds': refund.id },
       $push: { events: { at: new Date(), type: 'refund_processed', source: 'webhook', detail: `${refund.id} ${refund.amount}` } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) return Boolean(await Payment.exists({ 'razorpay.paymentId': refund.payment_id }));
 

@@ -43,7 +43,7 @@ export async function handleAcceptDeadline(jobId: string): Promise<string> {
       $inc: { version: 1 },
       $push: { history: event('customer_notified', 'system', 'shop has not accepted yet') },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPrintJob | null>();
   if (!asked) return 'raced';
 
@@ -149,7 +149,7 @@ export async function cancelJobAfterRefund(orderId: string): Promise<void> {
   const job = await PrintJob.findOneAndUpdate(
     { orderId, status: { $nin: ['printed', 'cancelled'] } },
     { $set: { status: 'cancelled' }, $unset: { claim: '', acceptBy: '', refundBy: '', customerChoice: '' }, $inc: { version: 1 }, $push: { history: event('cancelled', 'system', 'payment refunded') } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean<IPrintJob | null>();
   if (job?.partnerId) await announce(job, job.partnerId, 'cancelled');
 }

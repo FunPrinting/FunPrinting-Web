@@ -87,7 +87,7 @@ export async function PATCH(
         const bumped = await Order.findOneAndUpdate(
           { _id: order._id },
           { $inc: { 'deliveryOption.handover.attempts': 1 } },
-          { new: true, projection: { 'deliveryOption.handover.attempts': 1 } }
+          { returnDocument: 'after', projection: { 'deliveryOption.handover.attempts': 1 } }
         ).lean<{ deliveryOption?: { handover?: { attempts?: number } } }>();
         const left = Math.max(0, MAX_HANDOVER_ATTEMPTS - (bumped?.deliveryOption?.handover?.attempts ?? MAX_HANDOVER_ATTEMPTS));
         log.warn({ orderId, partnerId: partnerIdStr, left }, 'wrong handover code');
@@ -104,7 +104,7 @@ export async function PATCH(
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status, ...ownedBy },
       { $set: { status, orderStatus: status, ...(verifiedNow ? { 'deliveryOption.handover.verifiedAt': new Date() } : {}) } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!updated) {
       return NextResponse.json(

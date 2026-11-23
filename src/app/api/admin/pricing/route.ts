@@ -71,7 +71,7 @@ export async function PUT(request: NextRequest) {
           updatedAt: new Date(),
         },
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
     );
     return NextResponse.json({ success: true, pricing, message: 'Pricing updated successfully' });
   } catch (error) {

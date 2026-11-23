@@ -187,19 +187,30 @@ export async function sendInvoiceEmail(order: IOrder, deliveryNumber: string): P
     // Generate HTML email body
     const htmlBody = generateInvoiceHTML(order, deliveryNumber);
 
+    const fromAddress = process.env.EMAIL_HOST_USER || process.env.EMAIL_USER || 'no-reply@funprinting.store';
+    const textBody = `Thank you for your order #${order.orderId} at Fun Printing!
+
+Your PDF invoice is attached to this email.
+
+Order Total: ₹${(typeof order.amount === 'number' ? order.amount : 0).toFixed(2)}
+Payment Status: ${order.paymentStatus === 'completed' ? 'Paid' : (order.paymentStatus || 'Pending')}
+
+Thank you for choosing Fun Printing!`;
+
     // Send email
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: fromAddress,
       to: order.customerInfo.email,
       subject: `Invoice for order #${order.orderId} | Fun Printing`,
+      text: textBody,
       html: htmlBody,
       attachments: [
         {
           filename: `Invoice_${order.orderId}.pdf`,
           content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
-      ]
+          contentType: 'application/pdf',
+        },
+      ],
     };
 
     console.log(`📧 Sending invoice email for order ${order.orderId}...`);

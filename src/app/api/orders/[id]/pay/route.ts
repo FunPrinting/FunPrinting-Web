@@ -44,7 +44,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const locked = await Order.findOneAndUpdate(
     { _id: order._id, $or: [{ payLockUntil: { $exists: false } }, { payLockUntil: null }, { payLockUntil: { $lt: now } }] },
     { $set: { payLockUntil: new Date(now.getTime() + LOCK_MS) } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!locked) return conflict('A payment for this order is already being started. Please wait a moment.');
 

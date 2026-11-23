@@ -252,6 +252,46 @@ export const authOptions: NextAuthOptions = {
           domain: cookieDomain,
         },
       },
+      callbackUrl: {
+        name: `${cookiePrefix}next-auth.callback-url`,
+        options: {
+          sameSite: 'lax',
+          path: '/',
+          secure: useSecureCookies,
+          domain: cookieDomain,
+        },
+      },
+      csrfToken: {
+        name: `${useSecureCookies ? '__Host-' : ''}next-auth.csrf-token`,
+        options: {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          secure: useSecureCookies,
+        },
+      },
+      pkceCodeVerifier: {
+        name: `${cookiePrefix}next-auth.pkce.code_verifier`,
+        options: {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          secure: useSecureCookies,
+          domain: cookieDomain,
+          maxAge: 900,
+        },
+      },
+      state: {
+        name: `${cookiePrefix}next-auth.state`,
+        options: {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          secure: useSecureCookies,
+          domain: cookieDomain,
+          maxAge: 900,
+        },
+      },
     };
   })(),
   secret: process.env.NEXTAUTH_SECRET,

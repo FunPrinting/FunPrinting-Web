@@ -48,7 +48,7 @@ async function postSigned(path: string, payload: Record<string, unknown>): Promi
   const baseUrl = process.env.WSS_API_URL?.replace(/\/+$/, '');
   const secret = process.env.WSS_DISPATCH_SECRET;
   if (!baseUrl || !secret) {
-    logger.error(
+    logger.debug(
       { path, missing: !baseUrl ? 'WSS_API_URL' : 'WSS_DISPATCH_SECRET' },
       'WSS call skipped: not configured'
     );

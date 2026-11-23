@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       update.razorpayAccountId = parsed.data.razorpayAccountId ?? undefined;
     }
 
-    const partner = await Partner.findByIdAndUpdate(id, { $set: update }, { new: true });
+    const partner = await Partner.findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' });
     if (!partner) {
       return NextResponse.json({ success: false, error: 'Partner not found' }, { status: 404 });
     }
