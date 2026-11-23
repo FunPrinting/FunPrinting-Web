@@ -34,7 +34,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const now = Date.now();
   const age = now - new Date(p.createdAt).getTime();
-  if (p.status === 'created' && age > 20_000 && now - (lastSync.get(ref) ?? 0) > SYNC_INTERVAL_MS) {
+
+  // If there are refunds that haven't been confirmed yet, check their status with Razorpay
+  const unprocessedRefunds = (p?.razorpay?.refundIds ?? []).filter((id) => !(p?.razorpay?.processedRefundIds ?? []).includes(id));
+  if (p && unprocessedRefunds.length > 0) {
+    try {
+      const { fetchRefund } = await import('@/lib/payments/razorpayApi');
+      const { applyRefundProcessed } = await import('@/lib/payments/refunds');
+      for (const refundId of unprocessedRefunds) {
+        const refund = await fetchRefund(refundId);
+        if (refund.status === 'processed') {
+          await applyRefundProcessed({ id: refund.id, payment_id: p.razorpay.paymentId!, amount: refund.amount });
+        }
+      }
+      p = (await Payment.findOne({ referenceId: ref }).lean<IPayment | null>()) ?? p;
+    } catch (error) {
+      log.warn({ err: error }, 'failed to sync refunds from Razorpay');
+    }
+  }
+
+  if (p && p.status === 'created' && age > 20_000 && now - (lastSync.get(ref) ?? 0) > SYNC_INTERVAL_MS) {
     lastSync.set(ref, now);
     if (lastSync.size > 5000) lastSync.clear();
     try {

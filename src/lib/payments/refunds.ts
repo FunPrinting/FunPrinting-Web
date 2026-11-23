@@ -54,6 +54,12 @@ export async function startRefund(referenceId: string, opts: { amountPaise?: num
     }
   );
   logger.info({ referenceId, refundId: refund.id, amount }, 'refund started');
+
+  // If Razorpay processed the refund immediately, apply it right now without waiting for a webhook
+  if (refund.status === 'processed') {
+    await applyRefundProcessed({ id: refund.id, payment_id: p.razorpay.paymentId, amount: refund.amount || amount });
+  }
+
   return { refundId: refund.id, amount };
 }
 
@@ -110,10 +116,11 @@ export async function applyRefundProcessed(refund: { id: string; payment_id: str
   if (!updated) return Boolean(await Payment.exists({ 'razorpay.paymentId': refund.payment_id }));
 
   const paid = updated.amountPaid ?? updated.amounts.total;
-  const status = (updated.amountRefunded ?? 0) >= paid ? 'refunded' : 'partially_refunded';
+  const isFullOrSubtotal = (updated.amountRefunded ?? 0) >= (updated.amounts.subtotal ?? paid);
+  const status = (updated.amountRefunded ?? 0) >= paid ? 'refunded' : isFullOrSubtotal ? 'refunded' : 'partially_refunded';
   await Payment.updateOne({ _id: updated._id }, { $set: { status } });
 
-  if (status === 'refunded') {
+  if (status === 'refunded' || status === 'partially_refunded') {
     if (updated.orderId) {
       await Order.updateOne({ orderId: updated.orderId, paymentRef: updated.referenceId }, { $set: { paymentStatus: 'refunded', status: 'refunded' } });
     }
