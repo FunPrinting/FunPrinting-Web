@@ -148,7 +148,7 @@ const paymentSchema = new Schema<IPayment>(
     amountPaid: Number,
     amountRefunded: Number,
     needsReview: String,
-    refundRequest: { reason: String, actor: String, at: Date, attempts: { type: Number, default: 0 }, lastError: String, refundId: String },
+    refundRequest: { reason: String, actor: String, at: Date, attempts: Number, lastError: String, refundId: String },
 
     fulfilment: {
       order: Date,
