@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 
-interface BeforeInstallPromptEvent extends Event {
+export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
@@ -11,107 +11,150 @@ interface BeforeInstallPromptEvent extends Event {
 export function usePwaInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [isIos, setIsIos] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [canInstallNative, setCanInstallNative] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const promptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // 1. Register Service Worker to satisfy Chrome/Chromium PWA installability requirements
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((reg) => {
-          reg.update().catch(() => {});
-        })
-        .catch((err) => {
-          console.warn('PWA service worker registration failed:', err);
-        });
-    }
-
-    // 2. Check if currently running in standalone display mode (installed PWA)
+    // 1. Check if running in standalone PWA mode
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
-      Boolean((navigator as any).standalone);
-    if (isStandalone) {
-      setIsInstalled(true);
+      Boolean((window.navigator as any).standalone);
+    setIsInstalled(isStandalone);
+
+    // 2. Platform detection
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) && !Boolean((window as any).MSStream);
+    const isAndroidDevice = /android/.test(userAgent);
+    setIsIOS(isIOSDevice);
+    setIsAndroid(isAndroidDevice);
+    setIsMobile(isIOSDevice || isAndroidDevice || /mobile/.test(userAgent));
+
+    // 3. Check for early captured prompt from layout head script
+    const globalPrompt = (window as any).__deferredPwaPrompt as BeforeInstallPromptEvent | undefined;
+    if (globalPrompt) {
+      promptRef.current = globalPrompt;
+      setDeferredPrompt(globalPrompt);
+      setCanInstallNative(true);
     }
 
-    // 3. Detect iOS devices (iPhone, iPad, iPod)
-    const ua = window.navigator.userAgent;
-    const isIosDevice = /iPad|iPhone|iPod/.test(ua) && !Boolean((window as any).MSStream);
-    setIsIos(isIosDevice);
-
-    // 4. Capture standard W3C beforeinstallprompt event
-    const handleBeforeInstall = (e: Event) => {
+    // 4. Handle standard BeforeInstallPrompt event
+    const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      const promptEvent = e as BeforeInstallPromptEvent;
-      promptRef.current = promptEvent;
-      setDeferredPrompt(promptEvent);
+      const p = e as BeforeInstallPromptEvent;
+      (window as any).__deferredPwaPrompt = p;
+      promptRef.current = p;
+      setDeferredPrompt(p);
+      setCanInstallNative(true);
     };
 
-    // 5. Listen for successful installation
+    // 5. Handle custom event from head inline script
+    const handlePromptReady = () => {
+      const p = (window as any).__deferredPwaPrompt as BeforeInstallPromptEvent | undefined;
+      if (p) {
+        promptRef.current = p;
+        setDeferredPrompt(p);
+        setCanInstallNative(true);
+      }
+    };
+
+    // 6. Handle App Installed event
     const handleAppInstalled = () => {
       setIsInstalled(true);
+      (window as any).__deferredPwaPrompt = null;
       promptRef.current = null;
       setDeferredPrompt(null);
+      setCanInstallNative(false);
       setIsModalOpen(false);
       toast.success('Fun Printing Store installed successfully!');
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('pwa-prompt-ready', handlePromptReady);
     window.addEventListener('appinstalled', handleAppInstalled);
 
+    // 7. Register Service Worker and aggressively update
+    if ('serviceWorker' in navigator && process.env.NODE_ENV !== 'test') {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => {
+          reg.update().catch(() => {});
+          reg.addEventListener('updatefound', () => {
+            const installing = reg.installing;
+            if (installing) {
+              installing.addEventListener('statechange', () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  installing.postMessage({ type: 'SKIP_WAITING' });
+                }
+              });
+            }
+          });
+        })
+        .catch((err) => {
+          console.warn('PWA service worker registration notice:', err);
+        });
+    }
+
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('pwa-prompt-ready', handlePromptReady);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
+  const promptInstall = useCallback(async (): Promise<'accepted' | 'dismissed' | 'modal_needed'> => {
+    const prompt = deferredPrompt || promptRef.current || (typeof window !== 'undefined' ? (window as any).__deferredPwaPrompt : null);
+    if (!prompt) {
+      return 'modal_needed';
+    }
+
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setIsInstalled(true);
+        promptRef.current = null;
+        setDeferredPrompt(null);
+        if (typeof window !== 'undefined') (window as any).__deferredPwaPrompt = null;
+        setCanInstallNative(false);
+        setIsModalOpen(false);
+        return 'accepted';
+      }
+      return 'dismissed';
+    } catch (err) {
+      console.error('PWA prompt install error:', err);
+      return 'modal_needed';
+    }
+  }, [deferredPrompt]);
+
   const triggerInstall = useCallback(async () => {
-    // If running already installed
     if (isInstalled) {
       toast.success('Fun Printing Store is already installed on your device!');
       return;
     }
 
-    const promptEvent = deferredPrompt || promptRef.current;
-
-    // DIRECT INSTALL: Directly trigger native prompt on Chrome, Edge, Android
-    if (promptEvent) {
-      try {
-        await promptEvent.prompt();
-        const choice = await promptEvent.userChoice;
-        if (choice.outcome === 'accepted') {
-          setIsInstalled(true);
-          promptRef.current = null;
-          setDeferredPrompt(null);
-          setIsModalOpen(false);
-        }
-      } catch (err) {
-        console.warn('Install prompt error:', err);
-        setIsModalOpen(true);
-      }
-      return;
-    }
-
-    // iOS Safari does not implement BeforeInstallPrompt API; show visual guide modal
-    if (isIos) {
+    const res = await promptInstall();
+    if (res === 'modal_needed') {
       setIsModalOpen(true);
-      return;
     }
-
-    // If prompt hasn't captured yet, open the modal as fallback
-    setIsModalOpen(true);
-  }, [deferredPrompt, isInstalled, isIos]);
+  }, [isInstalled, promptInstall]);
 
   return {
     isInstalled,
-    isIos,
+    isIOS,
+    isIos: isIOS, // backwards-compatible alias
+    isAndroid,
+    isMobile,
+    canInstallNative,
+    hasNativePrompt: canInstallNative, // backwards-compatible alias
+    promptInstall,
+    triggerInstall,
     isModalOpen,
     setIsModalOpen,
-    triggerInstall,
-    hasNativePrompt: Boolean(deferredPrompt),
   };
 }

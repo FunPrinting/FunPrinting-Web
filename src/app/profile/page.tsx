@@ -5,8 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { BadgeCheck, CircleAlert, Loader2, Upload } from 'lucide-react';
+import { BadgeCheck, CheckCircle2, CircleAlert, Download, Loader2, Upload } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { InstallAppModal } from '@/components/InstallAppModal';
 import { BORDER_COLORS, BORDER_STYLES, BORDER_WIDTHS, borderCss, DEFAULT_BORDER, type BorderPreference } from '@/lib/templateBorders';
 import { PhoneNotice } from '@/components/PhoneNotice';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -32,6 +34,16 @@ const initials = (name: string, email: string) => (name || email || '?').trim().
 export default function ProfilePage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    isInstalled,
+    isIOS,
+    isAndroid,
+    canInstallNative,
+    promptInstall,
+    triggerInstall,
+    isModalOpen,
+    setIsModalOpen,
+  } = usePwaInstall();
   const { update: refreshSession } = useSession();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [form, setForm] = useState({ name: '', phone: '' });
@@ -214,6 +226,58 @@ export default function ProfilePage() {
           </CardFooter>
         </form>
       </Card>
+
+      {/* Install Web App Card (matching campusFleet Settings standard) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Install Web App</CardTitle>
+          <CardDescription>
+            Add Fun Printing to your home screen or desktop for 1-tap ordering, instant print tracking, and a full-screen app experience.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border bg-muted/40">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm">Progressive Web App (PWA)</span>
+                {isInstalled ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="size-3" /> App Installed
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                    1-Tap Install Ready
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isInstalled
+                  ? 'Fun Printing Store is active on your device. Launch it anytime from your applications or home screen.'
+                  : 'Install Fun Printing for faster access without browser address bars and instant status updates.'}
+              </p>
+            </div>
+            {!isInstalled && (
+              <Button
+                type="button"
+                onClick={triggerInstall}
+                className="shrink-0 gap-2 cursor-pointer"
+              >
+                <Download className="size-4" />
+                <span>Install App</span>
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <InstallAppModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        isIOS={isIOS}
+        isAndroid={isAndroid}
+        canInstallNative={canInstallNative}
+        onPromptInstall={promptInstall}
+      />
     </div>
   );
 }

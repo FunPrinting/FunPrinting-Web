@@ -33,7 +33,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type SessionUser = {
@@ -246,7 +245,16 @@ function UserMenu({
 export default function Navbar() {
   const { adminInfo } = useAdminInfo();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
-  const { isInstalled, isIos, isModalOpen, setIsModalOpen, triggerInstall, hasNativePrompt } = usePwaInstall();
+  const {
+    isInstalled,
+    isIOS,
+    isAndroid,
+    isModalOpen,
+    setIsModalOpen,
+    triggerInstall,
+    promptInstall,
+    canInstallNative,
+  } = usePwaInstall();
   const isAdmin = useIsAdmin(user as SessionUser);
   const adminUrl = useAdminPortalUrl();
   const isActive = useActive();
@@ -523,9 +531,10 @@ export default function Navbar() {
       <InstallAppModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        isIos={isIos}
-        onNativeInstall={triggerInstall}
-        hasNativePrompt={hasNativePrompt}
+        isIOS={isIOS}
+        isAndroid={isAndroid}
+        canInstallNative={canInstallNative}
+        onPromptInstall={promptInstall}
       />
     </header>
   );

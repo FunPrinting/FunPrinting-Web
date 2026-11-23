@@ -57,6 +57,7 @@ export async function generateMetadata(): Promise<Metadata> {
     // Return metadata with dynamic icons
     return {
       ...seoMetadata,
+      manifest: '/manifest.webmanifest',
       icons: {
         icon: faviconUrl,
         shortcut: faviconUrl,
@@ -74,6 +75,7 @@ export async function generateMetadata(): Promise<Metadata> {
         image: '/fun-printing-printing-service-favicon.jpg',
         siteName: 'Fun Printing',
       }),
+      manifest: '/manifest.webmanifest',
       icons: {
         icon: '/fun-printing-printing-service-favicon.jpg',
         shortcut: '/fun-printing-printing-service-favicon.jpg',
@@ -101,7 +103,13 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-title" content="FunPrinting" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#4f46e5" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{window.__deferredPwaPrompt=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__deferredPwaPrompt=e;window.dispatchEvent(new CustomEvent('pwa-prompt-ready'));});}catch(e){}})();`,
+          }}
+        />
         {isAdminSubdomain ? (
           <meta name="robots" content="noindex, nofollow" />
         ) : (
