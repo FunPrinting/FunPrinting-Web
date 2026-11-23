@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
+  Download,
   ExternalLink,
   FileText,
   LogOut,
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useAdminInfo } from '@/hooks/useAdminInfo';
 import { useAuth } from '@/hooks/useAuth';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { InstallAppModal } from '@/components/InstallAppModal';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -243,6 +246,7 @@ function UserMenu({
 export default function Navbar() {
   const { adminInfo } = useAdminInfo();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const { isInstalled, isIos, isModalOpen, setIsModalOpen, triggerInstall, hasNativePrompt } = usePwaInstall();
   const isAdmin = useIsAdmin(user as SessionUser);
   const adminUrl = useAdminPortalUrl();
   const isActive = useActive();
@@ -278,6 +282,16 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
+
+          {/* Install Web App Option (Desktop) */}
+          <button
+            onClick={triggerInstall}
+            className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary transition-all hover:bg-primary/10 hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+            title="Install web app for fast access"
+          >
+            <Download className="size-3" />
+            <span>{isInstalled ? 'App installed' : 'Install app'}</span>
+          </button>
         </nav>
 
         {/* Right side controls */}
@@ -454,6 +468,21 @@ export default function Navbar() {
                         {l.label}
                       </Link>
                     ))}
+
+                  {/* Install Web App Option (Mobile) */}
+                  <button
+                    onClick={() => {
+                      setOpen(false);
+                      triggerInstall();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-semibold text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                  >
+                    <Download className="size-4" />
+                    <span className="flex-1 text-left">{isInstalled ? 'App installed' : 'Install web app'}</span>
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">
+                      {isInstalled ? 'Installed' : 'App'}
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -486,6 +515,14 @@ export default function Navbar() {
           </Sheet>
         </div>
       </div>
+
+      <InstallAppModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        isIos={isIos}
+        onNativeInstall={triggerInstall}
+        hasNativePrompt={hasNativePrompt}
+      />
     </header>
   );
 }
