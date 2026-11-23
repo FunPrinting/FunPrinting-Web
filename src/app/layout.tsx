@@ -8,6 +8,7 @@ import { generateMetadata as generateSEOMetadata } from '@/lib/seo';
 import connectDB from '@/lib/mongodb';
 import AdminInfo from '@/models/AdminInfo';
 import { cn } from '@/lib/utils';
+import { headers } from 'next/headers';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -82,21 +83,31 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headerList = await headers();
+  const host = headerList.get('x-forwarded-host') || headerList.get('host') || '';
+  const isAdminSubdomain = host.toLowerCase().startsWith('admin.');
+
   return (
     <html lang="en" className={cn('font-sans', geist.variable)}>
       <head>
-        <link rel="canonical" href={process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.funprinting.store'} />
-        {/* Google AdSense */}
-        <script 
-          async 
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9998034438026486"
-          crossOrigin="anonymous"
-        ></script>
+        {isAdminSubdomain ? (
+          <meta name="robots" content="noindex, nofollow" />
+        ) : (
+          <>
+            <link rel="canonical" href={process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.funprinting.store'} />
+            {/* Google AdSense */}
+            <script 
+              async 
+              src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9998034438026486"
+              crossOrigin="anonymous"
+            ></script>
+          </>
+        )}
       </head>
       <body>
         <ErrorReporter />

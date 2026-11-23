@@ -217,5 +217,28 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: 'jwt',
   },
+  cookies: (() => {
+    // Cookie domain is optionally configured via COOKIE_DOMAIN env var (e.g. .funprinting.store)
+    // for cross-subdomain SSO. Without COOKIE_DOMAIN, standard host-only cookies are used.
+    const cookieDomain = process.env.COOKIE_DOMAIN;
+    if (!cookieDomain) return undefined;
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const useSecureCookies = isProduction && !process.env.NEXTAUTH_URL?.startsWith('http://');
+    const cookiePrefix = useSecureCookies ? '__Secure-' : '';
+
+    return {
+      sessionToken: {
+        name: `${cookiePrefix}next-auth.session-token`,
+        options: {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          secure: useSecureCookies,
+          domain: cookieDomain,
+        },
+      },
+    };
+  })(),
   secret: process.env.NEXTAUTH_SECRET,
 };
