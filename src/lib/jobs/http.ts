@@ -40,6 +40,10 @@ export function publicJob(job: IPrintJob) {
     printedAt: job.printedAt,
     printer: job.claim?.printer,
     printedBy: job.printedBy,
+    customerInfo: job.customerInfo,
+    deliveryOption: job.deliveryOption,
+    amount: job.amount,
+    expectedDate: job.expectedDate,
   };
 }
 

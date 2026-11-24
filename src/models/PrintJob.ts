@@ -57,6 +57,26 @@ export interface IPrintJob {
   service?: string[];
   deliveryNumber?: string;
 
+  customerInfo?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
+  deliveryOption?: {
+    type?: string;
+    method?: string;
+    partnerDeliveryPoint?: string;
+    recipientName?: string;
+    recipientPhone?: string;
+    address?: string;
+    flatBuilding?: string;
+    city?: string;
+    state?: string;
+    pinCode?: string;
+  };
+  amount?: number;
+  expectedDate?: string;
+
   assignedAt?: Date;
   acceptedAt?: Date;
   acceptBy?: Date;
@@ -106,6 +126,26 @@ const printJobSchema = new Schema<IPrintJob>(
     files: { type: [fileSchema], default: [] },
     service: [String],
     deliveryNumber: String,
+
+    customerInfo: {
+      name: String,
+      phone: String,
+      email: String,
+    },
+    deliveryOption: {
+      type: { type: String },
+      method: String,
+      partnerDeliveryPoint: String,
+      recipientName: String,
+      recipientPhone: String,
+      address: String,
+      flatBuilding: String,
+      city: String,
+      state: String,
+      pinCode: String,
+    },
+    amount: Number,
+    expectedDate: String,
 
     assignedAt: Date,
     acceptedAt: Date,
