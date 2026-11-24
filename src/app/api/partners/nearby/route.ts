@@ -8,47 +8,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lng = searchParams.get('lng');
-    const radius = searchParams.get('radius') || '10'; // Default 10km radius
-
-    if (!lat || !lng) {
-      return NextResponse.json(
-        { success: false, error: 'Latitude and longitude are required' },
-        { status: 400 }
-      );
-    }
 
     await connectDB();
 
-    // Convert to numbers
-    const latitude = parseFloat(lat);
-    const longitude = parseFloat(lng);
-    const radiusInRadians = parseFloat(radius) * 1000 / 6378100; // Earth radius in meters
-
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
-    
+
     // Filters
     const reqColor = searchParams.get('color') === 'true';
     const reqBinding = searchParams.get('binding') === 'true';
     const reqA3 = searchParams.get('a3') === 'true';
-
-    // Use MongoDB geospatial query to find nearby online partners
-    const query: any = {
-      isActive: true,
-      isOnline: true,
-      $or: [
-        {
-          location: {
-            $geoWithin: { $centerSphere: [[longitude, latitude], radiusInRadians] }
-          }
-        },
-        {
-          'deliveryPoints.location': {
-            $geoWithin: { $centerSphere: [[longitude, latitude], radiusInRadians] }
-          }
-        }
-      ]
-    };
 
     const andFilters: any[] = [];
     if (reqBinding) {
@@ -60,31 +29,23 @@ export async function GET(request: Request) {
     if (reqA3) {
       andFilters.push({ $or: [{ 'supportedPrinters.paperSizes': 'A3' }, { 'servicesOffered.printing.maxPaperSize': 'a3' }] });
     }
-    if (andFilters.length > 0) {
-      query.$and = andFilters;
-    }
 
-    // Public listing: only what customers need to choose a shop (no account ids, owner, payouts)
-    const nearbyPartners = await Partner.find(query)
-      .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
-      .lean();
-
-    // Calculate distance and sort
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
       const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     };
 
-    const partnersWithDistance = nearbyPartners.map((p: any) => {
-      const pLat = p.location?.coordinates[1] || 0;
-      const pLng = p.location?.coordinates[0] || 0;
-      const distance = calculateDistance(latitude, longitude, pLat, pLng);
-      // Delivery: say what the shop offers, never its internal courier settings
+    const formatPartner = (p: any, userLat?: number, userLng?: number) => {
+      const pLat = p.location?.coordinates?.[1] || 0;
+      const pLng = p.location?.coordinates?.[0] || 0;
+      const distance = userLat !== undefined && userLng !== undefined
+        ? calculateDistance(userLat, userLng, pLat, pLng)
+        : undefined;
       const { delivery, ...rest } = p;
       return {
         ...rest,
@@ -94,16 +55,44 @@ export async function GET(request: Request) {
           self: delivery?.self?.enabled ? { radiusKm: delivery.self.radiusKm, fee: delivery.self.fee, etaMinutes: delivery.self.etaMinutes } : null,
         },
       };
-    });
+    };
 
-    partnersWithDistance.sort((a, b) => a.distance - b.distance);
+    const hasLocation = Boolean(lat && lng && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng)));
+    const latitude = hasLocation ? parseFloat(lat!) : undefined;
+    const longitude = hasLocation ? parseFloat(lng!) : undefined;
 
-    const totalCount = partnersWithDistance.length;
-    const totalPages = Math.ceil(totalCount / limit);
-    const paginatedPartners = partnersWithDistance.slice((page - 1) * limit, page * limit);
+    // Query active & online partners
+    const baseQuery: any = { isActive: true, isOnline: true };
+    if (andFilters.length > 0) baseQuery.$and = andFilters;
+
+    let partners = await Partner.find(baseQuery)
+      .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
+      .lean();
+
+    // Fallback: If no partners are online, show active partners
+    if (partners.length === 0) {
+      const activeQuery: any = { isActive: true };
+      if (andFilters.length > 0) activeQuery.$and = andFilters;
+      partners = await Partner.find(activeQuery)
+        .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
+        .lean();
+    }
+
+    // Format and calculate distances
+    const partnersList = partners.map((p) => formatPartner(p, latitude, longitude));
+
+    // Sort by distance if location is provided
+    if (hasLocation) {
+      partnersList.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+    }
+
+    const totalCount = partnersList.length;
+    const totalPages = Math.ceil(totalCount / limit) || 1;
+    const paginatedPartners = partnersList.slice((page - 1) * limit, page * limit);
 
     return NextResponse.json({
       success: true,
+      hasLocation,
       count: paginatedPartners.length,
       partners: paginatedPartners,
       pagination: {

@@ -56,7 +56,7 @@ interface Partner {
 }
 
 interface MapComponentProps {
-  userLocation: [number, number];
+  userLocation?: [number, number];
   partners: Partner[];
   onSelectPartner: (partner: Partner, deliveryPointName?: string) => void;
   selectedPartnerId?: string;
@@ -91,9 +91,18 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
     return `rgb(${r}, ${g}, ${b})`;
   };
 
+  const firstPartnerWithCoords = partners.find(
+    (p) => Number.isFinite(p.location?.coordinates?.[1]) && Number.isFinite(p.location?.coordinates?.[0])
+  );
+  const defaultCenter: [number, number] = userLocation || (
+    firstPartnerWithCoords
+      ? [firstPartnerWithCoords.location.coordinates[1], firstPartnerWithCoords.location.coordinates[0]]
+      : [29.2219, 79.5118]
+  );
+
   return (
     <MapContainer 
-      center={userLocation} 
+      center={defaultCenter} 
       zoom={13} 
       style={{ height: '500px', width: '100%', borderRadius: '0.75rem', zIndex: 0 }}
     >
@@ -101,12 +110,14 @@ export default function MapComponent({ userLocation, partners, onSelectPartner, 
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <MapCenterUpdater center={userLocation} />
+      <MapCenterUpdater center={defaultCenter} />
 
       {/* User Location Marker */}
-      <Marker position={userLocation} icon={customIcon}>
-        <Popup>Your Location</Popup>
-      </Marker>
+      {userLocation && (
+        <Marker position={userLocation} icon={customIcon}>
+          <Popup>Your Location</Popup>
+        </Marker>
+      )}
 
       {/* Partner Delivery Point Markers */}
       {partners.flatMap((partner) => {

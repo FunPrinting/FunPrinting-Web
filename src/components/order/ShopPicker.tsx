@@ -75,15 +75,16 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
     const viaIp = async () => {
       try {
         const data = await (await fetch('https://ipwho.is/')).json();
-        if (data?.success && data.latitude && data.longitude) setWhere({ lat: data.latitude, lng: data.longitude, approximate: true });
-        else setError('We couldn’t find your location. Allow location access and try again.');
+        if (data?.success && data.latitude && data.longitude) {
+          setWhere({ lat: data.latitude, lng: data.longitude, approximate: true });
+        }
       } catch {
-        setError('We couldn’t find your location. Allow location access and try again.');
+        // Fallback to showing all shops without blocking error
       } finally {
         setLocating(false);
       }
     };
-    if (!navigator.geolocation) return void viaIp();
+    if (typeof window === 'undefined' || !navigator.geolocation) return void viaIp();
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setWhere({ lat: pos.coords.latitude, lng: pos.coords.longitude, approximate: false });
@@ -98,10 +99,13 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
   useEffect(() => setPage(1), [needs.color, needs.binding, needs.a3]);
 
   useEffect(() => {
-    if (!where) return;
     let stale = false;
     setShops(null);
-    const qs = new URLSearchParams({ lat: String(where.lat), lng: String(where.lng), radius: '20', page: String(page), limit: String(PAGE_SIZE) });
+    const qs = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+    if (where) {
+      qs.set('lat', String(where.lat));
+      qs.set('lng', String(where.lng));
+    }
     if (needs.color) qs.set('color', 'true');
     if (needs.binding) qs.set('binding', 'true');
     if (needs.a3) qs.set('a3', 'true');
@@ -134,6 +138,7 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
     return () => {
       stale = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- value and onChange deliberately omitted to avoid loop
   }, [where, page, needs.color, needs.binding, needs.a3]);
 
   const priced = useMemo(
@@ -173,19 +178,35 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
     );
   };
 
-  if (locating && !where) {
-    return <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Loader2 className="size-4 animate-spin" aria-hidden />Finding print shops near you…</p>;
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {where ? (where.approximate ? 'Shops near your approximate location.' : 'Shops within 20 km of you.') : null}
-          {where?.approximate ? (
-            <Button variant="link" size="sm" className="h-auto px-1" onClick={locate}><LocateFixed />Use my exact location</Button>
-          ) : null}
-        </p>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          {locating && !where ? (
+            <span className="flex items-center gap-1.5">
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              Detecting location…
+            </span>
+          ) : !where ? (
+            <span className="flex items-center gap-1.5">
+              Showing all print shops.
+              <Button variant="link" size="sm" className="h-auto p-0 font-normal underline" onClick={locate}>
+                <LocateFixed className="size-3.5 mr-1 inline" />
+                Sort by distance
+              </Button>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              {where.approximate ? 'Shops sorted by distance from approximate location.' : 'Shops sorted by distance (closest first).'}
+              {where.approximate ? (
+                <Button variant="link" size="sm" className="h-auto p-0 font-normal underline" onClick={locate}>
+                  <LocateFixed className="size-3.5 mr-1 inline" />
+                  Use exact location
+                </Button>
+              ) : null}
+            </span>
+          )}
+        </div>
         <div className="inline-flex rounded-lg border p-0.5" role="tablist" aria-label="Shop view">
           {(['list', 'map'] as const).map((v) => (
             <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)} className={cn('inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm', view === v ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:text-foreground')}>
@@ -197,18 +218,26 @@ export function ShopPicker({ files, value, onChange }: { files: OrderFile[]; val
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      {view === 'map' && where ? (
+      {view === 'map' ? (
         <div className="overflow-hidden rounded-xl border">
-          <MapComponent userLocation={[where.lat, where.lng]} partners={priced} onSelectPartner={(p, dp) => choose(p as Shop, dp)} selectedPartnerId={value?.id} selectedDeliveryPoint={value?.deliveryPoint} />
+          <MapComponent
+            userLocation={where ? [where.lat, where.lng] : undefined}
+            partners={priced}
+            onSelectPartner={(p, dp) => choose(p as Shop, dp)}
+            selectedPartnerId={value?.id}
+            selectedDeliveryPoint={value?.deliveryPoint}
+          />
         </div>
       ) : shops === null ? (
         <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
       ) : !priced.length ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center">
           <Store className="size-8 text-muted-foreground" aria-hidden />
-          <p className="font-medium">No print shops nearby</p>
+          <p className="font-medium">No print shops available</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            {needs.color || needs.binding || needs.a3 ? 'No shop near you offers everything this order needs (colour, binding or A3). Try changing those options.' : 'There are no approved shops within 20 km yet.'}
+            {needs.color || needs.binding || needs.a3
+              ? 'No shop offers everything this order needs (colour, binding or A3). Try changing those options.'
+              : 'There are no approved print shops available right now.'}
           </p>
         </div>
       ) : (

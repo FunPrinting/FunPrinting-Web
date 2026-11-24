@@ -552,7 +552,7 @@ function OrderPageContent() {
                     {shop
                       ? files.length
                         ? `Printing at ${shop.name} · Instant quote for your documents`
-                        : `Pre-selected nearest shop: ${shop.name} · Upload documents to calculate total`
+                        : `${shop.distance !== undefined ? 'Pre-selected nearest shop' : 'Selected shop'}: ${shop.name} · Upload documents to calculate total`
                       : 'Finding approved print shops near you…'}
                   </CardDescription>
                 </div>
