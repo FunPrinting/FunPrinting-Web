@@ -540,7 +540,7 @@ function OrderPageContent() {
                 {step(2, Boolean(shop))}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <CardTitle>Print shop</CardTitle>
+                    <CardTitle>Print shop & pickup location</CardTitle>
                     {shop?.distance !== undefined && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                         <MapPin className="size-3" />
@@ -551,9 +551,9 @@ function OrderPageContent() {
                   <CardDescription>
                     {shop
                       ? files.length
-                        ? `Printing at ${shop.name} · Instant quote for your documents`
-                        : `${shop.distance !== undefined ? 'Pre-selected nearest shop' : 'Selected shop'}: ${shop.name} · Upload documents to calculate total`
-                      : 'Finding approved print shops near you…'}
+                        ? `Selected: ${shop.deliveryPoint ? `${shop.deliveryPoint} (${shop.name})` : shop.name} · Instant quote for your documents`
+                        : `Selected: ${shop.deliveryPoint ? `${shop.deliveryPoint} (${shop.name})` : shop.name} · Upload documents to calculate total`
+                      : 'Finding approved print shops & pickup locations near you…'}
                   </CardDescription>
                 </div>
               </CardHeader>

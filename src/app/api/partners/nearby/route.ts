@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     await connectDB();
 
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = parseInt(searchParams.get('limit') || '50');
 
     // Filters
     const reqColor = searchParams.get('color') === 'true';
@@ -43,13 +43,33 @@ export async function GET(request: Request) {
     const formatPartner = (p: any, userLat?: number, userLng?: number) => {
       const pLat = p.location?.coordinates?.[1] || 0;
       const pLng = p.location?.coordinates?.[0] || 0;
-      const distance = userLat !== undefined && userLng !== undefined
+      const distance = userLat !== undefined && userLng !== undefined && pLat && pLng
         ? calculateDistance(userLat, userLng, pLat, pLng)
         : undefined;
+
+      const deliveryPoints = (p.deliveryPoints || [])
+        .filter((dp: any) => dp.isActive !== false)
+        .map((dp: any) => {
+          const dpLat = dp.location?.coordinates?.[1] || 0;
+          const dpLng = dp.location?.coordinates?.[0] || 0;
+          const dpDistance = userLat !== undefined && userLng !== undefined && dpLat && dpLng
+            ? calculateDistance(userLat, userLng, dpLat, dpLng)
+            : undefined;
+          return {
+            _id: dp._id?.toString(),
+            name: dp.name,
+            location: dp.location,
+            contactNumber: dp.contactNumber,
+            distance: dpDistance,
+            isActive: dp.isActive,
+          };
+        });
+
       const { delivery, ...rest } = p;
       return {
         ...rest,
         distance,
+        deliveryPoints,
         delivery: {
           courier: courierReady(p),
           self: delivery?.self?.enabled ? { radiusKm: delivery.self.radiusKm, fee: delivery.self.fee, etaMinutes: delivery.self.etaMinutes } : null,
@@ -65,8 +85,10 @@ export async function GET(request: Request) {
     const baseQuery: any = { isActive: true, isOnline: true };
     if (andFilters.length > 0) baseQuery.$and = andFilters;
 
+    const selectFields = 'businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive deliveryPoints.contactNumber phoneNumbers delivery';
+
     let partners = await Partner.find(baseQuery)
-      .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
+      .select(selectFields)
       .lean();
 
     // Fallback: If no partners are online, show active partners
@@ -74,14 +96,14 @@ export async function GET(request: Request) {
       const activeQuery: any = { isActive: true };
       if (andFilters.length > 0) activeQuery.$and = andFilters;
       partners = await Partner.find(activeQuery)
-        .select('businessName location address.street address.city address.state address.zipCode pricing servicesOffered supportedPrinters deliveryPoints.name deliveryPoints.location deliveryPoints.isActive delivery')
+        .select(selectFields)
         .lean();
     }
 
     // Format and calculate distances
     const partnersList = partners.map((p) => formatPartner(p, latitude, longitude));
 
-    // Sort by distance if location is provided
+    // Sort by shop distance if location is provided
     if (hasLocation) {
       partnersList.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
     }
