@@ -562,35 +562,49 @@ function OrderPageContent() {
                   files={files}
                   value={shop}
                   onChange={(choice, price) => {
-                    const changed = choice.id !== shop?.id;
+                    const changed = choice.id !== shop?.id || choice.deliveryPoint !== shop?.deliveryPoint;
                     setShop(choice);
                     setPrintingPrice(price);
                     if (changed) {
-                      const delivers = Boolean(choice.delivery?.courier || choice.delivery?.self);
-                      if (!delivers) setDelivery((d) => ({ ...d, type: 'pickup' }));
-                      setDeliveryCharge(delivers && delivery.type === 'delivery' ? null : 0);
+                      if (choice.deliveryPoint) {
+                        setDelivery({ type: 'pickup' });
+                        setDeliveryCharge(0);
+                      } else {
+                        const delivers = Boolean(choice.delivery?.courier || choice.delivery?.self);
+                        if (!delivers) setDelivery((d) => ({ ...d, type: 'pickup' }));
+                        setDeliveryCharge(delivers && delivery.type === 'delivery' ? null : 0);
+                      }
                     }
                   }}
                 />
+                {shop?.deliveryPoint ? (
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-foreground">
+                    <span className="flex items-center gap-2">
+                      <Store className="size-4 text-primary shrink-0" aria-hidden />
+                      <span>Free pickup at <strong>{shop.deliveryPoint}</strong> (delivered by {shop.name})</span>
+                    </span>
+                    <span className="shrink-0 font-medium text-emerald-600 dark:text-emerald-400">Free Pickup</span>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           )}
 
-          {/* 3. Pickup or delivery */}
-          {shop && !editingCartId ? (
+          {/* 3. Pickup or delivery (only shown when picking up at main shop or ordering home delivery) */}
+          {shop && !shop.deliveryPoint && !editingCartId ? (
             <Card>
               <CardHeader className="flex flex-row items-start gap-3 space-y-0">
                 {step(3, delivery.type === 'pickup' || deliveryCharge !== null)}
                 <div className="flex-1 min-w-0">
                   <CardTitle>Pickup or delivery</CardTitle>
-                  <CardDescription>{shop.deliveryPoint ? `Pickup point: ${shop.deliveryPoint}` : `From ${shop.name}`}</CardDescription>
+                  <CardDescription>From {shop.name}</CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
                 <DeliveryChooser
                   partnerId={shop.id}
                   shop={shop.delivery}
-                  shopName={shop.deliveryPoint || shop.name}
+                  shopName={shop.name}
                   weightKg={weightKg}
                   value={delivery}
                   speed={speed}
@@ -648,11 +662,18 @@ function OrderPageContent() {
                   <Separator />
                   <dl className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <dt className="flex items-center gap-1.5 text-muted-foreground shrink-0"><Store className="size-4" aria-hidden />Shop</dt>
+                      <dt className="flex items-center gap-1.5 text-muted-foreground shrink-0"><Store className="size-4" aria-hidden />{shop?.deliveryPoint ? 'Pickup' : 'Shop'}</dt>
                       <dd className="truncate text-right font-medium text-xs sm:text-sm">
                         {shop ? (
-                          <span title={`${shop.name}${shop.distance !== undefined ? ` (${shop.distance.toFixed(1)} km)` : ''}`}>
-                            {shop.name}
+                          <span title={`${shop.deliveryPoint || shop.name}${shop.distance !== undefined ? ` (${shop.distance.toFixed(1)} km)` : ''}`}>
+                            {shop.deliveryPoint ? (
+                              <>
+                                <span className="font-semibold text-foreground">{shop.deliveryPoint}</span>
+                                <span className="text-[11px] text-muted-foreground block">via {shop.name}</span>
+                              </>
+                            ) : (
+                              shop.name
+                            )}
                             {shop.distance !== undefined && (
                               <span className="text-xs text-muted-foreground ml-1">({shop.distance.toFixed(1)} km)</span>
                             )}
