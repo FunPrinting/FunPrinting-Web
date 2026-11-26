@@ -28,8 +28,6 @@
     "cloudinary": "^2.7.0",
     "cn": "^0.5.2",
     "docx": "^9.5.1",
-    "docx-templates": "^4.14.1",
-    "docxtemplater": "^3.66.2",
     "dotenv": "^17.2.1",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",

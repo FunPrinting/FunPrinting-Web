@@ -1,6 +1,4 @@
 import 'server-only';
-import Docxtemplater from 'docxtemplater';
-import PizZip from 'pizzip';
 import connectDB from '@/lib/mongodb';
 import DynamicTemplate from '@/models/DynamicTemplate';
 import { fetchTrustedFile } from './fileUrls';
@@ -26,18 +24,4 @@ export async function loadTemplateDocx(templateId: unknown) {
   if (!template.wordUrl) throw new TemplateError('This template has no Word file', 404);
   const { buffer } = await fetchTrustedFile(template.wordUrl, { maxBytes: TEMPLATE_MAX_BYTES });
   return { template, docx: buffer };
-}
-
-/**
- * Replaces {{placeholders}} with docxtemplater (custom templates). Values are
- * plain text; docxtemplater escapes them for the XML.
- */
-export function replaceDocxPlaceholders(docx: Buffer, values: Record<string, unknown>): Buffer {
-  const data: Record<string, string> = {};
-  for (const [key, value] of Object.entries(values || {})) {
-    if (typeof key === 'string' && key.length <= 200) data[key] = value == null ? '' : String(value).slice(0, 10_000);
-  }
-  const doc = new Docxtemplater(new PizZip(docx), { paragraphLoop: true, linebreaks: true, delimiters: { start: '{{', end: '}}' } });
-  doc.render(data);
-  return doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
 }

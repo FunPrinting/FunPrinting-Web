@@ -145,7 +145,7 @@ Fun Printing/
 
 ### 📄 Document Processing Pipeline
 - **DOCX → PDF Conversion**: Cloudmersive API with LibreOffice fallback.
-- **Template Engine**: `docxtemplater` + `PizZip` for placeholder replacement in Word templates, generating filled DOCX and PDF outputs.
+- **Template Engine**: Full Run-Aware XML pipeline (`PizZip`) for placeholder replacement in Word templates, generating filled DOCX and PDF outputs.
 - **PDF Generation**: `pdf-lib` for invoice generation, page manipulation, and delivery number overlays. `jsPDF` for dynamic document creation.
 - **Live Word Preview**: Real-time in-browser preview of Word documents during template filling.
 
@@ -163,7 +163,7 @@ Fun Printing/
 | **Storage** | Oracle OCI Object Storage (primary) / Cloudinary (fallback) |
 | **Real-Time** | Socket.IO 4 (JWT-authenticated WebSocket relay) |
 | **Shipping** | Shiprocket API (order creation, AWB tracking, courier assignment) |
-| **Doc Processing** | Cloudmersive API, docxtemplater, pdf-lib, jsPDF, mammoth, pdfjs-dist |
+| **Doc Processing** | Cloudmersive API, PizZip (Run-Aware XML), pdf-lib, jsPDF, mammoth, pdfjs-dist |
 | **Email** | Nodemailer (invoices, OTP, order status notifications) |
 | **Rate Limiting** | Upstash Redis + @upstash/ratelimit |
 | **Maps** | Leaflet + react-leaflet (partner selection, delivery points) |
