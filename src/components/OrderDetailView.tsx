@@ -18,6 +18,7 @@ import {
 import { formatDate, getDefaultExpectedDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { resolvePreviewKind } from '@/lib/order/preview';
+import { OrderChatCard } from '@/components/chat/OrderChatCard';
 import { DocumentPreview } from '@/components/order/DocumentPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -315,6 +316,10 @@ export function OrderDetailView({
               {partner.address ? <Row label="Address">{addressText(partner.address)}</Row> : null}
             </dl>
           </Section>
+        ) : null}
+
+        {!admin && partner && order.orderId ? (
+          <OrderChatCard orderId={order.orderId} shopName={partner.businessName} />
         ) : null}
 
         {delivery ? (

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, Wallet, X } from 'lucide-react';
 import PartnerDevices from '@/components/partner/PartnerDevices';
+import { PartnerChatDashboard } from '@/components/partner/PartnerChatDashboard';
 import { PartnerScheduleCard } from '@/components/partner/PartnerScheduleCard';
 import type { ScheduleSlotTemplate } from '@/lib/scheduling';
 import { statusInfo } from '@/lib/orderStatus';
@@ -678,10 +679,12 @@ export default function PartnerDashboard() {
       <Tabs defaultValue={partner.isActive ? 'orders' : 'apps'}>
         <TabsList>
           <TabsTrigger value="orders" disabled={!partner.isActive}>Orders{pendingCount ? <span className="ml-1.5 rounded-full bg-destructive px-1.5 text-xs text-white">{pendingCount}</span> : null}</TabsTrigger>
+          <TabsTrigger value="messages" disabled={!partner.isActive}>Messages</TabsTrigger>
           <TabsTrigger value="shop">Shop</TabsTrigger>
           <TabsTrigger value="apps">Apps & devices</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="mt-6"><OrdersTab orders={orders} setOrders={setOrders} reload={loadOrders} loading={loadingOrders} /></TabsContent>
+        <TabsContent value="messages" className="mt-6"><PartnerChatDashboard deliveryPoints={partner.deliveryPoints || []} /></TabsContent>
         <TabsContent value="shop" className="mt-6"><ShopTab partner={partner} setPartner={setPartner} /></TabsContent>
         <TabsContent value="apps" className="mt-6"><AppsTab partner={partner} /></TabsContent>
       </Tabs>

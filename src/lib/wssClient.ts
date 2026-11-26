@@ -136,6 +136,14 @@ export function notifyPartnerJobs(partnerId: string, reason: 'new' | 'updated' |
   return postToRooms('/api/notify-jobs', partnerId, (room) => ({ partnerId: room, reason }));
 }
 
+/** Tells connected partner apps (mobile/desktop) that a customer chat message arrived. */
+export function notifyPartnerChat(
+  partnerId: string,
+  payload: { conversationId: string; orderId?: string; senderName: string; preview: string }
+): Promise<WssResult> {
+  return postToRooms('/api/notify-chat', partnerId, (room) => ({ partnerId: room, ...payload }));
+}
+
 /** Disconnects a revoked device's sockets right away (its token would otherwise last up to 15 min). */
 export function disconnectDevice(partnerId: string, deviceId: string): Promise<WssResult> {
   return postSigned('/api/disconnect-device', { partnerId: String(partnerId), deviceId: String(deviceId) });

@@ -11,7 +11,7 @@ vi.mock('@/models/Partner', () => ({
   },
 }));
 
-import { notifyPartnerJobs, signWssBody, verifyWssSignature } from '@/lib/wssClient';
+import { notifyPartnerChat, notifyPartnerJobs, signWssBody, verifyWssSignature } from '@/lib/wssClient';
 
 const SECRET = 'dispatch-secret';
 const PARTNER_ID = 'c'.repeat(24);
@@ -109,5 +109,34 @@ describe('notifyPartnerJobs', () => {
     const fetchMock = mockFetch();
     expect(await notifyPartnerJobs(PARTNER_ID, 'new')).toMatchObject({ ok: false, error: 'wss_not_configured' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('notifyPartnerChat', () => {
+  beforeEach(() => {
+    vi.stubEnv('WSS_API_URL', 'https://wss.example.com/');
+    vi.stubEnv('WSS_DISPATCH_SECRET', SECRET);
+    partnerLookup.userId = LEGACY_USER_ID;
+  });
+
+  it('posts signed chat notification to both partner and legacy user rooms', async () => {
+    const fetchMock = mockFetch({ body: { success: true, delivered: 1 } });
+    const res = await notifyPartnerChat(PARTNER_ID, {
+      conversationId: 'chat_123',
+      orderId: 'ORD99',
+      senderName: 'Asha',
+      preview: 'Hi there',
+    });
+    expect(res).toMatchObject({ ok: true, delivered: 2 });
+    const urls = fetchMock.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(urls).toEqual([
+      'https://wss.example.com/api/notify-chat',
+      'https://wss.example.com/api/notify-chat',
+    ]);
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as unknown as [string, RequestInit])[1].body as string));
+    expect(bodies).toEqual([
+      { partnerId: PARTNER_ID, conversationId: 'chat_123', orderId: 'ORD99', senderName: 'Asha', preview: 'Hi there' },
+      { partnerId: LEGACY_USER_ID, conversationId: 'chat_123', orderId: 'ORD99', senderName: 'Asha', preview: 'Hi there' },
+    ]);
   });
 });

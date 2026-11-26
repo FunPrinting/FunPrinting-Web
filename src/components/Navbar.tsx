@@ -10,6 +10,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  MessageSquare,
   Package,
   Printer,
   Shield,
@@ -219,6 +220,12 @@ function UserMenu({
           <Link href="/my-orders">
             <Package className="size-4" />
             <span>My orders</span>
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href="/messages">
+            <MessageSquare className="size-4" />
+            <span>Messages</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="cursor-pointer">
@@ -458,6 +465,17 @@ export default function Navbar() {
                     >
                       <FileText className="size-4 text-muted-foreground" />
                       <span>My templates</span>
+                    </Link>
+                    <Link
+                      href="/messages"
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        'flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium hover:bg-muted',
+                        isActive('/messages') && 'bg-accent text-accent-foreground'
+                      )}
+                    >
+                      <MessageSquare className="size-4 text-muted-foreground" />
+                      <span>Messages</span>
                     </Link>
                   </div>
                 )}

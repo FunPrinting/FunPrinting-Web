@@ -86,3 +86,26 @@ export async function sendContactMessageEmail(opts: { name: string; email: strin
     opts.email
   );
 }
+
+export function sendPickupBroadcastEmail(opts: {
+  to: string;
+  name: string;
+  shop: string;
+  pickupPoint: string;
+  orderId: string;
+  deliveryNumber?: string;
+  message: string;
+  orderUrl: string;
+}) {
+  return send(
+    opts.to,
+    `${opts.shop} update for ${opts.pickupPoint} (Order #${opts.orderId})`,
+    layout(
+      `Pickup Update · ${opts.pickupPoint}`,
+      `<p>Hi ${escape(opts.name)},</p>
+      <p><b>${escape(opts.shop)}</b> sent an update regarding your order <b>#${escape(opts.orderId)}</b>${opts.deliveryNumber ? ` (Tag <b>#${escape(opts.deliveryNumber)}</b>)` : ''} at <b>${escape(opts.pickupPoint)}</b>:</p>
+      <blockquote style="margin:14px 0;padding:12px 16px;background:#f3f4f6;border-left:4px solid #4f46e5;border-radius:4px;white-space:pre-wrap">${escape(opts.message)}</blockquote>
+      <p><a href="${opts.orderUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Open Order & Chat with Shop</a></p>`
+    )
+  );
+}
