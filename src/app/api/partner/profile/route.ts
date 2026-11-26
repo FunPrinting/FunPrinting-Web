@@ -6,6 +6,12 @@ import { scheduleSlotsArraySchema } from '@/lib/scheduling';
 import { partnerCodSchema } from '@/lib/cod';
 import Partner from '@/models/Partner';
 
+const partnerAiSchema = z.object({
+  enabled: z.boolean(),
+  faqNotes: z.string().trim().max(1500).default(''),
+  autoPauseMinutes: z.number().int().min(5).max(240).default(45),
+});
+
 /** Home delivery settings a shop controls (docs/DELIVERY.md). */
 const deliverySettings = z.object({
   courier: z.object({ enabled: z.boolean() }).optional(),
@@ -121,6 +127,17 @@ export async function POST(request: NextRequest) {
         }
         partner.cod = parsedCod.data;
         partner.markModified('cod');
+      }
+      if (data.aiAssistant !== undefined) {
+        const parsedAi = partnerAiSchema.safeParse(data.aiAssistant);
+        if (!parsedAi.success) {
+          return NextResponse.json(
+            { success: false, error: parsedAi.error.issues[0]?.message || 'Invalid AI assistant settings' },
+            { status: 400 }
+          );
+        }
+        partner.aiAssistant = parsedAi.data;
+        partner.markModified('aiAssistant');
       }
 
       await partner.save();

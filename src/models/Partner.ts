@@ -121,6 +121,11 @@ export interface IPartner {
     maxOrderAmount: number;
     cashFee: number;
   };
+  aiAssistant?: {
+    enabled: boolean;
+    faqNotes?: string;
+    autoPauseMinutes: number;
+  };
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
   // auto: paid orders go straight to the print queue; manual: the partner accepts each order
   acceptanceMode: 'auto' | 'manual';
@@ -253,6 +258,11 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     allowAtPickupPoints: { type: Boolean, default: false },
     maxOrderAmount: { type: Number, default: 200, min: 50, max: 1000 },
     cashFee: { type: Number, default: 0, min: 0, max: 50 },
+  },
+  aiAssistant: {
+    enabled: { type: Boolean, default: true },
+    faqNotes: { type: String, maxlength: 1500, default: '' },
+    autoPauseMinutes: { type: Number, default: 45, min: 5, max: 240 },
   },
   delivery: {
     courier: {

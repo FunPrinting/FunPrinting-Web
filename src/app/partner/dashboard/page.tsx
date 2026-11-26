@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Banknote, Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, UserX, Wallet, X } from 'lucide-react';
 import PartnerDevices from '@/components/partner/PartnerDevices';
 import { PartnerChatDashboard } from '@/components/partner/PartnerChatDashboard';
+import { PartnerAiCard } from '@/components/partner/PartnerAiCard';
 import { PartnerCodCard } from '@/components/partner/PartnerCodCard';
 import { PartnerScheduleCard } from '@/components/partner/PartnerScheduleCard';
 import type { ScheduleSlotTemplate } from '@/lib/scheduling';
@@ -577,6 +578,13 @@ function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Pa
       partner={partner}
       onSaveCod={async (cod) => {
         const p = await saveProfile({ cod });
+        setPartner(p);
+      }}
+    />
+    <PartnerAiCard
+      partner={partner}
+      onSaveAi={async (aiAssistant) => {
+        const p = await saveProfile({ aiAssistant });
         setPartner(p);
       }}
     />

@@ -142,10 +142,12 @@ export async function appendChatMessage(opts: {
   senderName: string;
   body: string;
   metadata?: Record<string, unknown>;
+  aiPauseMinutes?: number;
 }): Promise<{ message: IChatMessage; conversation: IConversation }> {
   await connectDB();
   const body = opts.body.trim().slice(0, 2000);
   const now = new Date();
+  const pauseMins = Math.min(240, Math.max(5, Math.round(opts.aiPauseMinutes ?? 45)));
 
   const messageDoc = await ChatMessage.create({
     conversationId: opts.conversationId,
@@ -167,7 +169,13 @@ export async function appendChatMessage(opts: {
       lastMessageAt: now,
       lastMessagePreview: body.slice(0, 140),
       status: 'open',
-      ...(opts.senderType === 'partner' ? { aiPausedUntil: new Date(now.getTime() + 45 * 60_000) } : {}),
+      ...(opts.senderType === 'partner'
+        ? {
+            aiPausedUntil: new Date(now.getTime() + pauseMins * 60_000),
+            needsHumanAttention: false,
+            escalationReason: '',
+          }
+        : {}),
     },
     ...(Object.keys(inc).length ? { $inc: inc } : {}),
   };

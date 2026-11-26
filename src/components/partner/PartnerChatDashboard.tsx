@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Banknote, Check, Loader2, Megaphone, MessageSquare, Send, Users, X } from 'lucide-react';
+import { AlertTriangle, Banknote, Bot, Check, Loader2, Megaphone, MessageSquare, Pause, Play, Send, Users, X } from 'lucide-react';
 import { ChatThread } from '@/components/chat/ChatThread';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,9 @@ interface PartnerConversation {
   lastMessageAt: string;
   lastMessagePreview: string;
   unreadPartner: number;
+  aiPausedUntil?: string;
+  needsHumanAttention?: boolean;
+  escalationReason?: string;
   orderSummary?: {
     status: string;
     paymentMethod: 'online' | 'cod';
@@ -64,6 +67,7 @@ export function PartnerChatDashboard({
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [broadcasts, setBroadcasts] = useState<BroadcastItem[]>([]);
   const [codBusy, setCodBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [threadRefresh, setThreadRefresh] = useState(0);
 
   const loadConversations = useCallback(async () => {
@@ -180,7 +184,30 @@ export function PartnerChatDashboard({
     }
   };
 
+  const toggleAi = async (conversationId: string, action: 'pause' | 'resume') => {
+    if (aiBusy) return;
+    setAiBusy(true);
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/ai?role=partner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Could not update AI assistant');
+      }
+      toast.success(action === 'pause' ? 'AI paused for this chat' : 'AI assistant resumed');
+      void loadConversations();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update AI state');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   const activeConv = conversations.find((c) => c.conversationId === selectedId);
+  const isAiPaused = Boolean(activeConv?.aiPausedUntil && new Date(activeConv.aiPausedUntil).getTime() > Date.now());
 
   return (
     <div className="space-y-6">
@@ -343,9 +370,14 @@ export function PartnerChatDashboard({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold">{c.customerName}</span>
-                        {c.unreadPartner > 0 ? (
-                          <Badge className="h-5 min-w-5 justify-center px-1.5 text-[10px]">{c.unreadPartner}</Badge>
-                        ) : null}
+                        <div className="flex items-center gap-1">
+                          {c.needsHumanAttention ? (
+                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">Needs reply</Badge>
+                          ) : null}
+                          {c.unreadPartner > 0 ? (
+                            <Badge className="h-5 min-w-5 justify-center px-1.5 text-[10px]">{c.unreadPartner}</Badge>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                         {c.orderId ? <span className="font-mono text-primary">#{c.orderId}</span> : null}
@@ -369,6 +401,23 @@ export function PartnerChatDashboard({
                         <span className="ml-2 text-muted-foreground">{activeConv.customerPhone || activeConv.customerEmail}</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={aiBusy}
+                          onClick={() => void toggleAi(activeConv.conversationId, isAiPaused ? 'resume' : 'pause')}
+                          className="h-7 gap-1 px-2 text-[11px]"
+                        >
+                          {aiBusy ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : isAiPaused ? (
+                            <Play className="size-3 text-primary" />
+                          ) : (
+                            <Pause className="size-3 text-muted-foreground" />
+                          )}
+                          {isAiPaused ? 'Resume AI' : 'Pause AI'}
+                        </Button>
                         {activeConv.orderId ? (
                           <Badge variant="outline" className="font-mono">#{activeConv.orderId}</Badge>
                         ) : null}
@@ -379,6 +428,20 @@ export function PartnerChatDashboard({
                         ) : null}
                       </div>
                     </div>
+
+                    {activeConv.needsHumanAttention ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+                        <span>
+                          <strong>Needs your reply:</strong> {activeConv.escalationReason || 'Escalated for partner review'}. Replying pauses AI automatically.
+                        </span>
+                      </div>
+                    ) : isAiPaused ? (
+                      <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+                        <Bot className="size-3.5" aria-hidden />
+                        <span>AI assistant is paused while you handle this chat.</span>
+                      </div>
+                    ) : null}
 
                     {activeConv.orderId &&
                     activeConv.orderSummary?.paymentMethod === 'cod' &&

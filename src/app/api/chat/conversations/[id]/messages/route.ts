@@ -4,7 +4,9 @@ import connectDB from '@/lib/mongodb';
 import ChatMessage from '@/models/ChatMessage';
 import Conversation from '@/models/Conversation';
 import Order from '@/models/Order';
+import Partner from '@/models/Partner';
 import { appendChatMessage, resolveChatActor } from '@/lib/chat/service';
+import { maybeHandleAiAutoReply } from '@/lib/chat/aiResponder';
 
 const sendSchema = z.object({
   body: z.string().trim().min(1, 'Message cannot be empty').max(2000, 'Message is too long'),
@@ -95,15 +97,34 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const senderId = auth.actor.role === 'partner' ? auth.actor.partnerId : auth.actor.userId;
     const senderName = auth.actor.role === 'partner' ? auth.actor.partnerName : auth.actor.name;
 
+    let aiPauseMinutes: number | undefined;
+    if (auth.actor.role === 'partner') {
+      const partnerCfg = await Partner.findById(auth.actor.partnerId)
+        .select('aiAssistant.autoPauseMinutes')
+        .lean<{ aiAssistant?: { autoPauseMinutes?: number } } | null>();
+      aiPauseMinutes = partnerCfg?.aiAssistant?.autoPauseMinutes;
+    }
+
     const result = await appendChatMessage({
       conversationId: id,
       senderType,
       senderId,
       senderName,
       body: parsed.data.body,
+      aiPauseMinutes,
     });
 
-    return NextResponse.json({ success: true, message: result.message, conversation: result.conversation });
+    const aiReply =
+      senderType === 'customer'
+        ? await maybeHandleAiAutoReply({ conversationId: id, messageBody: parsed.data.body }).catch(() => null)
+        : null;
+
+    return NextResponse.json({
+      success: true,
+      message: result.message,
+      aiMessage: aiReply?.aiMessage ?? null,
+      conversation: aiReply?.conversation ?? result.conversation,
+    });
   } catch (error) {
     console.error('Error sending message:', error);
     return NextResponse.json({ success: false, error: 'Failed to send message' }, { status: 500 });

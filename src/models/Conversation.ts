@@ -26,6 +26,8 @@ export interface IConversation {
   unreadCustomer: number;
   unreadPartner: number;
   aiPausedUntil?: Date;
+  needsHumanAttention?: boolean;
+  escalationReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +55,8 @@ const conversationSchema = new Schema<IConversation>(
     unreadCustomer: { type: Number, default: 0 },
     unreadPartner: { type: Number, default: 0 },
     aiPausedUntil: Date,
+    needsHumanAttention: { type: Boolean, default: false },
+    escalationReason: String,
   },
   { timestamps: true }
 );

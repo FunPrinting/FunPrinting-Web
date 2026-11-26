@@ -114,8 +114,16 @@ export function ChatThread({
       }
       setDraft('');
       if (data.message) {
-        setMessages((prev) => [...prev, data.message]);
-        latestAtRef.current = data.message.createdAt;
+        const added = [data.message, ...(data.aiMessage ? [data.aiMessage] : [])] as ChatMsg[];
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m._id));
+          const merged = [...prev];
+          for (const msg of added) {
+            if (!seen.has(msg._id)) merged.push(msg);
+          }
+          return merged;
+        });
+        latestAtRef.current = added[added.length - 1].createdAt;
       } else {
         await loadMessages(true);
       }
