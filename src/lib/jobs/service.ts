@@ -175,6 +175,7 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
       city: order.deliveryOption.city,
       state: order.deliveryOption.state,
       pinCode: order.deliveryOption.pinCode,
+      ...(order.deliveryOption.scheduledSlot ? { scheduledSlot: order.deliveryOption.scheduledSlot } : {}),
     } : undefined,
     amount: order.pricing?.totalPrice ?? order.amount,
     expectedDate: order.expectedDate ? String(order.expectedDate) : undefined,

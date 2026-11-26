@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { CheckCircle2, FileText, Loader2, Lock, MapPin, ShoppingCart, Store, Truck } from 'lucide-react';
+import { CalendarClock, CheckCircle2, FileText, Loader2, Lock, MapPin, ShoppingCart, Store, Truck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import InlinePhoneModal from '@/components/InlinePhoneModal';
 import { DeliveryChooser, type DeliveryAddress, type DeliverySpeedChoice } from '@/components/order/DeliveryChooser';
 import { ShopPicker, type ShopChoice } from '@/components/order/ShopPicker';
+import { SchedulePicker } from '@/components/order/SchedulePicker';
+import type { ScheduledSlotSelection } from '@/lib/scheduling';
 import { FileCard } from '@/components/order/FileCard';
 import { FileDropzone } from '@/components/order/FileDropzone';
 import { countPages, PageCountError, uploadFile } from '@/lib/order/client';
@@ -66,12 +68,20 @@ function cartOptions(f: OrderFile): CartItem['printingOptions'] {
 }
 
 /** Why "Pay" can't go ahead yet (the first problem), or null. */
-function blocker(files: OrderFile[], shop: ShopChoice | undefined, delivery: DeliveryAddress, deliveryCharge: number | null, price: number | null): string | null {
+function blocker(
+  files: OrderFile[],
+  shop: ShopChoice | undefined,
+  delivery: DeliveryAddress,
+  deliveryCharge: number | null,
+  price: number | null,
+  scheduledSlot: ScheduledSlotSelection | null
+): string | null {
   if (!files.length) return 'Add a document to print';
   const bad = files.find((f) => fileProblem(f));
   if (bad) return `${bad.file.name}: ${fileProblem(bad)}`;
   if (!shop) return 'Choose a print shop';
   if (price === null) return 'Getting the price from the shop…';
+  if (delivery.type === 'pickup' && !scheduledSlot) return 'Choose a pickup date and time slot';
   if (delivery.type === 'delivery') {
     const d = delivery;
     if (!d.recipientName || !d.recipientPhone || !d.flatBuilding || !d.address || !d.city || !d.state) return 'Complete the delivery address';
@@ -93,6 +103,7 @@ function OrderPageContent() {
   const [delivery, setDelivery] = useState<DeliveryAddress>({ type: 'pickup' });
   const [speed, setSpeed] = useState<DeliverySpeedChoice>('standard');
   const [deliveryCharge, setDeliveryCharge] = useState<number | null>(0);
+  const [scheduledSlot, setScheduledSlot] = useState<ScheduledSlotSelection | null>(null);
   const [customer, setCustomer] = useState<Customer>({ name: '', email: '', phone: '' });
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -333,7 +344,7 @@ function OrderPageContent() {
   // ── Price ──────────────────────────────────────────────────────────
   const shownDelivery = delivery.type === 'delivery' ? deliveryCharge ?? 0 : 0;
   const sums = printingPrice === null ? null : totals(printingPrice, shownDelivery);
-  const problem = blocker(files, shop, delivery, deliveryCharge, printingPrice);
+  const problem = blocker(files, shop, delivery, deliveryCharge, printingPrice, scheduledSlot);
   const weightKg = useMemo(() => parcelWeight(files), [files]);
 
   // ── Cart ───────────────────────────────────────────────────────────
@@ -439,8 +450,9 @@ function OrderPageContent() {
             partnerId: shop!.id,
             partnerDeliveryPoint: shop!.deliveryPoint,
             speed: delivery.type === 'delivery' ? speed : undefined,
+            ...(delivery.type === 'pickup' && scheduledSlot ? { scheduledSlot } : {}),
           },
-          expectedDate: new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10),
+          expectedDate: scheduledSlot ? scheduledSlot.date : new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10),
         }),
       });
       const data = await res.json().catch(() => ({ success: false, error: 'Unexpected response from the server' }));
@@ -566,6 +578,7 @@ function OrderPageContent() {
                     setShop(choice);
                     setPrintingPrice(price);
                     if (changed) {
+                      setScheduledSlot(null);
                       if (choice.deliveryPoint) {
                         setDelivery({ type: 'pickup' });
                         setDeliveryCharge(0);
@@ -609,10 +622,38 @@ function OrderPageContent() {
                   value={delivery}
                   speed={speed}
                   onChange={(next, nextSpeed, charge) => {
+                    if (next.type !== delivery.type) setScheduledSlot(null);
                     setDelivery(next);
                     setSpeed(nextSpeed);
                     setDeliveryCharge(next.type === 'pickup' ? 0 : charge);
                   }}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {/* 4 (or 3 for pickup point): Apple-style Day & Time-Slot Scheduler */}
+          {shop && delivery.type === 'pickup' && !editingCartId ? (
+            <Card>
+              <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+                {step(shop.deliveryPoint ? 3 : 4, Boolean(scheduledSlot))}
+                <div className="flex-1 min-w-0">
+                  <CardTitle>Schedule pickup</CardTitle>
+                  <CardDescription>
+                    {shop.deliveryPoint
+                      ? `Choose a date & time slot at ${shop.deliveryPoint}`
+                      : `Choose a date & time slot at ${shop.name}`}
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <SchedulePicker
+                  partnerId={shop.id}
+                  target={shop.deliveryPoint ? 'pickup_point' : 'store'}
+                  pickupPoint={shop.deliveryPoint}
+                  locationLabel={shop.deliveryPoint || shop.name}
+                  value={scheduledSlot}
+                  onChange={setScheduledSlot}
                 />
               </CardContent>
             </Card>
@@ -695,6 +736,15 @@ function OrderPageContent() {
                       <dt className="flex items-center gap-1.5 text-muted-foreground"><Truck className="size-4" aria-hidden />{delivery.type === 'delivery' ? 'Delivery' : 'Pickup'}</dt>
                       <dd className="tabular-nums">{delivery.type === 'pickup' ? 'Free' : deliveryCharge === null ? 'Choose' : rupees(deliveryCharge)}</dd>
                     </div>
+                    {delivery.type === 'pickup' && scheduledSlot ? (
+                      <div className="flex justify-between items-start gap-2">
+                        <dt className="flex items-center gap-1.5 text-muted-foreground shrink-0"><CalendarClock className="size-4" aria-hidden />Schedule</dt>
+                        <dd className="text-right text-xs font-medium text-foreground">
+                          <span>{new Date(`${scheduledSlot.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span>
+                          <span className="block text-[11px] text-muted-foreground">{scheduledSlot.label}</span>
+                        </dd>
+                      </div>
+                    ) : null}
                     {sums ? (
                       <div className="flex justify-between">
                         <dt className="text-muted-foreground">Processing fee (3%)</dt>

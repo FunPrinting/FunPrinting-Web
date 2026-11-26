@@ -102,6 +102,14 @@ export interface IOrder {
     method?: 'courier' | 'shop';
     /** Shop delivery: the customer tells the rider this code; the shop enters it to mark the order delivered. */
     handover?: { code: string; attempts: number; verifiedAt?: Date };
+    scheduledSlot?: {
+      date: string;
+      slotId: string;
+      label: string;
+      startTime: string;
+      endTime: string;
+      target: 'store' | 'pickup_point';
+    };
     pickupLocation?: {
       _id: string;
       name: string;
@@ -272,6 +280,15 @@ const orderSchema = new mongoose.Schema<IOrder>({
     speed: { type: String, enum: ['standard', 'express', 'sameday', 'shop'] },
     method: { type: String, enum: ['courier', 'shop'] },
     handover: { code: String, attempts: Number, verifiedAt: Date },
+    scheduledSlot: {
+      _id: false,
+      date: String,
+      slotId: String,
+      label: String,
+      startTime: String,
+      endTime: String,
+      target: { type: String, enum: ['store', 'pickup_point'] },
+    },
     pickupLocation: {
       _id: String,
       name: String,

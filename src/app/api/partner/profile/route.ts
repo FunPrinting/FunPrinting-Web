@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { resolvePartnerRequest } from '@/lib/authz';
 import { ensureCourierPickup } from '@/lib/delivery/options';
+import { scheduleSlotsArraySchema } from '@/lib/scheduling';
 import Partner from '@/models/Partner';
 
 /** Home delivery settings a shop controls (docs/DELIVERY.md). */
@@ -90,6 +91,17 @@ export async function POST(request: NextRequest) {
       }
       if (data.deliveryPoints) {
         partner.deliveryPoints = data.deliveryPoints;
+      }
+      if (data.scheduleSlots !== undefined) {
+        const parsedSlots = scheduleSlotsArraySchema.safeParse(data.scheduleSlots);
+        if (!parsedSlots.success) {
+          return NextResponse.json(
+            { success: false, error: parsedSlots.error.issues[0]?.message || 'Invalid time slots' },
+            { status: 400 }
+          );
+        }
+        partner.scheduleSlots = parsedSlots.data;
+        partner.markModified('scheduleSlots');
       }
 
       // Online/offline is the partner's choice, but only once approved.

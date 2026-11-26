@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, Wallet, X } from 'lucide-react';
 import PartnerDevices from '@/components/partner/PartnerDevices';
+import { PartnerScheduleCard } from '@/components/partner/PartnerScheduleCard';
+import type { ScheduleSlotTemplate } from '@/lib/scheduling';
 import { statusInfo } from '@/lib/orderStatus';
 import { fulfilmentOf, nextPartnerStatuses, PARTNER_STATUS_LABEL } from '@/lib/partnerOrderTransitions';
 import { orderPartnerShare } from '@/lib/payments/money';
@@ -266,8 +268,13 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
                       <TableCell className="text-sm">
                         <span className="flex items-center gap-1.5 text-muted-foreground">
                           {how === 'shop' ? <Bike className="size-4" aria-hidden /> : how === 'courier' ? <Truck className="size-4" aria-hidden /> : <Building2 className="size-4" aria-hidden />}
-                          {how === 'shop' ? `You deliver${o.deliveryOption?.distance ? ` · ${o.deliveryOption.distance} km` : ''}` : how === 'courier' ? (o.shiprocket?.awbCode ? `Courier · ${o.shiprocket.courierName || 'booked'}` : 'Courier') : 'Pickup'}
+                          {how === 'shop' ? `You deliver${o.deliveryOption?.distance ? ` · ${o.deliveryOption.distance} km` : ''}` : how === 'courier' ? (o.shiprocket?.awbCode ? `Courier · ${o.shiprocket.courierName || 'booked'}` : 'Courier') : o.deliveryOption?.partnerDeliveryPoint ? `Point: ${o.deliveryOption.partnerDeliveryPoint}` : 'Pickup'}
                         </span>
+                        {o.deliveryOption?.scheduledSlot?.date ? (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {new Date(`${o.deliveryOption.scheduledSlot.date}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })} · {o.deliveryOption.scheduledSlot.label}
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{rupees(orderPartnerShare(o))}</TableCell>
                       <TableCell>
@@ -455,6 +462,13 @@ function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Pa
   return (
     <div className="space-y-6">
     <DeliveryCard partner={partner} setPartner={setPartner} />
+    <PartnerScheduleCard
+      partner={partner}
+      onSaveSlots={async (scheduleSlots: ScheduleSlotTemplate[]) => {
+        const p = await saveProfile({ scheduleSlots });
+        setPartner(p);
+      }}
+    />
     <Card>
       <CardHeader>
         <CardTitle>Contact numbers</CardTitle>

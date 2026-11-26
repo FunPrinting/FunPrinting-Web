@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import type { ScheduleSlotTemplate } from '@/lib/scheduling';
 
 export interface IPartner {
   _id: string;
@@ -113,6 +114,7 @@ export interface IPartner {
     contactNumber?: string;
     isActive: boolean;
   }>;
+  scheduleSlots?: ScheduleSlotTemplate[];
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
   // auto: paid orders go straight to the print queue; manual: the partner accepts each order
   acceptanceMode: 'auto' | 'manual';
@@ -224,6 +226,19 @@ const partnerSchema = new mongoose.Schema<IPartner>({
     },
     contactNumber: { type: String },
     isActive: { type: Boolean, default: true }
+  }],
+  scheduleSlots: [{
+    _id: false,
+    id: { type: String, required: true },
+    target: { type: String, enum: ['store', 'pickup_point'], required: true },
+    pickupPointName: String,
+    label: String,
+    startTime: { type: String, required: true },
+    endTime: { type: String, required: true },
+    daysOfWeek: [Number],
+    maxOrders: Number,
+    cutoffMinutes: Number,
+    isActive: { type: Boolean, default: true },
   }],
   razorpayAccountId: { type: String, required: false },
   acceptanceMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },

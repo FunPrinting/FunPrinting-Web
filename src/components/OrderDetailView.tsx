@@ -279,7 +279,18 @@ export function OrderDetailView({
             {opts.pageCount ? <Row label="Pages">{opts.pageCount}</Row> : null}
             {services.length ? <Row label="Finishing">{services.map(title).join(', ')}</Row> : null}
             <Row label="Expected">
-              {order.expectedDate ? formatDate(String(order.expectedDate), 'long') : <span className="text-muted-foreground">{formatDate(getDefaultExpectedDate(order.createdAt), 'long')} (estimate)</span>}
+              {delivery?.scheduledSlot?.date ? (
+                <span>
+                  {formatDate(String(delivery.scheduledSlot.date), 'long')}
+                  {delivery.scheduledSlot.label ? (
+                    <span className="block text-xs text-muted-foreground">{delivery.scheduledSlot.label}</span>
+                  ) : null}
+                </span>
+              ) : order.expectedDate ? (
+                formatDate(String(order.expectedDate), 'long')
+              ) : (
+                <span className="text-muted-foreground">{formatDate(getDefaultExpectedDate(order.createdAt), 'long')} (estimate)</span>
+              )}
             </Row>
             <Row label="Total"><span className="text-base tabular-nums">₹{Number(order.amount || 0).toLocaleString('en-IN')}</span></Row>
           </dl>

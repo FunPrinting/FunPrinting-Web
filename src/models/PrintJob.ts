@@ -73,6 +73,14 @@ export interface IPrintJob {
     city?: string;
     state?: string;
     pinCode?: string;
+    scheduledSlot?: {
+      date: string;
+      slotId: string;
+      label: string;
+      startTime: string;
+      endTime: string;
+      target: 'store' | 'pickup_point';
+    };
   };
   amount?: number;
   expectedDate?: string;
@@ -143,6 +151,15 @@ const printJobSchema = new Schema<IPrintJob>(
       city: String,
       state: String,
       pinCode: String,
+      scheduledSlot: {
+        _id: false,
+        date: String,
+        slotId: String,
+        label: String,
+        startTime: String,
+        endTime: String,
+        target: String,
+      },
     },
     amount: Number,
     expectedDate: String,

@@ -6,6 +6,8 @@ import Partner from '@/models/Partner';
 import { getFileTypeFromFileNames } from '@/lib/fileTypeDetection';
 import { isValidPincode } from '@/lib/delivery/rates';
 import { getDeliveryOptions, newHandoverCode, type PartnerDeliveryFields } from '@/lib/delivery/options';
+import { validateSlotSelection, type ScheduleSlotTemplate, type ScheduleTarget } from '@/lib/scheduling';
+import { getBookedSlotCounts } from '@/lib/schedulingServer';
 import { normalisePhoneInput } from '@/lib/phoneValidation';
 import { verifyUploadReceipt, type UploadReceipt } from '@/lib/uploads/receipt';
 import { DEFAULT_PARTNER_PRICING, normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
@@ -59,6 +61,16 @@ export const printCheckoutSchema = z.object({
     state: z.string().trim().max(100).optional(),
     pinCode: z.string().trim().max(10).optional(),
     location: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), address: z.string().max(500).optional() }).optional(),
+    scheduledSlot: z
+      .object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid pickup date'),
+        slotId: z.string().trim().min(1).max(64),
+        label: z.string().max(120).optional(),
+        startTime: z.string().max(10).optional(),
+        endTime: z.string().max(10).optional(),
+        target: z.enum(['store', 'pickup_point']).optional(),
+      })
+      .optional(),
   }),
   expectedDate: z.string().max(40).optional(),
 });
@@ -99,7 +111,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
 
   // 2. Shop: every order goes to an approved partner (the platform's own shop is one too)
   const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<
-    (PartnerDeliveryFields & { pricing?: any; razorpayAccountId?: string }) | null
+    (PartnerDeliveryFields & { pricing?: any; razorpayAccountId?: string; scheduleSlots?: ScheduleSlotTemplate[] }) | null
   >();
   if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
   const rawP = (partner.pricing ?? {}) as any;
@@ -155,6 +167,33 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     deliveryChargePaise = Math.round(deliveryCharge * 100);
   }
 
+  // 3b. Scheduled pickup slot (store allows same-day+, pickup points enforce next-day+)
+  let verifiedSlot:
+    | { date: string; slotId: string; label: string; startTime: string; endTime: string; target: ScheduleTarget }
+    | undefined;
+  if (input.delivery.type === 'pickup' && input.delivery.scheduledSlot) {
+    const slotTarget: ScheduleTarget = input.delivery.partnerDeliveryPoint ? 'pickup_point' : 'store';
+    const slotInput = input.delivery.scheduledSlot;
+    const bookedCounts = await getBookedSlotCounts(String(partner._id), { target: slotTarget });
+    const check = validateSlotSelection({
+      partnerSlots: partner.scheduleSlots,
+      target: slotTarget,
+      pickupPointName: input.delivery.partnerDeliveryPoint,
+      date: slotInput.date,
+      slotId: slotInput.slotId,
+      bookedCounts,
+    });
+    if (!check.ok) throw new CheckoutError(check.error);
+    verifiedSlot = {
+      date: slotInput.date,
+      slotId: check.slot.id,
+      label: check.slot.label,
+      startTime: check.slot.startTime,
+      endTime: check.slot.endTime,
+      target: slotTarget,
+    };
+  }
+
   // 4. Price
   let quote;
   try {
@@ -182,7 +221,11 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
   const first = fileOptions[0];
   const anyMixed = fileOptions.some((o) => o.color === 'mixed' && (o.pageColors?.colorPages.length ?? 0) > 0);
 
-  const expectedDate = input.expectedDate ? new Date(input.expectedDate) : undefined;
+  const expectedDate = verifiedSlot
+    ? new Date(`${verifiedSlot.date}T00:00:00.000Z`)
+    : input.expectedDate
+      ? new Date(input.expectedDate)
+      : undefined;
   const orderDoc = new Order({
     checkoutKey: input.idempotencyKey,
     customerInfo: { ...input.customerInfo, email: input.customerInfo.email.toLowerCase() },
@@ -207,6 +250,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     deliveryOption: {
       ...input.delivery,
       ...(recipientPhone ? { recipientPhone } : {}),
+      ...(verifiedSlot ? { scheduledSlot: verifiedSlot } : {}),
       deliveryCharge,
       method,
       distance,
