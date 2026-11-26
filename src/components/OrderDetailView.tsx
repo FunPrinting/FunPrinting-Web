@@ -322,13 +322,20 @@ export function OrderDetailView({
                 <StatusBadge status={order.status} />
                 {isCod ? (
                   <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', cashDue ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
-                    {cashDue ? `Cash due · ₹${Number(order.pricing?.total ?? order.amount ?? 0).toLocaleString('en-IN')}` : 'Cash paid'}
+                    {cashDue ? `COD · Cash due ₹${Number(order.pricing?.total ?? order.amount ?? 0).toLocaleString('en-IN')}` : 'COD · Cash paid'}
                   </span>
-                ) : admin ? (
-                  <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', order.paymentStatus === 'completed' ? 'bg-success/10 text-success' : order.paymentStatus === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning')}>
-                    Payment {order.paymentStatus || 'unknown'}
-                  </span>
-                ) : null}
+                ) : (
+                  <>
+                    <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                      PREPAID
+                    </span>
+                    {admin && order.paymentStatus !== 'completed' ? (
+                      <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', order.paymentStatus === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning')}>
+                        Payment {order.paymentStatus || 'unknown'}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -361,6 +368,13 @@ export function OrderDetailView({
               ) : (
                 <span className="text-muted-foreground">{formatDate(getDefaultExpectedDate(order.createdAt), 'long')} (estimate)</span>
               )}
+            </Row>
+            <Row label="Payment">
+              {isCod
+                ? cashDue
+                  ? 'COD (Cash on Pickup — pay at collection)'
+                  : 'COD (Cash collected)'
+                : 'Prepaid (Online · Razorpay)'}
             </Row>
             <Row label="Total"><span className="text-base tabular-nums">₹{Number(order.amount || 0).toLocaleString('en-IN')}</span></Row>
           </dl>

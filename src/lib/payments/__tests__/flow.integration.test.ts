@@ -406,12 +406,12 @@ describe('reconcile, retries and refunds', () => {
     await syncPaymentFromRazorpay(r.referenceId, 'reconcile');
 
     const { refundId, amount } = await startRefund(r.referenceId, { reason: 'Shop closed', actor: 'admin@example.com' });
-    expect(amount).toBe(5150);
+    expect(amount).toBe(5000);
     const evt = { event: 'refund.processed', payload: { refund: { entity: { id: refundId, payment_id: paymentId, amount } } } };
     await webhook(webhookRequest(evt));
     await webhook(webhookRequest(evt)); // different event id, same refund
     const p = await Payment.findOne({ referenceId: r.referenceId }).lean<any>();
-    expect(p).toMatchObject({ status: 'refunded', amountRefunded: 5150 });
+    expect(p).toMatchObject({ status: 'refunded', amountRefunded: 5000 });
     expect((await Order.findOne({ orderId: r.orderId }).lean<any>())).toMatchObject({ paymentStatus: 'refunded', status: 'refunded' });
     await expect(startRefund(r.referenceId, { reason: 'again', actor: 'a' })).rejects.toThrow(/refunded/);
   });

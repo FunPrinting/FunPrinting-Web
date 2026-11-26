@@ -83,6 +83,8 @@ export interface IPrintJob {
     };
   };
   amount?: number;
+  paymentMethod?: 'online' | 'cod';
+  paymentStatus?: string;
   expectedDate?: string;
 
   assignedAt?: Date;
@@ -162,6 +164,8 @@ const printJobSchema = new Schema<IPrintJob>(
       },
     },
     amount: Number,
+    paymentMethod: { type: String, enum: ['online', 'cod'], default: 'online' },
+    paymentStatus: String,
     expectedDate: String,
 
     assignedAt: Date,

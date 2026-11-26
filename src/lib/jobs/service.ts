@@ -183,6 +183,8 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
       ...(order.deliveryOption.scheduledSlot ? { scheduledSlot: order.deliveryOption.scheduledSlot } : {}),
     } : undefined,
     amount: order.pricing?.totalPrice ?? order.amount,
+    paymentMethod: (order.paymentMethod === 'cod' ? 'cod' : 'online') as 'online' | 'cod',
+    paymentStatus: order.paymentStatus,
     expectedDate: order.expectedDate ? String(order.expectedDate) : undefined,
     rejections: [],
     version: 0,

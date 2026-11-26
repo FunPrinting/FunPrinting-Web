@@ -43,6 +43,8 @@ export function publicJob(job: IPrintJob) {
     customerInfo: job.customerInfo,
     deliveryOption: job.deliveryOption,
     amount: job.amount,
+    paymentMethod: job.paymentMethod || 'online',
+    paymentStatus: job.paymentStatus,
     expectedDate: job.expectedDate,
   };
 }
