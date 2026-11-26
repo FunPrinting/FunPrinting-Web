@@ -40,12 +40,19 @@ export interface OrderDetailViewProps {
 }
 
 type ColorMode = 'color' | 'bw' | 'mixed';
+type PaperSize = 'A4' | 'A3';
+type SidedMode = 'single' | 'double';
 interface PageColors { colorPages: number[]; bwPages: number[] }
 interface OrderFile {
   url: string;
   name: string;
   type: string;
+  pageSize: PaperSize;
   color: ColorMode;
+  sided: SidedMode;
+  copies: number;
+  pages?: number;
+  amount?: number;
   service?: string;
   pageColors?: PageColors;
 }
@@ -77,16 +84,27 @@ function filesOf(order: any): OrderFile[] {
   const urls: string[] = Array.isArray(order.fileURLs) && order.fileURLs.length ? order.fileURLs : order.fileURL ? [order.fileURL] : [];
   const opts = order.printingOptions ?? {};
   const fileOptions = Array.isArray(opts.fileOptions) ? opts.fileOptions : [];
+  const pricedFiles = Array.isArray(order.pricing?.files) ? order.pricing.files : [];
   return urls.map((url, i) => {
     const name = order.originalFileNames?.[i] || (i === 0 && order.originalFileName) || `File ${i + 1}`;
+    const fo = fileOptions[i] ?? {};
+    const pf = pricedFiles[i];
     const legacyColors = Array.isArray(opts.pageColors) ? opts.pageColors[i] : i === 0 ? opts.pageColors : undefined;
+    const rawSize = fo.pageSize || opts.pageSize;
+    const rawSided = fo.sided || opts.sided;
+    const rawCopies = fo.copies ?? opts.copies ?? 1;
     return {
       url,
       name,
       type: order.fileTypes?.[i] || (i === 0 && urls.length === 1 && order.fileType) || guessType(url, name),
-      color: fileOptions[i]?.color || opts.color || 'bw',
+      pageSize: rawSize === 'A3' ? 'A3' : 'A4',
+      color: fo.color || opts.color || 'bw',
+      sided: rawSided === 'double' ? 'double' : 'single',
+      copies: Number.isFinite(Number(rawCopies)) ? Number(rawCopies) : 1,
+      pages: typeof pf?.pages === 'number' ? pf.pages : urls.length === 1 && typeof opts.pageCount === 'number' ? opts.pageCount : undefined,
+      amount: typeof pf?.amount === 'number' ? pf.amount : undefined,
       service: Array.isArray(opts.serviceOptions) && opts.serviceOptions.length > i ? opts.serviceOptions[i] : opts.serviceOption,
-      pageColors: fileOptions[i]?.pageColors || legacyColors,
+      pageColors: fo.pageColors || legacyColors,
     };
   });
 }
@@ -170,8 +188,10 @@ function FilePreview({ file, orderId }: { file: OrderFile; orderId: string }) {
       src={src}
       fileName={file.name}
       mimeType={file.type}
+      pageSize={file.pageSize}
       color={file.color}
       colorPages={file.pageColors?.colorPages}
+      totalPages={file.pages}
       allowSvg={false}
       tall
     />
@@ -344,21 +364,38 @@ export function OrderDetailView({
           </CardContent>
         </Card>
 
-        <Section icon={FileText} heading="Order">
+        <Section icon={FileText} heading={files.length > 1 && file ? `Order · File ${selected + 1} of ${files.length}` : 'Order'}>
           <dl className="divide-y">
             <Row label="Order ID"><span className="font-mono">{order.orderId}</span></Row>
             <Row label="Placed">{order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</Row>
             <Row label="Type">{order.orderType === 'template' ? 'Template' : 'Uploaded files'}</Row>
-            <Row label="Paper">{opts.pageSize || 'A4'}</Row>
-            <Row label="Colour">{opts.color === 'color' ? 'Colour' : opts.color === 'mixed' ? 'Mixed' : 'Black & white'}</Row>
-            <Row label="Sides">{opts.sided === 'double' ? 'Double-sided' : 'Single-sided'}</Row>
-            <Row label="Copies">{opts.copies ?? 1}</Row>
-            {opts.pageCount ? <Row label="Pages">{opts.pageCount}</Row> : null}
-            {services.length ? <Row label="Finishing">{services.map(title).join(', ')}</Row> : null}
+            {files.length > 1 && file ? <Row label="Selected file"><span className="break-all">{file.name}</span></Row> : null}
+            <Row label="Paper">{file?.pageSize || opts.pageSize || 'A4'}</Row>
+            <Row label="Colour">{(file?.color || opts.color) === 'color' ? 'Colour' : (file?.color || opts.color) === 'mixed' ? 'Mixed' : 'Black & white'}</Row>
+            <Row label="Sides">{(file?.sided || opts.sided) === 'double' ? 'Double-sided' : 'Single-sided'}</Row>
+            <Row label="Copies">{file?.copies ?? opts.copies ?? 1}</Row>
+            {file?.pages || opts.pageCount ? (
+              <Row label="Pages">
+                {file?.pages && files.length > 1 && opts.pageCount
+                  ? `${file.pages} (order total ${opts.pageCount})`
+                  : file?.pages ?? opts.pageCount}
+              </Row>
+            ) : null}
+            {file?.service ? (
+              <Row label="Finishing">{title(file.service)}</Row>
+            ) : services.length ? (
+              <Row label="Finishing">{services.map(title).join(', ')}</Row>
+            ) : null}
+            {files.length > 1 && typeof file?.amount === 'number' ? (
+              <Row label="File print cost"><span className="tabular-nums">₹{file.amount.toLocaleString('en-IN')}</span></Row>
+            ) : null}
             <Row label="Expected">
               {delivery?.scheduledSlot?.date ? (
                 <span>
-                  {formatDate(String(delivery.scheduledSlot.date), 'long')}
+                  {new Date(`${String(delivery.scheduledSlot.date)}T00:00:00Z`).toLocaleDateString('en-IN', {
+                    dateStyle: 'long',
+                    timeZone: 'UTC',
+                  })}
                   {delivery.scheduledSlot.label ? (
                     <span className="block text-xs text-muted-foreground">{delivery.scheduledSlot.label}</span>
                   ) : null}
@@ -378,7 +415,7 @@ export function OrderDetailView({
             </Row>
             <Row label="Total"><span className="text-base tabular-nums">₹{Number(order.amount || 0).toLocaleString('en-IN')}</span></Row>
           </dl>
-          {file?.pageColors && file.color === 'mixed' ? <MixedPages colors={file.pageColors} pageCount={opts.pageCount} /> : null}
+          {file?.pageColors && file.color === 'mixed' ? <MixedPages colors={file.pageColors} pageCount={file.pages ?? opts.pageCount} /> : null}
         </Section>
 
         <Section icon={User} heading="Customer">
@@ -482,7 +519,10 @@ export function OrderDetailView({
                           <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(i)} aria-pressed={i === selected}>
                             <span className="block truncate text-sm font-medium">{f.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              {colorLabel(f.color)}{f.service && f.service !== 'service' ? ` · ${title(f.service)}` : ''}
+                              {f.pageSize} · {colorLabel(f.color)} · {f.sided === 'double' ? 'Double-sided' : 'Single-sided'}
+                              {f.copies > 1 ? ` · ${f.copies} copies` : ''}
+                              {f.pages ? ` · ${f.pages}p` : ''}
+                              {f.service && f.service !== 'service' ? ` · ${title(f.service)}` : ''}
                             </span>
                           </button>
                           <Button asChild variant="outline" size="sm">
