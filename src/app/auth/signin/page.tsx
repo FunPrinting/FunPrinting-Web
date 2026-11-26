@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { AuthShell, BackHome, GoogleButton, OrDivider } from '@/components/auth/AuthShell';
+import { authErrorMessage } from '@/lib/authErrors';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,10 +25,16 @@ function SignInContent() {
 
   useEffect(() => {
     const resetParam = searchParams.get('reset');
+    const errorParam = searchParams.get('error');
     if (resetParam === 'success') {
       setSuccess('Password reset successfully! You can now sign in with your new password.');
       // Clear the query parameter
       router.replace('/auth/signin');
+      return;
+    }
+    const authErr = authErrorMessage(errorParam);
+    if (authErr) {
+      setError(authErr);
     }
   }, [searchParams, router]);
 

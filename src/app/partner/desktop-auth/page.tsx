@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { CircleAlert, Loader2 } from 'lucide-react';
@@ -12,6 +12,7 @@ function DesktopAuth() {
   const { status } = useSession();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  const startedSignInRef = useRef(false);
 
   useEffect(() => {
     const callback = params.get('callback');
@@ -21,6 +22,8 @@ function DesktopAuth() {
     const state = params.get('state') || '';
 
     if (status === 'unauthenticated') {
+      if (startedSignInRef.current) return;
+      startedSignInRef.current = true;
       // Come back here after Google sign-in, keeping every parameter
       signIn('google', { callbackUrl: `/partner/desktop-auth?${params.toString()}` });
       return;

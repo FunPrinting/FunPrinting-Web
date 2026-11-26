@@ -227,14 +227,38 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: '/auth/signin',
+    error: '/auth/signin',
+  },
+  logger: {
+    error(code, metadata) {
+      const errObj = metadata instanceof Error ? metadata : metadata?.error;
+      const msg = errObj?.message || '';
+      const isOAuthCallback = code === 'OAUTH_CALLBACK_ERROR' || code === 'OAUTH_CALLBACK_HANDLER_ERROR';
+      // User clicked "Cancel" on Google consent or college Google Workspace blocked the app
+      if (isOAuthCallback && msg === 'access_denied') {
+        console.info(`[next-auth][info][${code}] Google OAuth cancelled/denied by user or workspace policy`);
+        return;
+      }
+      // Browser/WebView stripped OAuth state or PKCE cookie, or stale callback URL was revisited
+      if (isOAuthCallback && /State cookie was missing|PKCE code verifier was missing/i.test(msg)) {
+        console.warn(`[next-auth][warn][${code}] ${msg} (client browser/in-app webview missing OAuth cookie)`);
+        return;
+      }
+      console.error(`[next-auth][error][${code}]`, `\nhttps://next-auth.js.org/errors#${code.toLowerCase()}`, msg, metadata);
+    },
+    warn(code) {
+      console.warn(`[next-auth][warn][${code}]`, `\nhttps://next-auth.js.org/warnings#${code.toLowerCase()}`);
+    },
   },
   session: {
     strategy: 'jwt',
   },
   cookies: (() => {
     // Cookie domain is optionally configured via COOKIE_DOMAIN env var (e.g. .funprinting.store)
-    // for cross-subdomain SSO. Without COOKIE_DOMAIN, standard host-only cookies are used.
-    const cookieDomain = process.env.COOKIE_DOMAIN;
+    // for cross-subdomain SSO. Skip on Vercel preview deployments (*.vercel.app) so browsers
+    // do not reject cookies whose Domain attribute doesn't match the preview host.
+    const rawDomain = process.env.COOKIE_DOMAIN;
+    const cookieDomain = process.env.VERCEL_ENV !== 'preview' && rawDomain ? rawDomain : undefined;
     if (!cookieDomain) return undefined;
 
     const isProduction = process.env.NODE_ENV === 'production';
@@ -278,7 +302,7 @@ export const authOptions: NextAuthOptions = {
           path: '/',
           secure: useSecureCookies,
           domain: cookieDomain,
-          maxAge: 900,
+          maxAge: 1800,
         },
       },
       state: {
@@ -289,7 +313,7 @@ export const authOptions: NextAuthOptions = {
           path: '/',
           secure: useSecureCookies,
           domain: cookieDomain,
-          maxAge: 900,
+          maxAge: 1800,
         },
       },
     };

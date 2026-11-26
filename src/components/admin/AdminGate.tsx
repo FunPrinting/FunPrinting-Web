@@ -62,6 +62,7 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
   const [isOnAdminSubdomain, setIsOnAdminSubdomain] = useState(false);
   const [siteUrl, setSiteUrl] = useState('/');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState<'google' | 'email' | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -144,8 +145,25 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            <Button onClick={() => signIn('google', { callbackUrl: pathname })}>Continue with Google</Button>
-            <Button variant="outline" onClick={() => signIn(undefined, { callbackUrl: pathname })}>Sign in with email</Button>
+            <Button
+              disabled={signingIn !== null}
+              onClick={() => {
+                setSigningIn('google');
+                signIn('google', { callbackUrl: pathname });
+              }}
+            >
+              {signingIn === 'google' ? 'Redirecting…' : 'Continue with Google'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={signingIn !== null}
+              onClick={() => {
+                setSigningIn('email');
+                signIn(undefined, { callbackUrl: pathname });
+              }}
+            >
+              Sign in with email
+            </Button>
             {session?.user ? (
               <Button variant="ghost" onClick={() => handleSignOut(pathname)}>Use a different account</Button>
             ) : null}
