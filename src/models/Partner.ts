@@ -115,6 +115,12 @@ export interface IPartner {
     isActive: boolean;
   }>;
   scheduleSlots?: ScheduleSlotTemplate[];
+  cod?: {
+    enabled: boolean;
+    allowAtPickupPoints: boolean;
+    maxOrderAmount: number;
+    cashFee: number;
+  };
   razorpayAccountId?: string; // Connected account ID for Razorpay Route (Split Payments)
   // auto: paid orders go straight to the print queue; manual: the partner accepts each order
   acceptanceMode: 'auto' | 'manual';
@@ -242,6 +248,12 @@ const partnerSchema = new mongoose.Schema<IPartner>({
   }],
   razorpayAccountId: { type: String, required: false },
   acceptanceMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
+  cod: {
+    enabled: { type: Boolean, default: false },
+    allowAtPickupPoints: { type: Boolean, default: false },
+    maxOrderAmount: { type: Number, default: 200, min: 50, max: 1000 },
+    cashFee: { type: Number, default: 0, min: 0, max: 50 },
+  },
   delivery: {
     courier: {
       enabled: { type: Boolean, default: false },

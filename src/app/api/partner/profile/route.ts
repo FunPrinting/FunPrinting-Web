@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { resolvePartnerRequest } from '@/lib/authz';
 import { ensureCourierPickup } from '@/lib/delivery/options';
 import { scheduleSlotsArraySchema } from '@/lib/scheduling';
+import { partnerCodSchema } from '@/lib/cod';
 import Partner from '@/models/Partner';
 
 /** Home delivery settings a shop controls (docs/DELIVERY.md). */
@@ -110,6 +111,17 @@ export async function POST(request: NextRequest) {
       if (typeof data.phoneNumbers !== 'undefined') partner.phoneNumbers = data.phoneNumbers;
       // auto: paid orders go straight to the print queue; manual: the shop accepts each one
       if (data.acceptanceMode === 'auto' || data.acceptanceMode === 'manual') partner.acceptanceMode = data.acceptanceMode;
+      if (data.cod !== undefined) {
+        const parsedCod = partnerCodSchema.safeParse(data.cod);
+        if (!parsedCod.success) {
+          return NextResponse.json(
+            { success: false, error: parsedCod.error.issues[0]?.message || 'Invalid COD settings' },
+            { status: 400 }
+          );
+        }
+        partner.cod = parsedCod.data;
+        partner.markModified('cod');
+      }
 
       await partner.save();
       // Register the shop's courier pickup address in the background once it is needed

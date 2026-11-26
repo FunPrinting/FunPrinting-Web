@@ -12,6 +12,8 @@ export interface IUser {
   emailVerified: boolean;
   isActive: boolean;
   role?: 'customer' | 'partner' | 'admin';
+  failedCodCount?: number;
+  codBlocked?: boolean;
   lastLogin?: Date;
   // Optional payout details for creator monetization
   upiId?: string;
@@ -43,6 +45,8 @@ const userSchema = new mongoose.Schema<IUser>({
   emailVerified: { type: Boolean, required: true, default: false },
   isActive: { type: Boolean, required: true, default: true },
   role: { type: String, enum: ['customer', 'partner', 'admin'], default: 'customer' },
+  failedCodCount: { type: Number, default: 0, min: 0 },
+  codBlocked: { type: Boolean, default: false },
   lastLogin: { type: Date, required: false },
   upiId: { type: String, required: false, trim: true },
   bankDetails: {

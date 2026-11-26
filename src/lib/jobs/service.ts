@@ -133,23 +133,28 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
 
   const order = await Order.findOne({ orderId }).lean<Record<string, any> | null>();
   if (!order) throw new JobError(`Order ${orderId} not found`, 404);
-  if (order.paymentStatus !== 'completed') throw new JobError(`Order ${orderId} is not paid`, 409);
+  const isApprovedCod =
+    order.paymentMethod === 'cod' &&
+    ['processing', 'printing', 'printed', 'ready_for_pickup', 'completed'].includes(order.status);
+  if (order.paymentStatus !== 'completed' && !isApprovedCod) throw new JobError(`Order ${orderId} is not paid`, 409);
   const files = filesFromOrder(order);
   if (!files.length) throw new JobError(`Order ${orderId} has no files to print`, 409);
 
   const partnerId = String(order.deliveryOption?.partnerId || order.partnerId || '');
   const partner = partnerId ? await getActivePartner(partnerId) : null;
   const now = new Date();
-  const paidAt = new Date(opts.paidAt ?? order.paidAt ?? now);
+  const paidAt = new Date(opts.paidAt ?? order.paidAt ?? order.cod?.approvedAt ?? now);
   const deliveryNumber = order.deliveryNumber || generateDeliveryNumber(now);
   const actor = opts.actor ?? 'system';
 
   // How far the order already got (e.g. printed by hand, or by the installed app
-  // before jobs existed). Such orders are never given deadlines or auto-refunds.
+  // before jobs existed). Approved COD orders enter as queued (never auto-refund deadlines).
   const orderRank = STATUS_RANK[order.status] ?? -1;
-  const progressed = orderRank >= STATUS_RANK.processing;
+  const progressed = order.paymentMethod === 'cod'
+    ? orderRank >= STATUS_RANK.printing
+    : orderRank >= STATUS_RANK.processing;
   const refundBy = new Date(paidAt.getTime() + REFUND_WINDOW_MS);
-  const deadlinesApply = !opts.legacy && !progressed && refundBy.getTime() > now.getTime() + ACCEPT_WINDOW_MS;
+  const deadlinesApply = order.paymentMethod !== 'cod' && !opts.legacy && !progressed && refundBy.getTime() > now.getTime() + ACCEPT_WINDOW_MS;
 
   const base = {
     jobId: `J${orderId}`,
@@ -205,11 +210,13 @@ export async function createJobForOrder(orderId: string, opts: { paymentRef?: st
       history: [event('created', actor, `shop ${partnerId || 'none'} is not active`)],
     };
   } else {
+    const assign = assignmentFields(partner, now);
     doc = {
       ...base,
-      ...assignmentFields(partner, now),
+      ...assign,
+      ...(order.paymentMethod === 'cod' ? { status: 'queued' as JobStatus, acceptedAt: now, acceptBy: undefined } : {}),
       ...(deadlinesApply ? { refundBy } : { acceptBy: undefined }),
-      history: [event('created', actor, `assigned to ${partner._id} (${partner.acceptanceMode})${deadlinesApply ? '' : '; no deadlines'}`)],
+      history: [event('created', actor, `assigned to ${partner._id} (${order.paymentMethod === 'cod' ? 'cod_approved' : partner.acceptanceMode})${deadlinesApply ? '' : '; no deadlines'}`)],
     };
   }
 

@@ -44,13 +44,23 @@ export async function DELETE(
 
     console.log(`📋 Found order: ${order.orderId}, paymentStatus: ${order.paymentStatus}, status: ${order.status}`);
 
-    // Only allow deletion of pending payment orders
-    if (order.paymentStatus !== 'pending' || order.status !== 'pending_payment') {
-      console.log(`❌ Order ${order.orderId} cannot be deleted - not in pending payment state`);
+    const canCancelPending =
+      (order.paymentStatus === 'pending' && order.status === 'pending_payment') ||
+      (order.paymentMethod === 'cod' && order.status === 'pending_cod_approval');
+    if (!canCancelPending) {
+      console.log(`❌ Order ${order.orderId} cannot be deleted - not in pending state`);
       return NextResponse.json(
-        { success: false, error: 'Only pending payment orders can be deleted' },
+        { success: false, error: 'Only unapproved or pending payment orders can be cancelled' },
         { status: 400 }
       );
+    }
+
+    if (order.paymentMethod === 'cod') {
+      await Order.updateOne(
+        { _id: order._id, status: 'pending_cod_approval' },
+        { $set: { status: 'cancelled', paymentStatus: 'failed', 'cod.rejectedAt': new Date(), 'cod.rejectedReason': 'Cancelled by customer' } }
+      );
+      return NextResponse.json({ success: true, message: 'COD order cancelled' });
     }
 
     // Close any open payment link first, so the cancelled order can't be paid

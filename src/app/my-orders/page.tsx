@@ -44,7 +44,8 @@ interface Order {
     city?: string;
     pinCode?: string;
   };
-  paymentStatus: 'pending' | 'completed' | 'failed';
+  paymentMethod?: 'online' | 'cod';
+  paymentStatus: 'pending' | 'cod_pending' | 'completed' | 'failed';
   status?: string;
   amount: number;
   paymentRef?: string;
@@ -75,6 +76,11 @@ function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: ()
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-sm font-semibold">#{order.orderId}</h2>
             <StatusBadge status={shownStatus} />
+            {order.paymentMethod === 'cod' ? (
+              <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', order.paymentStatus === 'completed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                {order.paymentStatus === 'completed' ? 'Cash paid' : 'Cash on pickup'}
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{date(order.createdAt)}</p>
         </div>
@@ -155,6 +161,9 @@ function OrderCard({ order, onPay, onCancel, paying }: { order: Order; onPay: ()
         ) : (
           <>
             <Button variant="outline" onClick={() => router.push(`/orders/${order._id}`)}>View details</Button>
+            {order.paymentMethod === 'cod' && order.status === 'pending_cod_approval' ? (
+              <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={onCancel}><X />Cancel COD</Button>
+            ) : null}
             {order.orderType === 'template' && order.templateData?.generatedPDF ? (
               <Button variant="outline" asChild><a href={order.templateData.generatedPDF} download><Download />Download PDF</a></Button>
             ) : null}

@@ -133,7 +133,7 @@ export async function cancelJob(
     }
     return { cancelled: true };
   }
-  if (!paymentRef || order.paymentStatus !== 'completed') return { cancelled: true };
+  if (order.paymentMethod === 'cod' || !paymentRef || order.paymentStatus !== 'completed') return { cancelled: true };
 
   const { requestRefund } = await import('@/lib/payments/refunds');
   const refundId = await requestRefund(paymentRef, { reason: opts.reason, actor: opts.actor });

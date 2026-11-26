@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { CalendarClock, CheckCircle2, FileText, Loader2, Lock, MapPin, ShoppingCart, Store, Truck } from 'lucide-react';
+import { Banknote, CalendarClock, CheckCircle2, FileText, Loader2, Lock, MapPin, ShoppingCart, Store, Truck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import InlineAuthModal from '@/components/InlineAuthModal';
 import InlinePhoneModal from '@/components/InlinePhoneModal';
@@ -104,6 +104,8 @@ function OrderPageContent() {
   const [speed, setSpeed] = useState<DeliverySpeedChoice>('standard');
   const [deliveryCharge, setDeliveryCharge] = useState<number | null>(0);
   const [scheduledSlot, setScheduledSlot] = useState<ScheduledSlotSelection | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'cod'>('online');
+  const [codInfo, setCodInfo] = useState<{ eligible: boolean; reason?: string; maxOrderAmount?: number; cashFee: number } | null>(null);
   const [customer, setCustomer] = useState<Customer>({ name: '', email: '', phone: '' });
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -341,11 +343,48 @@ function OrderPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Price ──────────────────────────────────────────────────────────
+  // ── Price & COD eligibility ────────────────────────────────────────
   const shownDelivery = delivery.type === 'delivery' ? deliveryCharge ?? 0 : 0;
   const sums = printingPrice === null ? null : totals(printingPrice, shownDelivery);
   const problem = blocker(files, shop, delivery, deliveryCharge, printingPrice, scheduledSlot);
   const weightKg = useMemo(() => parcelWeight(files), [files]);
+
+  useEffect(() => {
+    if (delivery.type !== 'pickup' || !shop?.id || printingPrice === null) {
+      setCodInfo(null);
+      setPaymentMethod('online');
+      return;
+    }
+    let stale = false;
+    const qs = new URLSearchParams({
+      partnerId: shop.id,
+      deliveryType: delivery.type,
+      subtotal: String(printingPrice),
+    });
+    if (shop.deliveryPoint) qs.set('pickupPoint', shop.deliveryPoint);
+    fetch(`/api/cod/eligibility?${qs.toString()}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (stale || !data?.success) return;
+        setCodInfo({
+          eligible: Boolean(data.eligible),
+          reason: data.reason,
+          maxOrderAmount: data.maxOrderAmount,
+          cashFee: Number(data.cashFee || 0),
+        });
+        if (!data.eligible) setPaymentMethod('online');
+      })
+      .catch(() => {
+        if (!stale) setCodInfo(null);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [delivery.type, shop?.id, shop?.deliveryPoint, printingPrice, isAuthenticated]);
+
+  const usingCod = paymentMethod === 'cod' && Boolean(codInfo?.eligible) && delivery.type === 'pickup' && printingPrice !== null;
+  const shownFee = usingCod ? codInfo!.cashFee : (sums?.fee ?? 0);
+  const shownTotal = usingCod ? Math.round((printingPrice! + codInfo!.cashFee) * 100) / 100 : (sums?.total ?? null);
 
   // ── Cart ───────────────────────────────────────────────────────────
   const addAllToCart = async () => {
@@ -453,12 +492,21 @@ function OrderPageContent() {
             ...(delivery.type === 'pickup' && scheduledSlot ? { scheduledSlot } : {}),
           },
           expectedDate: scheduledSlot ? scheduledSlot.date : new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10),
+          paymentMethod: usingCod ? 'cod' : 'online',
         }),
       });
       const data = await res.json().catch(() => ({ success: false, error: 'Unexpected response from the server' }));
-      if (!res.ok || !data.success || !data.paymentUrl) {
+      if (!res.ok || !data.success || (!data.paymentUrl && !data.isCod)) {
         if (res.status !== 409) checkoutKey.current = newId();
         throw new Error(data.error || 'Could not start the payment. Please try again.');
+      }
+
+      if (data.isCod) {
+        fromCart.current.forEach((id) => removeFromCart(id));
+        checkoutKey.current = newId();
+        toast.success('COD order placed! Confirm in chat with the shop to start printing.');
+        router.push(data.redirectUrl || `/orders/${encodeURIComponent(data.orderId)}`);
+        return;
       }
 
       // 5. The server's price is final; ask again if it differs from what was shown
@@ -481,9 +529,13 @@ function OrderPageContent() {
     : paying
     ? isAnyUploading
       ? 'Uploading documents…'
+      : usingCod
+      ? 'Placing COD order…'
       : 'Preparing payment…'
-    : sums
-    ? `Pay ${rupees(sums.total)}`
+    : shownTotal !== null
+    ? usingCod
+      ? `Place COD Order (${rupees(shownTotal)})`
+      : `Pay ${rupees(shownTotal)}`
     : 'Pay';
 
   // ── Layout ─────────────────────────────────────────────────────────
@@ -745,18 +797,63 @@ function OrderPageContent() {
                         </dd>
                       </div>
                     ) : null}
-                    {sums ? (
+                    {sums && (!usingCod || shownFee > 0) ? (
                       <div className="flex justify-between">
-                        <dt className="text-muted-foreground">Processing fee (3%)</dt>
-                        <dd className="tabular-nums">{rupees(sums.fee)}</dd>
+                        <dt className="text-muted-foreground">{usingCod ? 'Cash handling fee' : 'Processing fee (3%)'}</dt>
+                        <dd className="tabular-nums">{rupees(shownFee)}</dd>
                       </div>
                     ) : null}
                   </dl>
+                  {delivery.type === 'pickup' && shop ? (
+                    <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                      <p className="text-xs font-medium text-foreground">Payment method</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('online')}
+                          className={cn(
+                            'rounded-md border px-2.5 py-2 text-left text-xs transition-colors',
+                            paymentMethod === 'online' ? 'border-primary bg-primary/10 font-medium text-foreground' : 'bg-background text-muted-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Lock className="size-3.5 text-primary" aria-hidden />
+                            <span>Razorpay</span>
+                          </div>
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">UPI · Cards · NetBanking</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!codInfo?.eligible}
+                          onClick={() => codInfo?.eligible && setPaymentMethod('cod')}
+                          className={cn(
+                            'rounded-md border px-2.5 py-2 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                            usingCod ? 'border-primary bg-primary/10 font-medium text-foreground' : 'bg-background text-muted-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Banknote className="size-3.5 text-primary" aria-hidden />
+                            <span>Cash on Pickup</span>
+                          </div>
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                            {codInfo?.eligible ? (codInfo.cashFee > 0 ? `+${rupees(codInfo.cashFee)} cash fee` : 'Chat confirm + QR') : 'Unavailable'}
+                          </span>
+                        </button>
+                      </div>
+                      {codInfo && !codInfo.eligible && codInfo.reason ? (
+                        <p className="text-[11px] text-muted-foreground">{codInfo.reason}</p>
+                      ) : usingCod ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Shop approves in chat before printing. Scan summary QR &amp; pay cash when collecting.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <Separator />
                   <div className="flex items-baseline justify-between">
                     <span className="font-medium">Total</span>
-                    {sums ? (
-                      <span className="text-2xl font-semibold tabular-nums">{rupees(sums.total)}</span>
+                    {shownTotal !== null ? (
+                      <span className="text-2xl font-semibold tabular-nums">{rupees(shownTotal)}</span>
                     ) : (
                       <span className="text-sm text-muted-foreground">
                         {files.length ? (shop ? 'Calculating…' : 'Choose a shop') : 'Add document to calculate'}
@@ -791,7 +888,9 @@ function OrderPageContent() {
               ) : null}
 
               <p className="text-xs text-muted-foreground">
-                The price is confirmed before you pay. Payments are processed by Razorpay; the shop is paid when your order is printed.
+                {usingCod
+                  ? 'Cash on Pickup: confirm your order in chat with the shop, then pay cash & scan the pickup QR on collection.'
+                  : 'The price is confirmed before you pay. Online payments are processed by Razorpay; the shop is paid when your order is printed.'}
               </p>
             </CardContent>
           </Card>
@@ -804,7 +903,7 @@ function OrderPageContent() {
           <div className="mx-auto flex max-w-6xl items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground">{problem && isAuthenticated ? problem : 'Total'}</p>
-              <p className="text-lg font-semibold tabular-nums">{sums ? rupees(sums.total) : <span className="text-sm font-normal text-muted-foreground">Choose a shop</span>}</p>
+              <p className="text-lg font-semibold tabular-nums">{shownTotal !== null ? rupees(shownTotal) : <span className="text-sm font-normal text-muted-foreground">Choose a shop</span>}</p>
             </div>
             <Button variant="outline" size="icon" onClick={addAllToCart} disabled={addingToCart || paying} aria-label="Save to cart for later"><ShoppingCart /></Button>
             <Button onClick={pay} disabled={paying || (isAuthenticated && Boolean(problem))}>{paying ? <Loader2 className="animate-spin" /> : null}{payLabel}</Button>

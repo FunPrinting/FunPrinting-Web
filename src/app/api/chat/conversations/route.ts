@@ -35,9 +35,34 @@ export async function GET(req: NextRequest) {
       const conversations = await Conversation.find(query)
         .sort({ lastMessageAt: -1 })
         .limit(100)
-        .lean();
+        .lean<Array<Record<string, any>>>();
+
+      const orderIds = conversations.map((c) => c.orderId).filter(Boolean) as string[];
+      const orderMap = new Map<string, Record<string, any>>();
+      if (orderIds.length) {
+        const orders = await Order.find({ orderId: { $in: orderIds } })
+          .select('orderId status paymentMethod paymentStatus amount deliveryOption.type deliveryOption.partnerDeliveryPoint')
+          .lean<Array<Record<string, any>>>();
+        for (const o of orders) orderMap.set(o.orderId, o);
+      }
+
+      const enriched = conversations.map((c) => {
+        const o = c.orderId ? orderMap.get(c.orderId) : undefined;
+        return o
+          ? {
+              ...c,
+              orderSummary: {
+                status: o.status,
+                paymentMethod: o.paymentMethod || 'online',
+                paymentStatus: o.paymentStatus,
+                amount: o.amount,
+                deliveryType: o.deliveryOption?.type,
+              },
+            }
+          : c;
+      });
       const unreadTotal = conversations.reduce((sum, c) => sum + (c.unreadPartner || 0), 0);
-      return NextResponse.json({ success: true, role: 'partner', conversations, unreadTotal });
+      return NextResponse.json({ success: true, role: 'partner', conversations: enriched, unreadTotal });
     }
 
     const conversations = await Conversation.find({ customerEmail: actor.email })

@@ -16,6 +16,14 @@ export default function OrderDetailsPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [order, setOrder] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scanQr, setScanQr] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const qs = new URLSearchParams(window.location.search);
+      setScanQr(qs.get('scan') === 'qr');
+    }
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push(`/auth/signin?callbackUrl=${encodeURIComponent(`/orders/${id}`)}`);
@@ -58,7 +66,7 @@ export default function OrderDetailsPage() {
             <h1 className="text-3xl font-semibold">Order <span className="font-mono">#{order.orderId}</span></h1>
             <p className="mt-1 text-muted-foreground">Need to change something? Contact the print shop or <Link href="/contact" className="underline">our support team</Link>.</p>
           </div>
-          <OrderDetailView order={order} mode="user" />
+          <OrderDetailView order={order} mode="user" scanQr={scanQr} onOrderUpdated={setOrder} />
         </>
       )}
     </div>

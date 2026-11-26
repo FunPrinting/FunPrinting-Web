@@ -33,6 +33,7 @@ export type Fulfilment = 'pickup' | 'shop' | 'courier';
 
 export interface TransitionOrder {
   status?: string | null;
+  paymentMethod?: string | null;
   paymentStatus?: string | null;
   deliveryOption?: { type?: string | null; method?: string | null; handover?: { verifiedAt?: Date | string | null } | null } | null;
 }
@@ -49,7 +50,7 @@ const ALLOWED_AFTER_PRINTING: Record<Fulfilment, ReadonlySet<string>> = {
   courier: new Set([]),
 };
 
-export type TransitionCheck = { ok: true; needsHandoverCode?: boolean } | { ok: false; error: string };
+export type TransitionCheck = { ok: true; needsHandoverCode?: boolean; needsCashConfirmation?: boolean } | { ok: false; error: string };
 
 /** Validates the requested target on its own, before the order is loaded. */
 export function checkPartnerTarget(target: unknown): TransitionCheck {
@@ -67,7 +68,13 @@ export function checkPartnerTarget(target: unknown): TransitionCheck {
 export function checkPartnerTransition(order: TransitionOrder, target: string): TransitionCheck {
   const targetCheck = checkPartnerTarget(target);
   if (!targetCheck.ok) return targetCheck;
-  if (order.paymentStatus !== 'completed') return { ok: false, error: 'Order is not paid' };
+  const approvedCod = order.paymentMethod === 'cod' && order.paymentStatus === 'cod_pending' && order.status !== 'pending_cod_approval';
+  if (order.paymentStatus !== 'completed' && !approvedCod) {
+    return {
+      ok: false,
+      error: order.status === 'pending_cod_approval' ? 'Approve this COD order in chat before moving it forward' : 'Order is not paid',
+    };
+  }
   const current = order.status ?? '';
   const currentRank = STATUS_RANK[current];
   if (currentRank === undefined) {
@@ -87,7 +94,8 @@ export function checkPartnerTransition(order: TransitionOrder, target: string): 
     return { ok: false, error: hint };
   }
   const needsHandoverCode = how === 'shop' && STATUS_RANK[target] >= STATUS_RANK.delivered && !order.deliveryOption?.handover?.verifiedAt;
-  return { ok: true, needsHandoverCode };
+  const needsCashConfirmation = order.paymentMethod === 'cod' && order.paymentStatus !== 'completed' && target === 'completed';
+  return { ok: true, needsHandoverCode, ...(needsCashConfirmation ? { needsCashConfirmation: true } : {}) };
 }
 
 /** The moves to offer a shop for this order: the next step only (same rules as checkPartnerTransition). */

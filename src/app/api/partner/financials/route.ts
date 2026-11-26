@@ -14,24 +14,28 @@ export async function GET(request: NextRequest) {
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
 
-    // Calculate Today's GMV for completed orders
+    const partnerId = partner._id.toString();
+    const shareOf = (o: { amount?: number; paymentMethod?: string }) =>
+      o.paymentMethod === 'cod' ? Math.round(o.amount || 0) : Math.round((o.amount || 0) * 0.90);
+
+    // Calculate Today's Earnings (90% of online Razorpay orders, 100% of collected COD orders)
     const todaysOrders = await Order.find({
-      partnerId: partner._id.toString(),
+      $or: [{ partnerId }, { 'deliveryOption.partnerId': partnerId }],
       paymentStatus: 'completed',
       createdAt: { $gte: startOfToday, $lte: endOfToday }
-    }).select('amount');
+    }).select('amount paymentMethod');
 
     const todayGMV = todaysOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
-    const todayPartnerCut = Math.round(todayGMV * 0.90); // 90% payout to partner
+    const todayPartnerCut = todaysOrders.reduce((sum, order) => sum + shareOf(order), 0);
 
-    // Calculate Total All-Time GMV
+    // Calculate Total All-Time Earnings
     const allOrders = await Order.find({
-      partnerId: partner._id.toString(),
+      $or: [{ partnerId }, { 'deliveryOption.partnerId': partnerId }],
       paymentStatus: 'completed'
-    }).select('amount');
+    }).select('amount paymentMethod');
 
     const totalGMV = allOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
-    const totalPartnerCut = Math.round(totalGMV * 0.90);
+    const totalPartnerCut = allOrders.reduce((sum, order) => sum + shareOf(order), 0);
 
     return NextResponse.json({ 
       success: true, 

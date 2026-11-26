@@ -5,6 +5,7 @@
 
 export type OrderStatus =
   | 'pending_payment'
+  | 'pending_cod_approval'
   | 'paid'
   | 'processing'
   | 'printing'
@@ -20,6 +21,7 @@ export type StatusTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger
 
 export const ORDER_STATUS: Record<OrderStatus, { label: string; tone: StatusTone; step: number }> = {
   pending_payment: { label: 'Awaiting payment', tone: 'warning', step: 0 },
+  pending_cod_approval: { label: 'Confirm in chat (COD)', tone: 'warning', step: 0 },
   paid: { label: 'Paid, waiting for the shop', tone: 'primary', step: 1 },
   processing: { label: 'Accepted by the shop', tone: 'primary', step: 2 },
   printing: { label: 'Printing', tone: 'primary', step: 2 },
@@ -40,4 +42,4 @@ export function progressSteps(delivery: boolean) {
   return ['Paid', 'Accepted', 'Printed', delivery ? 'Shipped' : 'Ready', delivery ? 'Delivered' : 'Collected'];
 }
 
-export const ACTIVE_STATUSES = new Set<string>(['pending_payment', 'paid', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched']);
+export const ACTIVE_STATUSES = new Set<string>(['pending_payment', 'pending_cod_approval', 'paid', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched']);

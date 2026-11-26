@@ -11,6 +11,8 @@ import type { SessionUser } from '@/lib/authz';
 export interface CheckoutResult {
   referenceId: string;
   paymentUrl: string;
+  redirectUrl?: string;
+  isCod?: boolean;
   orderId?: string;
   amounts: { subtotal: number; fee: number; total: number }; // paise
   expiresAt: string;

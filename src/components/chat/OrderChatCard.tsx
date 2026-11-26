@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Loader2, MessageSquare } from 'lucide-react';
 import { ChatThread } from '@/components/chat/ChatThread';
@@ -10,14 +10,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export function OrderChatCard({
   orderId,
   shopName,
+  defaultOpen = false,
 }: {
   orderId: string;
   shopName?: string;
+  defaultOpen?: boolean;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
 
-  const openChat = async () => {
+  const openChat = useCallback(async () => {
     setOpening(true);
     try {
       const res = await fetch('/api/chat/conversations', {
@@ -35,7 +37,13 @@ export function OrderChatCard({
     } finally {
       setOpening(false);
     }
-  };
+  }, [orderId]);
+
+  useEffect(() => {
+    if (defaultOpen && !conversationId) {
+      void openChat();
+    }
+  }, [defaultOpen, conversationId, openChat]);
 
   return (
     <Card>

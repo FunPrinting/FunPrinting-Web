@@ -54,9 +54,22 @@ export interface IOrder {
       };
     }>;
   };
-  paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
+  paymentMethod?: 'online' | 'cod';
+  paymentStatus: 'pending' | 'cod_pending' | 'completed' | 'failed' | 'refunded';
   orderStatus: 'pending' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed';
-  status: 'pending_payment' | 'paid' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
+  status: 'pending_payment' | 'pending_cod_approval' | 'paid' | 'processing' | 'printing' | 'printed' | 'ready_for_pickup' | 'dispatched' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
+  cod?: {
+    cashFee?: number;
+    approvedAt?: Date;
+    approvedBy?: string;
+    rejectedAt?: Date;
+    rejectedReason?: string;
+    cashCollectedAt?: Date;
+    cashCollectedBy?: string;
+    qrVerifiedAt?: Date;
+    qrVerifiedByEmail?: string;
+    noShowMarkedAt?: Date;
+  };
   amount: number; // rupees, subtotal before the processing fee (what admin views show)
   // Set by checkout: Payment.referenceId of the current payment attempt
   paymentRef?: string;
@@ -234,9 +247,14 @@ const orderSchema = new mongoose.Schema<IOrder>({
       // Array of objects: [{ pageSize, color, sided, copies, pageColors? }, ...]
     },
   },
+  paymentMethod: {
+    type: String,
+    enum: ['online', 'cod'],
+    default: 'online',
+  },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded'],
+    enum: ['pending', 'cod_pending', 'completed', 'failed', 'refunded'],
     default: 'pending',
   },
   orderStatus: {
@@ -246,8 +264,20 @@ const orderSchema = new mongoose.Schema<IOrder>({
   },
   status: {
     type: String,
-    enum: ['pending_payment', 'paid', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched', 'delivered', 'completed', 'cancelled', 'refunded'],
+    enum: ['pending_payment', 'pending_cod_approval', 'paid', 'processing', 'printing', 'printed', 'ready_for_pickup', 'dispatched', 'delivered', 'completed', 'cancelled', 'refunded'],
     default: 'pending_payment',
+  },
+  cod: {
+    cashFee: Number,
+    approvedAt: Date,
+    approvedBy: String,
+    rejectedAt: Date,
+    rejectedReason: String,
+    cashCollectedAt: Date,
+    cashCollectedBy: String,
+    qrVerifiedAt: Date,
+    qrVerifiedByEmail: String,
+    noShowMarkedAt: Date,
   },
   amount: {
     type: Number,

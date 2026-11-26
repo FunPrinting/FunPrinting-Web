@@ -3,15 +3,19 @@ import { z } from 'zod';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Partner from '@/models/Partner';
+import User from '@/models/User';
+import Conversation from '@/models/Conversation';
 import { getFileTypeFromFileNames } from '@/lib/fileTypeDetection';
 import { isValidPincode } from '@/lib/delivery/rates';
 import { getDeliveryOptions, newHandoverCode, type PartnerDeliveryFields } from '@/lib/delivery/options';
 import { validateSlotSelection, type ScheduleSlotTemplate, type ScheduleTarget } from '@/lib/scheduling';
 import { getBookedSlotCounts } from '@/lib/schedulingServer';
+import { evaluateCodEligibility, type PartnerCodConfig } from '@/lib/cod';
+import { appendChatMessage, ensureOrderConversation } from '@/lib/chat/service';
 import { normalisePhoneInput } from '@/lib/phoneValidation';
 import { verifyUploadReceipt, type UploadReceipt } from '@/lib/uploads/receipt';
 import { DEFAULT_PARTNER_PRICING, normaliseColorPages, parcelWeightKg, quotePrintOrder, QuoteError, type QuoteFile } from '@/lib/payments/quote';
-import { assertChargeable, paiseToRupees, withProcessingFee } from '@/lib/payments/money';
+import { assertChargeable, paiseToRupees, rupeesToPaise, withProcessingFee } from '@/lib/payments/money';
 import { createLinkForPayment, newPaymentAttempt, type CheckoutResult } from '@/lib/payments/links';
 import type { SessionUser } from '@/lib/authz';
 
@@ -73,18 +77,45 @@ export const printCheckoutSchema = z.object({
       .optional(),
   }),
   expectedDate: z.string().max(40).optional(),
+  paymentMethod: z.enum(['online', 'cod']).optional().default('online'),
 });
 
 export type PrintCheckoutInput = z.infer<typeof printCheckoutSchema>;
 
+function codCheckoutResult(order: { orderId: string; pricing?: { subtotal?: number; fee?: number; total?: number }; amount: number; createdAt?: Date }): CheckoutResult {
+  const path = `/orders/${encodeURIComponent(order.orderId)}`;
+  return {
+    referenceId: order.orderId,
+    paymentUrl: path,
+    redirectUrl: path,
+    isCod: true,
+    orderId: order.orderId,
+    amounts: {
+      subtotal: rupeesToPaise(order.pricing?.subtotal ?? order.amount),
+      fee: rupeesToPaise(order.pricing?.fee ?? 0),
+      total: rupeesToPaise(order.pricing?.total ?? order.amount),
+    },
+    expiresAt: new Date((order.createdAt ? new Date(order.createdAt).getTime() : Date.now()) + 24 * 3600_000).toISOString(),
+  };
+}
+
 /**
- * Creates the order (pending_payment), the Payment record and the Razorpay Payment
+ * Creates the order (`pending_payment` for Razorpay online, `pending_cod_approval` for
+ * Cash on Pickup), and for online payments creates the Payment record and Razorpay Payment
  * Link. The price is computed here from server data only.
  */
 export async function createPrintCheckout(user: SessionUser, input: PrintCheckoutInput, requestOrigin: string): Promise<CheckoutResult> {
   await connectDB();
 
   // Double click / retried request: return the same attempt
+  if (input.paymentMethod === 'cod') {
+    const existingCod = await Order.findOne({
+      'customerInfo.email': user.email.toLowerCase(),
+      checkoutKey: input.idempotencyKey,
+      paymentMethod: 'cod',
+    }).lean<{ orderId: string; pricing?: { subtotal?: number; fee?: number; total?: number }; amount: number; createdAt?: Date } | null>();
+    if (existingCod) return codCheckoutResult(existingCod);
+  }
   const existing = await newPaymentAttempt.findReusable(user.email, input.idempotencyKey);
   if (existing) return existing;
 
@@ -111,7 +142,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
 
   // 2. Shop: every order goes to an approved partner (the platform's own shop is one too)
   const partner = await Partner.findOne({ _id: input.delivery.partnerId, isActive: true }).lean<
-    (PartnerDeliveryFields & { pricing?: any; razorpayAccountId?: string; scheduleSlots?: ScheduleSlotTemplate[] }) | null
+    (PartnerDeliveryFields & { pricing?: any; razorpayAccountId?: string; scheduleSlots?: ScheduleSlotTemplate[]; cod?: Partial<PartnerCodConfig> }) | null
   >();
   if (!partner) throw new CheckoutError('The selected print shop is not available. Please choose another shop.');
   const rawP = (partner.pricing ?? {}) as any;
@@ -194,7 +225,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     };
   }
 
-  // 4. Price
+  // 4. Price & Payment Method (online = Razorpay only; cod = cash on pickup with risk checks)
   let quote;
   try {
     quote = quotePrintOrder({ files: quoteFiles, partnerPricing: partner.pricing ?? partnerPricing, deliveryChargePaise });
@@ -202,7 +233,28 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     if (error instanceof QuoteError) throw new CheckoutError(error.message);
     throw error;
   }
-  const totals = withProcessingFee(quote.subtotal);
+
+  const isCod = input.paymentMethod === 'cod';
+  let cashFeeRupees = 0;
+  let totals = withProcessingFee(quote.subtotal);
+  if (isCod) {
+    const userDoc = await User.findOne({ email: user.email.toLowerCase() })
+      .select('failedCodCount codBlocked')
+      .lean<{ failedCodCount?: number; codBlocked?: boolean } | null>();
+    const codCheck = evaluateCodEligibility({
+      deliveryType: input.delivery.type,
+      pickupPointName: input.delivery.partnerDeliveryPoint,
+      subtotalRupees: paiseToRupees(quote.subtotal),
+      partnerCod: partner.cod,
+      userCodBlocked: Boolean(userDoc?.codBlocked),
+      failedCodCount: userDoc?.failedCodCount ?? 0,
+    });
+    if (!codCheck.eligible) throw new CheckoutError(codCheck.reason, 400);
+    cashFeeRupees = codCheck.cashFee;
+    const feePaise = rupeesToPaise(cashFeeRupees);
+    totals = { subtotal: quote.subtotal, fee: feePaise, total: quote.subtotal + feePaise };
+  }
+
   try {
     assertChargeable(totals.total);
   } catch (error) {
@@ -258,7 +310,7 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     },
     partnerId: String(partner._id),
     expectedDate: expectedDate && !Number.isNaN(expectedDate.getTime()) ? expectedDate : undefined,
-    amount: paiseToRupees(totals.subtotal),
+    amount: paiseToRupees(isCod ? totals.total : totals.subtotal),
     pricing: {
       subtotal: paiseToRupees(totals.subtotal),
       fee: paiseToRupees(totals.fee),
@@ -267,9 +319,11 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
       files: quote.files.map((f) => ({ name: f.name, pages: f.pages, colorPages: f.colorPageCount, bwPages: f.bwPageCount, amount: paiseToRupees(f.amount) })),
       partnerPricing: true,
     },
-    paymentStatus: 'pending',
+    paymentMethod: isCod ? 'cod' : 'online',
+    paymentStatus: isCod ? 'cod_pending' : 'pending',
     orderStatus: 'pending',
-    status: 'pending_payment',
+    status: isCod ? 'pending_cod_approval' : 'pending_payment',
+    ...(isCod ? { cod: { cashFee: cashFeeRupees } } : {}),
   });
   // Saving claims the idempotency key: a concurrent duplicate request fails here
   let order;
@@ -277,6 +331,14 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     order = await orderDoc.save();
   } catch (error) {
     if ((error as { code?: number }).code === 11000 && String((error as Error).message).includes('checkoutKey')) {
+      if (isCod) {
+        const againCod = await Order.findOne({
+          'customerInfo.email': user.email.toLowerCase(),
+          checkoutKey: input.idempotencyKey,
+          paymentMethod: 'cod',
+        }).lean<{ orderId: string; pricing?: { subtotal?: number; fee?: number; total?: number }; amount: number; createdAt?: Date } | null>();
+        if (againCod) return codCheckoutResult(againCod);
+      }
       const again = await newPaymentAttempt.findReusable(user.email, input.idempotencyKey);
       if (again) return again;
       throw new CheckoutError('Your payment is being prepared. Please try again in a moment.', 409);
@@ -284,7 +346,29 @@ export async function createPrintCheckout(user: SessionUser, input: PrintCheckou
     throw error;
   }
 
-  // 6. Payment + link
+  // 6. Cash on Pickup (COD): open pre-print approval chat instead of Razorpay link
+  if (isCod) {
+    try {
+      const conv = await ensureOrderConversation({ orderId: order.orderId });
+      await Conversation.updateOne(
+        { conversationId: conv.conversationId },
+        { $set: { codApprovalStatus: 'pending' } }
+      );
+      await appendChatMessage({
+        conversationId: conv.conversationId,
+        senderType: 'system',
+        senderId: 'system',
+        senderName: 'FunPrinting',
+        body: `🆕 Cash on Pickup order #${order.orderId} placed (₹${paiseToRupees(totals.total)} due in cash). Confirm here so the shop can approve and print it.`,
+        metadata: { kind: 'cod_requested', orderId: order.orderId, total: paiseToRupees(totals.total) },
+      });
+    } catch {
+      // Do not fail COD checkout if initial chat prompt fails; customer/partner can still open order chat
+    }
+    return codCheckoutResult(order);
+  }
+
+  // 6b. Online payment: create Razorpay Payment Link
   const payment = await newPaymentAttempt.create({
     purpose: 'print_order',
     user,

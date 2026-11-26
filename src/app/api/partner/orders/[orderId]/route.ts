@@ -99,11 +99,36 @@ export async function PATCH(
       verifiedNow = true;
     }
 
+    if (check.needsCashConfirmation && body?.cashCollected !== true) {
+      return NextResponse.json(
+        { success: false, error: 'Confirm cash payment received (or ask the customer to scan the pickup QR slip)', code: 'cod_cash_required' },
+        { status: 400 }
+      );
+    }
+
+    const cashNow = Boolean(check.needsCashConfirmation && body?.cashCollected === true);
+
     // Conditional on the status we validated against, so two concurrent updates
-    // (e.g. desktop and mobile) cannot both apply. Payment fields are never touched.
+    // (e.g. desktop and mobile) cannot both apply. Payment fields are never touched unless COD cash collected.
+    const now = new Date();
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status, ...ownedBy },
-      { $set: { status, orderStatus: status, ...(verifiedNow ? { 'deliveryOption.handover.verifiedAt': new Date() } : {}) } },
+      {
+        $set: {
+          status,
+          orderStatus: status,
+          ...(verifiedNow ? { 'deliveryOption.handover.verifiedAt': now } : {}),
+          ...(cashNow
+            ? {
+                paymentStatus: 'completed',
+                amountPaid: order.pricing?.total ?? order.amount,
+                paidAt: now,
+                'cod.cashCollectedAt': now,
+                'cod.cashCollectedBy': `partner:${partnerIdStr}`,
+              }
+            : {}),
+        },
+      },
       { returnDocument: 'after' }
     );
     if (!updated) {

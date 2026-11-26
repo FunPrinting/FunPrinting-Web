@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import {
+  Banknote,
   Building2,
+  CheckCircle2,
   Download,
   ExternalLink,
   FileImage,
@@ -12,6 +15,7 @@ import {
   MapPin,
   Package,
   Printer,
+  QrCode,
   Truck,
   User,
 } from 'lucide-react';
@@ -20,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { resolvePreviewKind } from '@/lib/order/preview';
 import { OrderChatCard } from '@/components/chat/OrderChatCard';
 import { DocumentPreview } from '@/components/order/DocumentPreview';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrderProgress, StatusBadge } from '@/components/orders/OrderStatus';
@@ -28,6 +33,8 @@ export interface OrderDetailViewProps {
   order: any;
   mode?: 'admin' | 'user';
   isShipping?: boolean;
+  scanQr?: boolean;
+  onOrderUpdated?: (updated: any) => void;
   /** Admin only: books the courier for a courier delivery. */
   onShipOrder?: () => void;
 }
@@ -229,10 +236,13 @@ export function OrderDetailView({
   order,
   mode = 'admin',
   isShipping = false,
+  scanQr = false,
+  onOrderUpdated,
   onShipOrder,
 }: OrderDetailViewProps) {
   const files = useMemo(() => (order ? filesOf(order) : []), [order]);
   const [selected, setSelected] = useState(0);
+  const [collectingQr, setCollectingQr] = useState(false);
   useEffect(() => setSelected(0), [order?._id]);
 
   if (!order) return null;
@@ -245,17 +255,76 @@ export function OrderDetailView({
   const deliveryPoint = partner?.deliveryPoints?.find((dp: any) => dp.name === delivery?.partnerDeliveryPoint);
   const services: string[] = Array.isArray(opts.serviceOptions) && opts.serviceOptions.length ? [...new Set<string>(opts.serviceOptions)] : opts.serviceOption ? [opts.serviceOption] : [];
   const hasFiles = files.length > 0;
+  const isCod = order.paymentMethod === 'cod';
+  const cashDue = isCod && order.paymentStatus !== 'completed';
+  const canConfirmQrPickup = !admin && delivery?.type === 'pickup' && ['printed', 'ready_for_pickup'].includes(order.status);
+
+  const confirmQrPickup = async () => {
+    if (collectingQr) return;
+    setCollectingQr(true);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/collect-qr`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Could not confirm pickup');
+      }
+      if (data.order) onOrderUpdated?.(data.order);
+      toast.success(cashDue ? 'Cash payment verified & order marked Collected!' : 'Order marked Collected!');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Pickup verification failed');
+    } finally {
+      setCollectingQr(false);
+    }
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-2">
+        {canConfirmQrPickup ? (
+          <Card className={cn('border-primary/40 bg-accent/30', scanQr && 'ring-2 ring-primary')}>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <QrCode className="size-4 text-primary" aria-hidden />
+                {isCod ? 'Cash & QR Pickup Verification' : 'Confirm Order Pickup (QR)'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                {cashDue
+                  ? `Pay ₹${Number(order.pricing?.total ?? order.amount ?? 0).toLocaleString('en-IN')} in cash at the counter/pickup point, then tap below as the verified order owner to mark this order Collected.`
+                  : 'Verified order owner handover: tap below once you receive your prints to mark the order Collected.'}
+              </p>
+              <Button className="w-full" onClick={confirmQrPickup} disabled={collectingQr}>
+                {collectingQr ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+                {cashDue
+                  ? `Confirm Cash Paid (₹${Number(order.pricing?.total ?? order.amount ?? 0).toLocaleString('en-IN')}) & Collect`
+                  : 'Mark Order Collected'}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!admin && isCod && order.status === 'pending_cod_approval' ? (
+          <Alert className="border-warning/40 bg-warning/10">
+            <Banknote className="text-warning" />
+            <AlertTitle>Confirm Cash on Pickup in chat</AlertTitle>
+            <AlertDescription>
+              To protect against unpaid print waste, the shop prints Cash on Pickup orders after you confirm in chat below.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <Card>
           <CardHeader className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-base">Status</CardTitle>
               <div className="flex flex-wrap gap-1.5">
                 <StatusBadge status={order.status} />
-                {admin ? (
+                {isCod ? (
+                  <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', cashDue ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
+                    {cashDue ? `Cash due · ₹${Number(order.pricing?.total ?? order.amount ?? 0).toLocaleString('en-IN')}` : 'Cash paid'}
+                  </span>
+                ) : admin ? (
                   <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', order.paymentStatus === 'completed' ? 'bg-success/10 text-success' : order.paymentStatus === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning')}>
                     Payment {order.paymentStatus || 'unknown'}
                   </span>
@@ -319,7 +388,11 @@ export function OrderDetailView({
         ) : null}
 
         {!admin && partner && order.orderId ? (
-          <OrderChatCard orderId={order.orderId} shopName={partner.businessName} />
+          <OrderChatCard
+            orderId={order.orderId}
+            shopName={partner.businessName}
+            defaultOpen={isCod && order.status === 'pending_cod_approval'}
+          />
         ) : null}
 
         {delivery ? (

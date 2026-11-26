@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Loader2, Megaphone, MessageSquare, Send, Users } from 'lucide-react';
+import { Banknote, Check, Loader2, Megaphone, MessageSquare, Send, Users, X } from 'lucide-react';
 import { ChatThread } from '@/components/chat/ChatThread';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,13 @@ interface PartnerConversation {
   lastMessageAt: string;
   lastMessagePreview: string;
   unreadPartner: number;
+  orderSummary?: {
+    status: string;
+    paymentMethod: 'online' | 'cod';
+    paymentStatus: string;
+    amount: number;
+    deliveryType?: string;
+  };
 }
 
 interface BroadcastItem {
@@ -56,6 +63,8 @@ export function PartnerChatDashboard({
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [broadcasts, setBroadcasts] = useState<BroadcastItem[]>([]);
+  const [codBusy, setCodBusy] = useState(false);
+  const [threadRefresh, setThreadRefresh] = useState(0);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -146,6 +155,29 @@ export function PartnerChatDashboard({
   const quickFill = (template: string) => {
     if (!bpPoint) return;
     setBpMessage(template.replace(/\{point\}/g, bpPoint));
+  };
+
+  const handleCodAction = async (orderId: string, action: 'approve' | 'decline') => {
+    if (codBusy) return;
+    setCodBusy(true);
+    try {
+      const res = await fetch(`/api/partner/orders/${encodeURIComponent(orderId)}/cod`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Could not ${action} COD order`);
+      }
+      toast.success(action === 'approve' ? 'COD approved & sent to print queue!' : 'COD request declined.');
+      setThreadRefresh((n) => n + 1);
+      void loadConversations();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setCodBusy(false);
+    }
   };
 
   const activeConv = conversations.find((c) => c.conversationId === selectedId);
@@ -317,6 +349,9 @@ export function PartnerChatDashboard({
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                         {c.orderId ? <span className="font-mono text-primary">#{c.orderId}</span> : null}
+                        {c.orderSummary?.paymentMethod === 'cod' && c.orderSummary?.status === 'pending_cod_approval' ? (
+                          <Badge variant="outline" className="border-warning/60 bg-warning/10 text-warning px-1.5 py-0 text-[10px]">COD Approval</Badge>
+                        ) : null}
                         {c.pickupPointName ? <span className="truncate">· {c.pickupPointName}</span> : null}
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">{c.lastMessagePreview}</p>
@@ -345,7 +380,45 @@ export function PartnerChatDashboard({
                       </div>
                     </div>
 
+                    {activeConv.orderId &&
+                    activeConv.orderSummary?.paymentMethod === 'cod' &&
+                    activeConv.orderSummary?.status === 'pending_cod_approval' ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Banknote className="size-4 text-warning shrink-0" aria-hidden />
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              Cash on Pickup: ₹{Number(activeConv.orderSummary.amount || 0).toLocaleString('en-IN')} due at pickup
+                            </p>
+                            <p className="text-muted-foreground">
+                              Confirm with the customer in chat before printing.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={codBusy}
+                            onClick={() => void handleCodAction(activeConv.orderId!, 'decline')}
+                          >
+                            <X className="size-3.5" />
+                            Decline COD
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={codBusy}
+                            onClick={() => void handleCodAction(activeConv.orderId!, 'approve')}
+                          >
+                            {codBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                            Approve &amp; Print
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
                     <ChatThread
+                      key={`${activeConv.conversationId}-${threadRefresh}`}
                       conversationId={activeConv.conversationId}
                       role="partner"
                       onMessageSent={() => void loadConversations()}

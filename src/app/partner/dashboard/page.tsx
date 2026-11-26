@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, Wallet, X } from 'lucide-react';
+import { Banknote, Bike, Building2, Check, Clock, Download, Laptop, Loader2, LocateFixed, Plus, RefreshCw, Smartphone, Trash2, Truck, UserX, Wallet, X } from 'lucide-react';
 import PartnerDevices from '@/components/partner/PartnerDevices';
 import { PartnerChatDashboard } from '@/components/partner/PartnerChatDashboard';
+import { PartnerCodCard } from '@/components/partner/PartnerCodCard';
 import { PartnerScheduleCard } from '@/components/partner/PartnerScheduleCard';
 import type { ScheduleSlotTemplate } from '@/lib/scheduling';
 import { statusInfo } from '@/lib/orderStatus';
@@ -143,10 +144,35 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
   const [handover, setHandover] = useState<PartnerOrder | null>(null);
+  const [cashConfirm, setCashConfirm] = useState<PartnerOrder | null>(null);
+  const [noShowTarget, setNoShowTarget] = useState<PartnerOrder | null>(null);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
+  const toApproveCod = orders.filter((o) => o.paymentMethod === 'cod' && o.status === 'pending_cod_approval');
   const toAccept = orders.filter((o) => o.job?.status === 'pending_acceptance');
   const shown = filter === 'all' ? orders : orders.filter((o) => !['completed', 'delivered', 'cancelled', 'refunded', 'pending_payment'].includes(o.status));
+
+  const codAction = async (order: PartnerOrder, action: 'approve' | 'decline' | 'no_show' | 'mark_collected', why?: string) => {
+    setBusy(order.orderId);
+    const res = await fetch(`/api/partner/orders/${encodeURIComponent(order.orderId)}/cod`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(why ? { action, reason: why } : { action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok || !data.success) return toast.error(data.error || `Could not ${action} COD order`);
+    toast.success(
+      action === 'approve'
+        ? `COD #${order.orderId} approved and queued to print!`
+        : action === 'no_show'
+          ? `Order #${order.orderId} marked No-Show. Future COD disabled for customer.`
+          : action === 'mark_collected'
+            ? `Cash collected & order #${order.orderId} completed.`
+            : `COD request #${order.orderId} declined.`
+    );
+    reload();
+  };
 
   const jobAction = async (order: PartnerOrder, action: 'accept' | 'reject', why?: string) => {
     setBusy(order.orderId);
@@ -162,7 +188,7 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
     setOrders(orders.map((o) => (o.orderId === order.orderId ? { ...o, status: action === 'reject' ? 'cancelled' : o.status, job: { ...o.job, status: action === 'accept' ? 'queued' : 'cancelled' } } : o)));
   };
 
-  const move = async (order: PartnerOrder, status: string, handoverCode?: string) => {
+  const move = async (order: PartnerOrder, status: string, handoverCode?: string, cashCollected?: boolean) => {
     // Shop delivery: ask for the customer's code first
     if (status === 'delivered' && fulfilmentOf(order) === 'shop' && handoverCode === undefined) {
       setCode('');
@@ -170,11 +196,19 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
       setHandover(order);
       return;
     }
+    // Unpaid COD pickup: confirm cash collected (or remind customer to scan QR)
+    if (status === 'completed' && order.paymentMethod === 'cod' && order.paymentStatus !== 'completed' && !cashCollected) {
+      setCashConfirm(order);
+      return;
+    }
     setBusy(order.orderId);
+    const payload: Record<string, unknown> = { status };
+    if (handoverCode !== undefined) payload.code = handoverCode;
+    if (cashCollected) payload.cashCollected = true;
     const res = await fetch(`/api/partner/orders/${encodeURIComponent(order.orderId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(handoverCode === undefined ? { status } : { status, code: handoverCode }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(null);
@@ -183,7 +217,9 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
       return toast.error(data.error || 'Could not update the order');
     }
     setHandover(null);
+    setCashConfirm(null);
     if (status === 'delivered') toast.success(`Order #${order.orderId} delivered`);
+    if (status === 'completed' && cashCollected) toast.success(`Cash collected for order #${order.orderId}`);
     setOrders(orders.map((o) => (o.orderId === order.orderId ? (data.order ? { ...data.order, job: o.job } : { ...o, status }) : o)));
   };
 
@@ -199,6 +235,31 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
 
   return (
     <div className="space-y-6">
+      {toApproveCod.length ? (
+        <Card className="border-warning/50 bg-warning/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Banknote className="size-5 text-warning" aria-hidden />Cash on Pickup awaiting chat approval</CardTitle>
+            <CardDescription>Confirm with the customer in the Messages tab before clicking Approve &amp; Print so paper &amp; ink are never wasted.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {toApproveCod.map((o) => (
+              <div key={o.orderId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-sm font-semibold">#{o.orderId} · Cash ₹{Number(o.amount || 0).toLocaleString('en-IN')}</p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {o.customerInfo?.name || 'Customer'} ({o.customerInfo?.phone || 'no phone'}) · {o.originalFileName || o.originalFileNames?.[0] || 'Document'}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => codAction(o, 'decline')} disabled={busy === o.orderId}><X />Decline</Button>
+                  <Button size="sm" onClick={() => codAction(o, 'approve')} disabled={busy === o.orderId}>{busy === o.orderId ? <Loader2 className="animate-spin" /> : <Check />}Approve &amp; Print</Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {toAccept.length ? (
         <Card className="border-warning/40">
           <CardHeader>
@@ -277,27 +338,41 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
                           </span>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{rupees(orderPartnerShare(o))}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <span>{o.paymentMethod === 'cod' ? rupees(o.amount) : rupees(orderPartnerShare(o))}</span>
+                        {o.paymentMethod === 'cod' ? (
+                          <span className="block text-[10px] text-warning font-medium">
+                            {o.paymentStatus === 'completed' ? 'Cash collected' : 'Cash COD'}
+                          </span>
+                        ) : null}
+                      </TableCell>
                       <TableCell>
                         <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', TONE[info.tone])}>
                           {o.job?.status === 'pending_acceptance' ? 'Needs your OK' : info.label}
                         </span>
                       </TableCell>
                       <TableCell className="pr-6">
-                        {canBook ? (
-                          <Button size="sm" variant="outline" onClick={() => bookCourier(o)} disabled={busy === o.orderId}>
-                            {busy === o.orderId ? <Loader2 className="animate-spin" /> : <Truck />}Book courier
-                          </Button>
-                        ) : next.length === 1 ? (
-                          <Button size="sm" variant="outline" onClick={() => move(o, next[0])} disabled={busy === o.orderId}>
-                            {busy === o.orderId ? <Loader2 className="animate-spin" /> : null}{PARTNER_STATUS_LABEL[next[0]] || next[0]}
-                          </Button>
-                        ) : next.length ? (
-                          <Select onValueChange={(v) => move(o, v)} disabled={busy === o.orderId}>
-                            <SelectTrigger size="sm" className="w-40" aria-label={`Move order ${o.orderId}`}><SelectValue placeholder="Move to…" /></SelectTrigger>
-                            <SelectContent>{next.map((s) => <SelectItem key={s} value={s}>{PARTNER_STATUS_LABEL[s] || s}</SelectItem>)}</SelectContent>
-                          </Select>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {canBook ? (
+                            <Button size="sm" variant="outline" onClick={() => bookCourier(o)} disabled={busy === o.orderId}>
+                              {busy === o.orderId ? <Loader2 className="animate-spin" /> : <Truck />}Book courier
+                            </Button>
+                          ) : next.length === 1 ? (
+                            <Button size="sm" variant="outline" onClick={() => move(o, next[0])} disabled={busy === o.orderId}>
+                              {busy === o.orderId ? <Loader2 className="animate-spin" /> : null}{PARTNER_STATUS_LABEL[next[0]] || next[0]}
+                            </Button>
+                          ) : next.length ? (
+                            <Select onValueChange={(v) => move(o, v)} disabled={busy === o.orderId}>
+                              <SelectTrigger size="sm" className="w-40" aria-label={`Move order ${o.orderId}`}><SelectValue placeholder="Move to…" /></SelectTrigger>
+                              <SelectContent>{next.map((s) => <SelectItem key={s} value={s}>{PARTNER_STATUS_LABEL[s] || s}</SelectItem>)}</SelectContent>
+                            </Select>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                          {o.paymentMethod === 'cod' && o.paymentStatus !== 'completed' && !['cancelled', 'completed', 'pending_cod_approval'].includes(o.status) ? (
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setNoShowTarget(o)} disabled={busy === o.orderId} title="Mark customer no-show & block future COD">
+                              <UserX className="size-3.5" />No-show
+                            </Button>
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -344,6 +419,41 @@ function OrdersTab({ orders, setOrders, reload, loading }: { orders: PartnerOrde
               <Button type="submit" disabled={code.length !== 4 || busy === handover?.orderId}>{busy === handover?.orderId ? <Loader2 className="animate-spin" /> : <Check />}Confirm delivery</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(cashConfirm)} onOpenChange={(o) => !o && setCashConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm cash payment for #{cashConfirm?.orderId}</DialogTitle>
+            <DialogDescription>
+              Ask the customer to scan the QR code on the Order Summary slip to auto-complete pickup, or confirm below that you received {rupees(cashConfirm?.amount || 0)} in cash.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => cashConfirm && move(cashConfirm, 'completed', undefined, true)} disabled={busy === cashConfirm?.orderId}>
+              {busy === cashConfirm?.orderId ? <Loader2 className="animate-spin" /> : <Banknote />}
+              Cash received ({rupees(cashConfirm?.amount || 0)})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(noShowTarget)} onOpenChange={(o) => !o && setNoShowTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark #{noShowTarget?.orderId} as No-Show?</DialogTitle>
+            <DialogDescription>
+              This cancels the COD order and automatically disables Cash on Pickup for this customer account so unpaid orders don’t repeat.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button variant="destructive" onClick={async () => { const o = noShowTarget; setNoShowTarget(null); if (o) await codAction(o, 'no_show'); }}>
+              Mark No-Show &amp; Block COD
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -463,6 +573,13 @@ function ShopTab({ partner, setPartner }: { partner: Partner; setPartner: (p: Pa
   return (
     <div className="space-y-6">
     <DeliveryCard partner={partner} setPartner={setPartner} />
+    <PartnerCodCard
+      partner={partner}
+      onSaveCod={async (cod) => {
+        const p = await saveProfile({ cod });
+        setPartner(p);
+      }}
+    />
     <PartnerScheduleCard
       partner={partner}
       onSaveSlots={async (scheduleSlots: ScheduleSlotTemplate[]) => {
