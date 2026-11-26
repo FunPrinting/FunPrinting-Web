@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { signIn, signOut, useSession } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { performSignOut } from '@/lib/authClient';
 import { Toaster } from 'react-hot-toast';
 import {
   AlertTriangle,
@@ -63,6 +64,7 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
   const [siteUrl, setSiteUrl] = useState('/');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingIn, setSigningIn] = useState<'google' | 'email' | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -108,15 +110,14 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
   );
 
   const handleSignOut = async (targetUrl?: string) => {
-    try {
-      await signOut({ redirect: false });
-    } catch {}
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {}
-    if (typeof window !== 'undefined') {
-      window.location.href = targetUrl || siteUrl || '/';
-    }
+    if (signingOut) return;
+    setSigningOut(true);
+    const baseDest = targetUrl || siteUrl || '/';
+    const dest =
+      isOnAdminSubdomain && siteUrl !== '/' && !baseDest.startsWith('/')
+        ? `${siteUrl.replace(/\/$/, '')}/api/auth/logout?callbackUrl=${encodeURIComponent(baseDest)}`
+        : baseDest;
+    await performSignOut(dest);
   };
 
   if (status === 'loading' || (status === 'authenticated' && isAdmin === null)) {
@@ -246,11 +247,12 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
             <Button
               variant="outline"
               size="sm"
+              disabled={signingOut}
               onClick={() => handleSignOut(siteUrl)}
               className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <LogOut className="size-3.5" />
-              <span>Sign out</span>
+              {signingOut ? <Loader2 className="size-3.5 animate-spin" /> : <LogOut className="size-3.5" />}
+              <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
             </Button>
           </div>
 
@@ -348,14 +350,15 @@ export default function AdminGate({ children }: { children: React.ReactNode }) {
                 <div className="border-t p-4 bg-background">
                   <Button
                     variant="ghost"
+                    disabled={signingOut}
                     className="w-full justify-start gap-2.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => {
                       setMobileOpen(false);
                       handleSignOut(siteUrl);
                     }}
                   >
-                    <LogOut className="size-4" />
-                    <span>Sign out</span>
+                    {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                    <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
                   </Button>
                 </div>
               </SheetContent>

@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  Loader2,
   LogOut,
   Menu,
   Package,
@@ -138,8 +139,9 @@ function UserMenu({
   user: SessionUser;
   isAdmin: boolean;
   adminUrl: string;
-  onSignOut: () => void;
+  onSignOut: () => Promise<void> | void;
 }) {
+  const [signingOut, setSigningOut] = useState(false);
   const image = user.image || user.profilePicture || undefined;
   const isPartner = user.role === 'partner' || isAdmin;
 
@@ -228,14 +230,17 @@ function UserMenu({
 
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          disabled={signingOut}
           onSelect={(e) => {
             e.preventDefault();
-            onSignOut();
+            if (signingOut) return;
+            setSigningOut(true);
+            void onSignOut();
           }}
           className="cursor-pointer text-destructive focus:text-destructive"
         >
-          <LogOut className="size-4" />
-          <span>Sign out</span>
+          {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+          <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
