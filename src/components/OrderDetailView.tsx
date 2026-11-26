@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
 import {
   Building2,
   Download,
@@ -18,6 +17,8 @@ import {
 } from 'lucide-react';
 import { formatDate, getDefaultExpectedDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
+import { resolvePreviewKind } from '@/lib/order/preview';
+import { DocumentPreview } from '@/components/order/DocumentPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrderProgress, StatusBadge } from '@/components/orders/OrderStatus';
@@ -137,43 +138,35 @@ function MixedPages({ colors, pageCount }: { colors: PageColors; pageCount?: num
   );
 }
 
-function FilePreview({ file, orderId, grayscale }: { file: OrderFile; orderId: string; grayscale: boolean }) {
-  const [loaded, setLoaded] = useState(false);
+function FilePreview({ file, orderId }: { file: OrderFile; orderId: string }) {
   const src = viewerUrl(file.url, orderId, file.name);
-  const isImage = file.type.startsWith('image/') && file.type !== 'image/svg+xml';
-  const isPdf = file.type === 'application/pdf';
+  const kind = resolvePreviewKind({ name: file.name, mimeType: file.type, allowSvg: false });
 
-  // Some browsers never fire onLoad for PDFs in an iframe
-  useEffect(() => {
-    setLoaded(false);
-    const t = setTimeout(() => setLoaded(true), 3000);
-    return () => clearTimeout(t);
-  }, [src]);
-
-  if (!isImage && !isPdf) {
+  if (kind === 'other' || kind === 'doc') {
     return (
-      <div className="flex h-96 flex-col items-center justify-center gap-3 rounded-lg border bg-muted/40 p-6 text-center">
+      <div className="flex h-80 flex-col items-center justify-center gap-3 rounded-lg border bg-muted/40 p-6 text-center">
         <FileIcon className="size-10 text-muted-foreground" aria-hidden />
         <p className="font-medium">{file.name}</p>
-        <p className="text-sm text-muted-foreground">This file type can’t be previewed in the browser.</p>
+        <p className="text-sm text-muted-foreground">
+          {kind === 'doc'
+            ? 'Legacy .doc files can’t be rendered directly in the browser. Download to open locally.'
+            : 'This file type can’t be previewed in the browser.'}
+        </p>
         <Button asChild variant="outline"><a href={src}><Download />Download</a></Button>
       </div>
     );
   }
 
   return (
-    <div className={cn('relative h-[32rem] overflow-hidden rounded-lg border bg-muted/40', grayscale && 'grayscale')}>
-      {!loaded ? (
-        <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
-          <Loader2 className="size-4 animate-spin" aria-hidden />Loading preview…
-        </div>
-      ) : null}
-      {isImage ? (
-        <Image src={src} alt={`Preview of ${file.name}`} unoptimized fill className="object-contain" onLoad={() => setLoaded(true)} />
-      ) : (
-        <iframe key={src} src={src} title={`Preview of ${file.name}`} className={cn('size-full border-0 transition-opacity', loaded ? 'opacity-100' : 'opacity-0')} onLoad={() => setLoaded(true)} allow="fullscreen" />
-      )}
-    </div>
+    <DocumentPreview
+      src={src}
+      fileName={file.name}
+      mimeType={file.type}
+      color={file.color}
+      colorPages={file.pageColors?.colorPages}
+      allowSvg={false}
+      tall
+    />
   );
 }
 
@@ -397,14 +390,20 @@ export function OrderDetailView({
                     );
                   })}
                 </ul>
-                {file ? <FilePreview file={file} orderId={order.orderId} grayscale={file.color === 'bw'} /> : null}
+                {file ? <FilePreview file={file} orderId={order.orderId} /> : null}
               </>
             ) : order.orderType === 'template' && order.templateData?.generatedPDF ? (
               <>
                 <div className="flex justify-end">
                   <Button asChild variant="outline" size="sm"><a href={order.templateData.generatedPDF} download><Download />Download PDF</a></Button>
                 </div>
-                <iframe src={order.templateData.generatedPDF} title="Generated document" className="h-[32rem] w-full rounded-lg border" />
+                <DocumentPreview
+                  src={order.templateData.generatedPDF}
+                  fileName="generated-document.pdf"
+                  mimeType="application/pdf"
+                  color="bw"
+                  tall
+                />
                 {order.templateData.formData && Object.keys(order.templateData.formData).length ? (
                   <dl className="divide-y rounded-lg border px-3">
                     {Object.entries(order.templateData.formData).map(([k, v]) => <Row key={k} label={k}>{String(v)}</Row>)}

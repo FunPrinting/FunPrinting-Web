@@ -9,18 +9,21 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Segmented } from '@/components/order/Segmented';
+import { DocumentPreview } from '@/components/order/DocumentPreview';
 
 function Preview({ file }: { file: OrderFile }) {
-  const kind = fileKind(file.file);
-  const gray = file.color === 'bw';
-  if (kind === 'image') {
-    // eslint-disable-next-line @next/next/no-img-element -- local object URL
-    return <img src={file.previewUrl} alt={`Preview of ${file.file.name}`} className={cn('max-h-[28rem] w-full rounded-lg border bg-muted/40 object-contain', gray && 'grayscale')} />;
-  }
-  if (kind === 'pdf') {
-    return <iframe src={file.previewUrl} title={`Preview of ${file.file.name}`} className={cn('h-[28rem] w-full rounded-lg border', gray && 'grayscale')} />;
-  }
-  return <p className="rounded-lg border bg-muted/40 p-6 text-center text-sm text-muted-foreground">Word documents can’t be previewed here. The shop prints the uploaded file.</p>;
+  return (
+    <DocumentPreview
+      file={file.file}
+      src={file.previewUrl}
+      fileName={file.file.name}
+      mimeType={file.file.type}
+      pageSize={file.pageSize}
+      color={file.color}
+      colorPages={colorPagesOf(file)}
+      totalPages={file.pages}
+    />
+  );
 }
 
 function PageChips({ pages, colorPages }: { pages: number; colorPages: Set<number> }) {
