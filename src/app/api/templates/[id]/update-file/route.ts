@@ -4,8 +4,9 @@ import DynamicTemplate from '@/models/DynamicTemplate';
 import User from '@/models/User';
 import { getCurrentUser, canEditTemplate, isAdminUser } from '@/lib/templateAuth';
 import { uploadFile } from '@/lib/storage';
-import { extractPlaceholders } from '@/lib/docxProcessor';
-import { generateFormSchema } from '@/lib/docxProcessor';
+import { extractPlaceholders, generateFormSchema } from '@/lib/docxProcessor';
+import { fetchTrustedFile, FileFetchError } from '@/lib/documents/fileUrls';
+import { TEMPLATE_MAX_BYTES } from '@/lib/documents/templates';
 
 export async function POST(
   request: NextRequest,
@@ -52,68 +53,55 @@ export async function POST(
       );
     }
 
-    // Get file from form data
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    let docxBuffer: Buffer;
+    let wordUrl: string;
 
-    if (!file) {
-      return NextResponse.json(
-        { success: false, error: 'No file provided' },
-        { status: 400 }
+    const reqContentType = request.headers.get('content-type') || '';
+    if (reqContentType.includes('application/json')) {
+      const body = await request.json().catch(() => ({}));
+      if (typeof body.fileUrl !== 'string' || !body.fileUrl) {
+        return NextResponse.json({ success: false, error: 'No fileUrl provided' }, { status: 400 });
+      }
+      docxBuffer = (await fetchTrustedFile(body.fileUrl, { maxBytes: TEMPLATE_MAX_BYTES })).buffer;
+      if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
+        return NextResponse.json({ success: false, error: 'That file is not a valid .docx document' }, { status: 400 });
+      }
+      wordUrl = body.fileUrl;
+    } else {
+      // Get file from form data
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+
+      if (!file) {
+        return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+      }
+      if (!/\.docx$/i.test(file.name)) {
+        return NextResponse.json({ success: false, error: 'Only DOCX files are allowed' }, { status: 400 });
+      }
+      if (file.size > TEMPLATE_MAX_BYTES) {
+        return NextResponse.json({ success: false, error: 'File size must be less than 20MB' }, { status: 400 });
+      }
+
+      const bytes = await file.arrayBuffer();
+      docxBuffer = Buffer.from(bytes);
+      if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
+        return NextResponse.json({ success: false, error: 'That file is not a valid .docx document' }, { status: 400 });
+      }
+      wordUrl = await uploadFile(
+        docxBuffer,
+        `templates/word/${templateId}`,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       );
-    }
-
-    if (!/\.docx$/i.test(file.name)) {
-      return NextResponse.json(
-        { success: false, error: 'Only DOCX files are allowed' },
-        { status: 400 }
-      );
-    }
-
-    if (file.size > 20 * 1024 * 1024) {
-      return NextResponse.json(
-        { success: false, error: 'File size must be less than 20MB' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`📤 Uploading new template file for template ${templateId}`);
-
-    // Convert file to buffer
-    const bytes = await file.arrayBuffer();
-    const docxBuffer = Buffer.from(bytes);
-    // A .docx is a ZIP archive: check the magic bytes, not just the name
-    if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
-      return NextResponse.json({ success: false, error: 'That file is not a valid .docx document' }, { status: 400 });
     }
 
     // Extract placeholders from new file
-    console.log('🔍 Extracting placeholders from new file...');
     const placeholders = await extractPlaceholders(docxBuffer);
-    console.log(`✅ Extracted ${placeholders.length} placeholders:`, placeholders);
-
-    // Generate form schema from placeholders (returns object format)
     const schemaObject = generateFormSchema(placeholders);
-    
-    // Convert object format to array format expected by fill page
-    // Format: [{ key: string, type: string, label: string, required: boolean, placeholder: string, defaultPlaceholder: string }]
     const formSchema = Object.entries(schemaObject).map(([key, value]) => ({
       key,
       ...value,
       defaultPlaceholder: value.defaultPlaceholder || value.placeholder || `Enter ${key}`
     }));
-    
-    console.log(`✅ Generated formSchema with ${formSchema.length} fields (array format)`);
-
-    // Upload new file to cloud storage
-    console.log('☁️ Uploading file to cloud storage...');
-    const wordUrl = await uploadFile(
-      docxBuffer,
-      `templates/word/${templateId}`,
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    );
-
-    console.log('✅ File uploaded successfully:', wordUrl);
 
     // Log placeholders before update
     console.log('📋 Current placeholders in template:', template.placeholders);
@@ -155,6 +143,9 @@ export async function POST(
     });
 
   } catch (error) {
+    if (error instanceof FileFetchError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+    }
     console.error('❌ Error updating template file:', error);
     return NextResponse.json(
       { 

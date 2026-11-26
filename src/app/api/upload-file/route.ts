@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/authz';
-import { uploadFile } from '@/lib/storage';
+import { uploadFile, resolveStorageProviderName, isR2Configured } from '@/lib/storage';
 import { withRequestLogger } from '@/lib/logger';
 import { PDF_MIME } from '@/lib/uploads/pageCount';
 import { prepareUpload } from '@/lib/uploads/printReady';
@@ -26,7 +26,8 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 function storageConfigured(): boolean {
-  const provider = (process.env.STORAGE_PROVIDER || 'cloudinary').toLowerCase();
+  const provider = resolveStorageProviderName();
+  if (provider === 'r2') return isR2Configured();
   if (provider === 'oracle') {
     return Boolean(process.env.OCI_TENANCY_OCID && process.env.OCI_USER_OCID && process.env.OCI_FINGERPRINT);
   }

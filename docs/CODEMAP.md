@@ -117,7 +117,7 @@ The central Printer-API path (`printer-status`, `printer-queue/*`, `/api/printer
 | Fulfilment | `jobs/service` (create, accept, claim, report, sync), `jobs/deadlines` (customer notice, 24 h refund, cancel), `jobs/assign`, `jobs/scheduler` (QStash), `jobs/emails`, `jobs/deliveryNumber`, `wssClient`, `partnerOrderTransitions`, `shiprocket`, `cartUtils` | |
 | Email | `mailer` (one transport), `notificationService`, `invoiceEmail`, `invoiceGenerator`, `dispatch-email`, `adminNotifications` | |
 | Documents | `documents/convert` (one converter interface), `documents/fileUrls` (the only way to download stored files), `documents/templates`, `docxProcessor`; providers `cloudmersive`, `freeConverters`, `libreoffice`, `renderPdfService`; `fileTypeDetection` | |
-| Storage | `storage` (provider switch), `storage/cloudinary`, `storage/oracle`, `cloudinary` | Phase 7: merge the two Cloudinary modules |
+| Storage | `storage` (provider switch), `storage/r2` (Cloudflare R2 + presigned PUT), `storage/cloudinary`, `storage/oracle`, `cloudinary` | Phase 7: merge the two Cloudinary modules |
 | Misc | `seo`, `phoneValidation`, `dates` (`formatDate`, default expected date) | |
 
 ## Models (`src/models`)

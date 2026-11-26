@@ -20,6 +20,8 @@
     "fix-filetypes": "ts-node scripts/fix-filetype-in-orders.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1178.0",
+    "@aws-sdk/s3-request-presigner": "^3.1178.0",
     "@upstash/qstash": "^2.12.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.4",

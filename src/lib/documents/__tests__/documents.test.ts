@@ -41,6 +41,16 @@ describe('isTrustedFileUrl', () => {
     expect(isTrustedFileUrl('https://cdn.example.org/anything.pdf')).toBe(true);
   });
 
+  it('allows Cloudflare R2 public URLs and R2 S3 bucket paths when configured', () => {
+    vi.stubEnv('R2_PUBLIC_URL', 'https://pub-demo123.r2.dev');
+    vi.stubEnv('R2_ACCOUNT_ID', 'acc123');
+    vi.stubEnv('R2_BUCKET_NAME', 'funprinting-files');
+    expect(isTrustedFileUrl('https://pub-demo123.r2.dev/print-service/a.pdf')).toBe(true);
+    expect(isTrustedFileUrl('https://acc123.r2.cloudflarestorage.com/funprinting-files/raw-templates/a.docx')).toBe(true);
+    expect(isTrustedFileUrl('https://acc123.r2.cloudflarestorage.com/other-bucket/a.docx')).toBe(false);
+    expect(isTrustedFileUrl('https://pub-evil.r2.dev/print-service/a.pdf')).toBe(false);
+  });
+
   it('trusts nothing when no storage is configured', () => {
     vi.stubEnv('CLOUDINARY_CLOUD_NAME', '');
     vi.stubEnv('OCI_REGION', '');

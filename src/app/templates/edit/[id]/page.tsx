@@ -112,9 +112,30 @@ export default function EditTemplatePage() {
     if (file.size > 20 * 1024 * 1024) return toast.error('The file is too large. The limit is 20 MB.');
     setReplacing(true);
     try {
-      const body = new FormData();
-      body.append('file', file);
-      const res = await fetch(`/api/templates/${id}/update-file`, { method: 'POST', body });
+      let res: Response;
+      const presignRes = await fetch('/api/upload-presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type, fileSize: file.size, purpose: 'template' }),
+      });
+      const presign = await presignRes.json().catch(() => ({}));
+      if (presignRes.ok && presign.supported && presign.uploadUrl && presign.fileUrl) {
+        const putRes = await fetch(presign.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': presign.contentType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+          body: file,
+        });
+        if (!putRes.ok) throw new Error(`Direct upload to storage failed (${putRes.status}).`);
+        res = await fetch(`/api/templates/${id}/update-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileUrl: presign.fileUrl }),
+        });
+      } else {
+        const body = new FormData();
+        body.append('file', file);
+        res = await fetch(`/api/templates/${id}/update-file`, { method: 'POST', body });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || 'We couldn’t replace the file.');
       toast.success(`File replaced. ${data.placeholders?.length ?? 0} fields found.`);

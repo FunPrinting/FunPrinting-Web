@@ -43,6 +43,27 @@ function rules(): Rule[] {
     const re = new RegExp(`^(/p/[^/]+)?/n/${escapeRe(namespace)}/b/${escapeRe(bucket)}/o/`);
     out.push({ host: `objectstorage.${region}.oraclecloud.com`, path: (p) => re.test(p) });
   }
+  // Cloudflare R2: configured public URL (r2.dev or custom domain) + R2 S3 endpoint fallback
+  const r2Public = process.env.R2_PUBLIC_URL?.trim();
+  if (r2Public) {
+    try {
+      const parsed = new URL(r2Public);
+      if (parsed.protocol === 'https:') {
+        const prefix = parsed.pathname && parsed.pathname !== '/' ? `${parsed.pathname.replace(/\/+$/, '')}/` : null;
+        out.push({ host: parsed.hostname.toLowerCase(), path: prefix ? (p) => p.startsWith(prefix) : undefined });
+      }
+    } catch {
+      // Ignore malformed R2_PUBLIC_URL
+    }
+  }
+  const r2Account = process.env.R2_ACCOUNT_ID?.trim();
+  const r2Bucket = process.env.R2_BUCKET_NAME?.trim();
+  if (r2Account && r2Bucket) {
+    out.push({
+      host: `${r2Account.toLowerCase()}.r2.cloudflarestorage.com`,
+      path: (p) => p.startsWith(`/${r2Bucket}/`),
+    });
+  }
   // Extra entries: "host" or "host/path-prefix"
   for (const entry of (process.env.FILE_URL_HOSTS || '').split(',').map((s) => s.trim()).filter(Boolean)) {
     const [host, ...rest] = entry.split('/');
