@@ -169,7 +169,7 @@ async function generateGeminiReply(ctx: AiGroundContext, question: string): Prom
   }
 
   const primary = process.env.GEMINI_CHAT_MODEL?.trim() || 'gemini-3.5-flash-lite';
-  const models = [...new Set([primary, 'gemini-2.5-flash'])];
+  const models = [...new Set([primary, 'gemini-3.8-flash'])];
 
   const systemPrompt = [
     `You are the helpful customer support AI assistant for print shop "${ctx.shop.businessName}" on FunPrinting.`,

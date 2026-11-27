@@ -184,7 +184,7 @@ describe('maybeHandleAiAutoReply', () => {
     );
   });
 
-  it('uses Gemini response (filtering thought parts) and falls back to gemini-2.5-flash on 404', async () => {
+  it('uses Gemini response (filtering thought parts) and falls back to gemini-3.8-flash on 404', async () => {
     vi.stubEnv('GEMINI_API_KEY', 'test-key');
     const fetchMock = vi
       .fn()
@@ -221,7 +221,7 @@ describe('maybeHandleAiAutoReply', () => {
         metadata: expect.objectContaining({
           kind: 'ai_reply',
           source: 'gemini',
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
         }),
       })
     );
