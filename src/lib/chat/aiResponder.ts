@@ -108,7 +108,7 @@ async function generateGeminiReply(ctx: AiGroundContext, question: string): Prom
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return null;
 
-  const model = process.env.GEMINI_CHAT_MODEL?.trim() || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_CHAT_MODEL?.trim() || 'gemini-3.5-flash-lite';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3500);
 
