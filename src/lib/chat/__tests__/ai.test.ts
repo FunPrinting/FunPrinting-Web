@@ -175,7 +175,54 @@ describe('maybeHandleAiAutoReply', () => {
         conversationId: 'chat_1',
         senderType: 'ai_bot',
         senderName: 'Campus Prints Assistant',
-        metadata: expect.objectContaining({ kind: 'ai_reply', source: 'grounded_fallback' }),
+        metadata: expect.objectContaining({
+          kind: 'ai_reply',
+          source: 'grounded_fallback',
+          fallbackReason: 'http_500',
+        }),
+      })
+    );
+  });
+
+  it('uses Gemini response (filtering thought parts) and falls back to gemini-2.5-flash on 404', async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-key');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    { text: 'internal reasoning...', thought: true },
+                    { text: 'Your order #ORD500 is printed and ready for your 10 AM – 12 PM pickup slot.' },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const reply = await maybeHandleAiAutoReply({
+      conversationId: 'chat_1',
+      messageBody: 'Hey are you Gemini?',
+    });
+
+    expect(reply).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mocks.appendChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: 'Your order #ORD500 is printed and ready for your 10 AM – 12 PM pickup slot.',
+        metadata: expect.objectContaining({
+          kind: 'ai_reply',
+          source: 'gemini',
+          model: 'gemini-2.5-flash',
+        }),
       })
     );
   });

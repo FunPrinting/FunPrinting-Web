@@ -6,6 +6,7 @@ import Partner from '@/models/Partner';
 import PickupBroadcast from '@/models/PickupBroadcast';
 import { normalisePartnerCod, type PartnerCodConfig } from '@/lib/cod';
 import { appendChatMessage } from '@/lib/chat/service';
+import { logger } from '@/lib/logger';
 import {
   buildDeterministicGroundedReply,
   buildEscalationHandoffMessage,
@@ -104,48 +105,90 @@ export async function loadAiGroundContext(conv: Pick<IConversation, 'partnerId' 
   };
 }
 
-async function generateGeminiReply(ctx: AiGroundContext, question: string): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) return null;
+type GeminiOutcome =
+  | { ok: true; text: string; model: string }
+  | { ok: false; reason: string };
 
-  const model = process.env.GEMINI_CHAT_MODEL?.trim() || 'gemini-3.5-flash-lite';
+async function callGeminiModel(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  question: string
+): Promise<GeminiOutcome & { status?: number }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3500);
+  const timer = setTimeout(() => controller.abort(), 7500);
 
   try {
-    const systemPrompt = [
-      `You are the helpful customer support AI assistant for print shop "${ctx.shop.businessName}" on FunPrinting.`,
-      'Rules:',
-      '1. Answer ONLY using the JSON CONTEXT below. Never invent prices, timings, addresses, tracking numbers, or delivery promises.',
-      '2. Keep replies concise (1-3 sentences), polite, and directly helpful.',
-      '3. Online payments always use Razorpay only. Never claim to issue a refund or override COD approval yourself.',
-      `CONTEXT JSON:\n${JSON.stringify(ctx)}`,
-    ].join('\n');
-
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
         signal: controller.signal,
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: 'user', parts: [{ text: question }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 220 },
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
         }),
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      logger.warn({ model, status: res.status, body: errText.slice(0, 300) }, 'Gemini chat request returned error');
+      return { ok: false, reason: `http_${res.status}`, status: res.status };
+    }
     const data = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
     };
-    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('').trim();
-    return text ? text.slice(0, 1200) : null;
-  } catch {
-    return null;
+    const text = data.candidates?.[0]?.content?.parts
+      ?.filter((p) => !p.thought)
+      .map((p) => p.text || '')
+      .join('')
+      .trim();
+    if (!text) {
+      logger.warn({ model }, 'Gemini returned empty text');
+      return { ok: false, reason: 'empty_response' };
+    }
+    return { ok: true, text: text.slice(0, 1200), model };
+  } catch (error) {
+    const isAbort = (error as { name?: string })?.name === 'AbortError';
+    logger.warn({ model, err: error }, isAbort ? 'Gemini chat request timed out' : 'Gemini chat request failed');
+    return { ok: false, reason: isAbort ? 'timeout' : 'network_error' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function generateGeminiReply(ctx: AiGroundContext, question: string): Promise<GeminiOutcome> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    return { ok: false, reason: 'missing_api_key' };
+  }
+
+  const primary = process.env.GEMINI_CHAT_MODEL?.trim() || 'gemini-3.5-flash-lite';
+  const models = [...new Set([primary, 'gemini-2.5-flash'])];
+
+  const systemPrompt = [
+    `You are the helpful customer support AI assistant for print shop "${ctx.shop.businessName}" on FunPrinting.`,
+    'Rules:',
+    '1. Answer ONLY using the JSON CONTEXT below. Never invent prices, timings, addresses, tracking numbers, or delivery promises.',
+    '2. Keep replies concise (1-3 sentences), polite, and directly helpful.',
+    '3. Online payments always use Razorpay only. Never claim to issue a refund or override COD approval yourself.',
+    `CONTEXT JSON:\n${JSON.stringify(ctx)}`,
+  ].join('\n');
+
+  let lastReason = 'unknown';
+  for (const model of models) {
+    const out = await callGeminiModel(apiKey, model, systemPrompt, question);
+    if (out.ok) return out;
+    lastReason = out.reason;
+    // Retry fallback model only if the primary model id wasn't found / bad request
+    if (out.status !== 404 && out.status !== 400) break;
+  }
+  return { ok: false, reason: lastReason };
 }
 
 export async function maybeHandleAiAutoReply(opts: {
@@ -195,17 +238,21 @@ export async function maybeHandleAiAutoReply(opts: {
 
   let replyBody: string;
   let source: 'escalation' | 'gemini' | 'grounded_fallback' = 'grounded_fallback';
+  let usedModel: string | undefined;
+  let fallbackReason: string | undefined;
 
   if (escalation.escalate) {
     replyBody = buildEscalationHandoffMessage(escalation, ctx);
     source = 'escalation';
   } else {
     const llmReply = await generateGeminiReply(ctx, opts.messageBody);
-    if (llmReply) {
-      replyBody = llmReply;
+    if (llmReply.ok) {
+      replyBody = llmReply.text;
       source = 'gemini';
+      usedModel = llmReply.model;
     } else {
       replyBody = buildDeterministicGroundedReply(ctx, opts.messageBody);
+      fallbackReason = llmReply.reason;
     }
   }
 
@@ -218,6 +265,8 @@ export async function maybeHandleAiAutoReply(opts: {
     metadata: {
       kind: escalation.escalate ? 'ai_escalation' : 'ai_reply',
       source,
+      ...(usedModel ? { model: usedModel } : {}),
+      ...(fallbackReason ? { fallbackReason } : {}),
       ...(escalation.escalate ? { category: escalation.category } : {}),
     },
   });
